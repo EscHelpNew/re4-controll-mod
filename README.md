@@ -1,2 +1,82 @@
-# re4-controll-mod
-re4-controll-mod
+# RE4 Controls — Nintendo Switch
+
+Мод управления для установленной Resident Evil 4, Title ID `010099A00BC1E000`.
+**Сейчас это экспериментальная сборка, а не готовый полный мод.**
+
+Реализован патч пропорциональной скорости поворота при движении вперёд, назад
+и беге. Есть оверлей с включением патча, скоростью поворота и мёртвой зоной.
+Проверка на реальной RE4 ещё не выполнена. Поворот на месте, чувствительность
+камеры/прицела и гироскоп в самой игре ещё требуют исследования и реализации.
+Гироскоп и оба стика доступны для проверки в отдельном диагностическом NRO.
+
+## Файлы проекта
+
+| Путь | Содержание |
+|---|---|
+| `source/game/module.cpp` | Реальные перехваты обработки ввода и поворота RE4 |
+| `source/overlay/` | Русское меню поверх игры, передача настроек модулю |
+| `source/diagnostic/main.cpp` | Стики, гироскоп, калибровка и приёмник обновлений NRO |
+| `include/re4/` | Обработка ввода, профиль сборки и протокол настроек |
+| `profiles/010099A00BC1E000/npdm.json` | Политика процесса для игрового модуля |
+| `third_party/` | Закреплённые исходники Switch Debug Kit, exlaunch и libtesla |
+| `tools/` | Инспектор NSO, клиент библиотеки, сборка ярлыка и пакета |
+| `tests/` | Проверки форматов, аналогового ввода, настроек и профиля |
+| `build/` | Локальные готовые сборки; не входит в Git |
+| `data/` | Локальные извлечённые файлы, ключ приёмника и журналы; не входит в Git |
+
+Поддерживаемый Build ID:
+`82C2A04A21D3E0B850F273D4149C900300000000000000000000000000000000`.
+Мод проверяет ProgramId, Build ID и исходные инструкции до установки перехватов.
+Подробности разбора: [docs/research/re4-binary.md](docs/research/re4-binary.md).
+
+## Сборка на Windows
+
+Нужны Windows Python 3.13 и devkitPro/devkitA64 с libnx и switch-tools.
+Здесь SDK установлен в `C:/msys64/opt/devkitpro`.
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.venv\Scripts\python.exe build.py --test
+.venv\Scripts\python.exe build.py --nro --module --overlay
+```
+
+`project.example.json` — публичный пример с выключенным автоматическим RUN.
+Локальный `project.json` задаёт имя собственного приложения, его ProgramId,
+папку SD и IP консоли. Для автоматического перезапуска нужен соответствующий
+установленный ярлык. Идентификатор RE4 для NRO использовать нельзя.
+
+```powershell
+.venv\Scripts\python.exe tools\build_forwarder.py --keys "путь\к\prod.keys"
+.venv\Scripts\python.exe tools\package.py
+```
+
+Установка и текущие ограничения: [docs/installation.md](docs/installation.md).
+
+## Обновление NRO
+
+Используется Switch Debug Kit **protocol 2** из
+[EscHelpNew/switch-monitor](https://github.com/EscHelpNew/switch-monitor).
+При первом запуске собственного ярлыка диагностический NRO читает локальный
+`sdmc:/switch/re4-controls/token.txt` и передаёт ключ в неизменённый приёмник.
+Ключ не вшит в NRO или NSP. После этого:
+
+```powershell
+.venv\Scripts\python.exe tools\reload.py status
+.venv\Scripts\python.exe tools\reload.py deploy GAME build\re4-controls.nro
+```
+
+Это передача и запуск нового процесса с проверкой digest. Возможность такого
+цикла на этом приложении ещё не подтверждена аппаратно. Уже работающий на
+консоли BLACK использует protocol 1; его файлы эта работа не обновляет.
+Игровой `subsdk9` обновляется при закрытой RE4, отдельно от NRO.
+
+## Лицензии
+
+Собственный код — MIT, см. [LICENSE](LICENSE). Игровой модуль использует
+exlaunch (GPL-2.0), оверлей — libtesla (GPL-2.0-or-later); соответствующие
+составные бинарники распространяются на условиях GPL-2.0 с исходниками.
+Switch Debug Kit — MIT. Лицензии и сведения о ревизиях находятся в `third_party/`.
+NTON используется как инструмент для сборки собственного homebrew-ярлыка.
+Игровые контейнеры, исполняемые файлы Capcom и криптографические ключи в исходники
+и публичный пакет не включаются.

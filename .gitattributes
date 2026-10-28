@@ -1,0 +1,2 @@
+# Preserve pinned upstream formatting; enforce normal whitespace checks on our code.
+third_party/** -whitespace

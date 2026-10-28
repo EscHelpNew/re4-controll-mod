@@ -1,0 +1,111 @@
+// Atmosphere dmnt:cht ABI:
+// https://github.com/Atmosphere-NX/Atmosphere/blob/master/docs/components/modules/dmnt.md
+#include "game_link.hpp"
+#include "re4/profile.hpp"
+#include <algorithm>
+#include <array>
+#include <cstring>
+
+namespace {
+struct Extents { u64 base, size; };
+struct Metadata {
+    u64 pid, title;
+    Extents main, heap, alias, space;
+    u8 build_id[32];
+};
+static_assert(sizeof(Metadata) == 112);
+bool supported(const Metadata& metadata) {
+    return metadata.title == re4::profile::title_id
+        && !std::memcmp(metadata.build_id, re4::profile::build_id, 32);
+}
+Result read_memory(Service* service, u64 address, void* out, size_t size) {
+    const struct { u64 address, size; } in = {address, size};
+    return serviceDispatchIn(service, 65102, in,
+        .buffer_attrs = {SfBufferAttr_HipcMapAlias | SfBufferAttr_Out},
+        .buffers = {{out, size}});
+}
+Result write_memory(Service* service, u64 address, const void* data, size_t size) {
+    const struct { u64 address, size; } in = {address, size};
+    return serviceDispatchIn(service, 65103, in,
+        .buffer_attrs = {SfBufferAttr_HipcMapAlias | SfBufferAttr_In},
+        .buffers = {{data, size}});
+}
+}
+
+void GameLink::initialize() {
+    info_ready_ = R_SUCCEEDED(pminfoInitialize());
+    if (R_FAILED(smGetService(&service_, "dmnt:cht")))
+        message = "Сервис отладки недоступен";
+}
+void GameLink::close() {
+    if (serviceIsActive(&service_)) serviceClose(&service_);
+    if (info_ready_) pminfoExit();
+    info_ready_ = false;
+}
+bool GameLink::connect() {
+    address_ = process_ = 0;
+    u64 pid = 0, title = 0;
+    if (!info_ready_ || R_FAILED(pmdmntGetApplicationProcessId(&pid))
+        || R_FAILED(pminfoGetProgramId(&title, pid)) || title != re4::profile::title_id) {
+        message = "Запусти Resident Evil 4"; return false;
+    }
+    if (!serviceIsActive(&service_) || R_FAILED(serviceDispatch(&service_, 65003))) {
+        message = "Не удалось подключиться к игре"; return false;
+    }
+    Metadata metadata{};
+    if (R_FAILED(serviceDispatchOut(&service_, 65002, metadata)) || !supported(metadata)) {
+        message = "Эта сборка RE4 пока не поддерживается"; return false;
+    }
+    std::array<MemoryInfo, 32> mappings;
+    std::array<std::uint8_t, 0x1000 + sizeof(re4::SharedControl)> buffer;
+    for (u64 offset = 0; offset < 4096;) {
+        u64 count = 0;
+        const Result rc = serviceDispatchInOut(&service_, 65101, offset, count,
+            .buffer_attrs = {SfBufferAttr_HipcMapAlias | SfBufferAttr_Out},
+            .buffers = {{mappings.data(), sizeof(mappings)}});
+        if (R_FAILED(rc) || !count || count > mappings.size()) break;
+        for (u64 i = 0; i < count; ++i) {
+            const auto& mapping = mappings[i];
+            if ((mapping.type & 0xFF) != MemType_CodeMutable || mapping.perm != Perm_Rw) continue;
+            const auto limit = std::min<u64>(mapping.size, 0x20000);
+            for (u64 page = 0; page < limit; page += 0x1000) {
+                const auto bytes = std::min<u64>(buffer.size(), mapping.size - page);
+                if (R_FAILED(read_memory(&service_, mapping.addr + page, buffer.data(), bytes))) break;
+                for (size_t j = 0; j + sizeof(re4::SharedControl) <= bytes; j += 8) {
+                    re4::SharedControl block{};
+                    if (std::memcmp(buffer.data() + j, re4::kSharedMarker, sizeof(re4::kSharedMarker))) continue;
+                    std::memcpy(&block, buffer.data() + j, sizeof(block));
+                    if (block.abi != 1 || block.status != 1 || !(block.capabilities & re4::kCapabilityTurning)) continue;
+                    address_ = mapping.addr + page + j; process_ = metadata.pid;
+                    message = "Подключено: повороты в движении";
+                    return true;
+                }
+            }
+        }
+        offset += count;
+    }
+    message = "Мод не найден. Проверь установку и перезапусти RE4";
+    return false;
+}
+bool GameLink::apply(const re4::Settings& settings) {
+    if (!address_ && !connect()) return false;
+    Metadata metadata{};
+    if (R_FAILED(serviceDispatchOut(&service_, 65002, metadata)) || !supported(metadata)
+        || metadata.pid != process_) {
+        address_ = process_ = 0; message = "Игра перезапущена. Подключись снова"; return false;
+    }
+    re4::SharedControl block{};
+    if (R_FAILED(read_memory(&service_, address_, &block, sizeof(block)))
+        || std::memcmp(block.marker, re4::kSharedMarker, 16) || block.abi != 1 || block.status != 1) {
+        address_ = 0; message = "Связь с модом потеряна"; return false;
+    }
+    std::uint8_t bytes[re4::kSettingsBytes];
+    if (!re4::encode_settings(settings, bytes, sizeof(bytes))) return false;
+    const u32 odd = (block.sequence + 1) | 1u, even = odd + 1;
+    const u64 sequence = address_ + offsetof(re4::SharedControl, sequence);
+    const bool applied = R_SUCCEEDED(write_memory(&service_, sequence, &odd, sizeof(odd)))
+        && R_SUCCEEDED(write_memory(&service_, address_ + offsetof(re4::SharedControl, settings), bytes, sizeof(bytes)))
+        && R_SUCCEEDED(write_memory(&service_, sequence, &even, sizeof(even)));
+    message = applied ? "Изменения применены" : "Не удалось применить изменения";
+    return applied;
+}
