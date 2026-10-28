@@ -1,0 +1,14 @@
+.worktrees/
+.superpowers/
+.venv/
+.tools/
+build/
+data/
+__pycache__/
+*.pyc
+project.json
+*.keys
+*.nca
+*.ncz
+*.nsz
+*.nsp
