@@ -2,6 +2,7 @@
 #include "re4/settings.hpp"
 #include "re4/turn.hpp"
 #include "re4/profile.hpp"
+#include "re4/hook_context.hpp"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -27,6 +28,17 @@ int main() {
     assert(turn_flags(0xF0C, 0.1f, false, false, 0.15f) == 0xF0C);
     assert(close(turn_factor(1, false, 0.15f, 3), 3));
     assert(turn_factor(0, true, 0.15f, 3) == 1);
+    alignas(16) std::uint8_t saved_context[0x300];
+    std::memset(saved_context, 0xA5, sizeof(saved_context));
+    const float s0 = 2, s16 = 7;
+    std::memcpy(saved_context, &s0, sizeof(s0));
+    std::memcpy(saved_context + 0x100, &s16, sizeof(s16));
+    std::uint8_t expected_context[sizeof(saved_context)];
+    std::memcpy(expected_context, saved_context, sizeof(saved_context));
+    const float scaled_s0 = 0.5f;
+    std::memcpy(expected_context, &scaled_s0, sizeof(scaled_s0));
+    scale_saved_s0(saved_context, 0.25f);
+    assert(!std::memcmp(saved_context, expected_context, sizeof(saved_context)));
     std::vector<std::uint8_t> image(profile::build_id_offset + 32, 0);
     assert(!profile::matches(image.data(), image.size()));
     std::memcpy(image.data() + profile::build_id_offset, profile::build_id, 32);

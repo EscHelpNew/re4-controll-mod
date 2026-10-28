@@ -1,0 +1,164 @@
+#include "re4/install.hpp"
+#include <array>
+#include <cerrno>
+#include <cstdio>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <vector>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
+namespace re4 {
+namespace {
+using Bytes = std::vector<unsigned char>;
+constexpr const char* names[] = {"subsdk9", "main.npdm", "re4-controls.ovl"};
+constexpr const char* destinations[] = {
+    "/atmosphere/contents/010099A00BC1E000/exefs/subsdk9",
+    "/atmosphere/contents/010099A00BC1E000/exefs/main.npdm",
+    "/switch/.overlays/re4-controls.ovl"};
+constexpr const char* loader_names[] = {"nx-ovlloader.nsp", "re4-controls.ovl", "boot2.flag"};
+constexpr const char* loader_destinations[] = {
+    "/atmosphere/contents/420000000007E51A/exefs.nsp",
+    "/switch/.overlays/ovlmenu.ovl",
+    "/atmosphere/contents/420000000007E51A/flags/boot2.flag"};
+bool exists(const std::string& path) {
+    struct stat st{};
+    return !stat(path.c_str(), &st);
+}
+bool read(const std::string& path, Bytes& bytes) {
+    FILE* file = std::fopen(path.c_str(), "rb");
+    if (!file) return false;
+    struct stat st{};
+    const bool sized = !fstat(fileno(file), &st) && st.st_size >= 0 && st.st_size <= 4 * 1024 * 1024;
+    if (sized) bytes.resize(static_cast<size_t>(st.st_size));
+    const bool ok = sized && std::fread(bytes.data(), 1, bytes.size(), file) == bytes.size() && !std::ferror(file);
+    return std::fclose(file) == 0 && ok;
+}
+std::uint64_t hash(const Bytes& bytes) {
+    std::uint64_t value = 14695981039346656037ull;
+    for (const auto byte : bytes) value = (value ^ byte) * 1099511628211ull;
+    return value;
+}
+bool directories(const std::string& path) {
+    for (size_t i = 1; i < path.size(); ++i) {
+        if (path[i] != '/') continue;
+        const auto part = path.substr(0, i);
+        if (part.back() == ':') continue;
+#ifdef _WIN32
+        const int result = _mkdir(part.c_str());
+#else
+        const int result = mkdir(part.c_str(), 0777);
+#endif
+        if (result && errno != EEXIST) return false;
+    }
+    return true;
+}
+bool write(const std::string& path, const Bytes& bytes) {
+    if (!directories(path)) return false;
+    FILE* file = std::fopen(path.c_str(), "wb");
+    if (!file) return false;
+    bool ok = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+    if (std::fflush(file)) ok = false;
+#ifdef _WIN32
+    if (_commit(_fileno(file))) ok = false;
+#else
+    if (fsync(fileno(file))) ok = false;
+#endif
+    if (std::fclose(file)) ok = false;
+    return ok;
+}
+bool publish(const std::string& path, const Bytes& bytes) {
+    Bytes old;
+    const bool had_old = exists(path);
+    if (had_old && !read(path, old)) return false;
+    if (had_old && old == bytes) return true;
+    const auto incoming = path + ".incoming";
+    Bytes verified;
+    if (!write(incoming, bytes) || !read(incoming, verified) || verified != bytes) return false;
+    const auto backup = path + ".re4-controls.previous";
+    if (had_old && !exists(backup) && !write(backup, old)) return false;
+    if (had_old && std::remove(path.c_str())) return false;
+    if (!std::rename(incoming.c_str(), path.c_str())) return true;
+    if (had_old) write(path, old);
+    return false;
+}
+}
+static const char* install_bundle(const char* payload_root, const char* sd_root, bool loader, bool only_overlay = false) {
+    if (!payload_root || !sd_root) return "Payload missing";
+    std::array<Bytes, 3> payload;
+    std::array<std::string, 3> paths;
+    Bytes receipt;
+    const auto receipt_path = std::string(sd_root) + (loader ? "/switch/re4-controls/installed-loader.bin" : "/switch/re4-controls/installed-files.bin");
+    const bool ours = read(receipt_path, receipt) && receipt.size() == 32 && !std::memcmp(receipt.data(), "RE4INST1", 8);
+    for (unsigned i = 0; i < 3; ++i) {
+        if (!read(std::string(payload_root) + '/' + (loader ? loader_names[i] : names[i]), payload[i])) return "Payload missing";
+        const size_t offset = loader ? (i == 1 ? 16 : 0) : (i == 2 ? 16 : 0);
+        const char* magic = loader ? (i == 0 ? "PFS0" : "NRO0") : (i == 0 ? "NSO0" : i == 1 ? "META" : "NRO0");
+        if (loader && i == 2) {
+            if (!payload[i].empty()) return "Invalid boot flag payload";
+        } else if (payload[i].size() < 128 || std::memcmp(payload[i].data() + offset, magic, 4)) return "Invalid payload";
+        paths[i] = std::string(sd_root) + (loader ? loader_destinations[i] : destinations[i]);
+        if ((!only_overlay || i == 2) && exists(paths[i])) {
+            Bytes current;
+            if (!read(paths[i], current)) return "Cannot read existing file";
+            if (current == payload[i]) continue;
+            std::uint64_t expected = 0;
+            if (ours) std::memcpy(&expected, receipt.data() + 8 + 8 * i, 8);
+            if (!ours || hash(current) != expected) return "Conflict: existing files belong to another mod";
+        }
+    }
+    for (unsigned i = 0; i < 3; ++i)
+        if ((!only_overlay || i == 2) && !publish(paths[i], payload[i])) return "SD write failed; close RE4 until installation succeeds";
+    if (!ours) receipt.assign(32, 0);
+    else receipt.resize(32);
+    std::memcpy(receipt.data(), "RE4INST1", 8);
+    for (unsigned i = 0; i < 3; ++i) {
+        if (only_overlay && i != 2) continue;
+        const auto digest = hash(payload[i]);
+        std::memcpy(receipt.data() + 8 + 8 * i, &digest, 8);
+    }
+    if (!publish(receipt_path, receipt)) return "Files installed; receipt write failed";
+    return loader ? "Installed overlay loader. Reboot CFW to enable the menu." : only_overlay
+        ? "Installed RE4 overlay. Open the existing Uberhand menu."
+        : "Installed movement patch. Restart RE4. Gyro in game is pending.";
+}
+static const char* disable_bundle(const char* sd_root, bool loader) {
+    if (!sd_root) return "Conflict: no SD root";
+    Bytes receipt;
+    if (!read(std::string(sd_root) + (loader ? "/switch/re4-controls/installed-loader.bin" : "/switch/re4-controls/installed-files.bin"), receipt)
+        || receipt.size() != 32 || std::memcmp(receipt.data(), "RE4INST1", 8))
+        return "Conflict: installation receipt unavailable";
+    std::array<std::string, 3> paths;
+    for (unsigned i = 0; i < 3; ++i) {
+        paths[i] = std::string(sd_root) + (loader ? loader_destinations[i] : destinations[i]);
+        if (!exists(paths[i])) continue;
+        Bytes current, disabled;
+        std::uint64_t expected;
+        std::memcpy(&expected, receipt.data() + 8 + 8 * i, 8);
+        if (!read(paths[i], current) || hash(current) != expected)
+            return "Conflict: file changed outside RE4 Controls";
+        const auto backup = paths[i] + ".re4-controls.disabled";
+        if (exists(backup) && (!read(backup, disabled) || disabled != current))
+            return "Conflict: older disabled copy already exists";
+    }
+    for (const auto& path : paths) {
+        if (!exists(path)) continue;
+        const auto backup = path + ".re4-controls.disabled";
+        if (exists(backup)) {
+            if (std::remove(path.c_str())) return "SD error while disabling patch";
+        } else if (std::rename(path.c_str(), backup.c_str())) return "SD error while disabling patch";
+    }
+    return loader ? "Disabled overlay loader. Reboot CFW to stop the menu." : "Disabled RE4 patch. Original game files will load at next start.";
+}
+const char* install_game_files(const char* payload, const char* sd) { return install_bundle(payload, sd, false); }
+const char* disable_game_files(const char* sd) { return disable_bundle(sd, false); }
+const char* install_overlay_loader(const char* payload, const char* sd) { return install_bundle(payload, sd, true); }
+const char* install_overlay_only(const char* payload, const char* sd) { return install_bundle(payload, sd, false, true); }
+const char* disable_overlay_loader(const char* sd) { return disable_bundle(sd, true); }
+}

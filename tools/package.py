@@ -28,13 +28,21 @@ def package() -> None:
         'licenses/exlaunch-GPL2.txt': ROOT / 'third_party/exlaunch/LICENSE',
         'licenses/libtesla-GPL2.txt': ROOT / 'third_party/libtesla/LICENSE',
         'licenses/Switch-Debug-Kit-MIT.txt': ROOT / 'third_party/switch-debug-kit/LICENSE',
+        'licenses/nx-ovlloader-GPL2.txt': ROOT / 'third_party/nx-ovlloader/LICENSE.md',
     }
     manifest = {'status': 'experimental; hardware acceptance pending',
                 'features': ['proportional movement turning', 'turning overlay', 'sensor diagnostic NRO'],
-                'pending': ['stationary turning', 'in-game gyro', 'aim/camera gains', 'hardware reload cycle'],
+                'verified': ['diagnostic sticks/gyro on console', 'NRO changed-image reload and new PID', 'cold-launch credential'],
+                'pending': ['movement hook activation', 'stationary turning', 'in-game gyro', 'aim/camera gains', 'overlay loader hardware'],
                 'files': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}}
     destination = OUT / 're4-controls-experimental.zip'
     local = OUT / 'local-sd'
+    # Rebuild this generated tree so removed optional artifacts cannot linger
+    # and overwrite an existing console's overlay menu on a later copy.
+    if local.exists():
+        if local.resolve().parent != OUT.resolve() or local.name != 'local-sd':
+            raise RuntimeError('Unexpected generated SD tree path')
+        shutil.rmtree(local)
     with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:
         for name, path in files.items():
             archive.write(path, name)

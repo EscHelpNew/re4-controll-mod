@@ -8,6 +8,8 @@
 #include "re4/input.hpp"
 #include "re4/settings.hpp"
 #include "re4/settings_file.hpp"
+#include "re4/install.hpp"
+#include "game_link.hpp"
 extern "C" {
 #include "remote_reload.h"
 #include "reload_main.h"
@@ -18,9 +20,139 @@ extern "C" {
 
 namespace {
 constexpr float tau = 6.28318530718f;
+void inspect_overlay_loader(FILE* report) {
+    u64 pid = 0;
+    const auto rc = pmdmntGetProcessId(&pid, 0x420000000007E51Aull);
+    std::fprintf(report, "ovlloader process rc=%08X pid=%llX\n", rc, (unsigned long long)pid);
+    for (const auto config : {"sdmc:/config/uberhand/config.ini", "sdmc:/config/ultrahand/config.ini", "sdmc:/config/tesla/config.ini"}) {
+        FILE* file = std::fopen(config, "rb");
+        if (!file) continue;
+        char line[256];
+        for (unsigned lines = 0; lines < 512 && std::fgets(line, sizeof(line), file); ++lines)
+            if (std::strstr(line, "key_combo")) std::fprintf(report, "%s: %.150s", config, line);
+        std::fclose(file);
+    }
+    for (const auto path : {"sdmc:/atmosphere/contents/420000000007E51A/exefs.nsp",
+            "sdmc:/atmosphere/contents/420000000007E51A/flags/boot2.flag",
+            "sdmc:/switch/.overlays/ovlmenu.ovl"}) {
+        struct stat st{};
+        if (stat(path, &st)) { std::fprintf(report, "absent %s\n", path); continue; }
+        std::fprintf(report, "file %s bytes=%lld\n", path, (long long)st.st_size);
+        FILE* file = std::fopen(path, "rb");
+        if (!file) continue;
+        if (std::strstr(path, "ovlmenu.ovl")) {
+            unsigned char header[0x80]{};
+            if (std::fread(header, 1, sizeof(header), file) == sizeof(header) && !std::memcmp(header + 16, "NRO0", 4)) {
+                u32 nro_size = 0; std::memcpy(&nro_size, header + 24, 4);
+                unsigned char aset[56]{};
+                if (nro_size < u64(st.st_size) && !std::fseek(file, nro_size, SEEK_SET)
+                    && std::fread(aset, 1, sizeof(aset), file) == sizeof(aset) && !std::memcmp(aset, "ASET", 4)) {
+                    u64 offset = 0; std::memcpy(&offset, aset + 24, 8);
+                    if (offset < u64(st.st_size) - nro_size && !std::fseek(file, nro_size + offset, SEEK_SET)) {
+                        char name[129]{};
+                        std::fread(name, 1, sizeof(name) - 1, file);
+                        for (auto& c : name) if (static_cast<unsigned char>(c) < 32 && c) c = '?';
+                        std::fprintf(report, "overlay_menu_name=%.128s\n", name);
+                    }
+                }
+            }
+        }
+        std::fclose(file);
+    }
+}
+void inspect_installed_re4(FILE* report) {
+    const auto ncm_rc = ncmInitialize();
+    std::fprintf(report, "ncm=%08X\n", ncm_rc);
+    if (R_SUCCEEDED(ncm_rc)) {
+        for (const auto storage : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+            NcmContentMetaDatabase db{};
+            const auto opened = ncmOpenContentMetaDatabase(&db, storage);
+            std::fprintf(report, "meta storage=%u rc=%08X\n", unsigned(storage), opened);
+            if (R_FAILED(opened)) continue;
+            for (const auto title : {0x010099A00BC1E000ull, 0x010099A00BC1E800ull}) {
+                NcmContentMetaKey key{};
+                const auto rc = ncmContentMetaDatabaseGetLatestContentMetaKey(&db, &key, title);
+                std::fprintf(report, "title=%016llX rc=%08X version=%u type=%u\n", title, rc, key.version, unsigned(key.type));
+            }
+            ncmContentMetaDatabaseClose(&db);
+        }
+        ncmExit();
+    }
+    const auto lr_rc = lrInitialize();
+    const auto fs_rc = fsldrInitialize();
+    std::fprintf(report, "installed_read lr=%08X fsp_ldr=%08X\n", lr_rc, fs_rc);
+    if (R_SUCCEEDED(lr_rc)) {
+        for (const auto storage : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+            LrLocationResolver resolver{};
+            Result rc = lrOpenLocationResolver(storage, &resolver);
+            if (R_FAILED(rc)) continue;
+            char path[FS_MAX_PATH]{};
+            rc = lrLrResolveProgramPath(&resolver, 0x010099A00BC1E000ull, path);
+            serviceClose(&resolver.s);
+            std::fprintf(report, "storage=%u resolve=%08X\n", unsigned(storage), rc);
+            if (R_FAILED(rc)) continue;
+            std::fprintf(report, "program_path=%s\n", path);
+            if (R_FAILED(fs_rc)) continue;
+            FsCodeInfo info{};
+            FsFileSystem fs{};
+            rc = fsldrOpenCodeFileSystem(&info, 0x010099A00BC1E000ull, storage, path,
+                FsContentAttributes_None, &fs);
+            std::fprintf(report, "open_code=%08X\n", rc);
+            if (R_FAILED(rc)) continue;
+            FsFile main{};
+            rc = fsFsOpenFile(&fs, "/main", FsOpenMode_Read, &main);
+            if (R_SUCCEEDED(rc)) {
+                unsigned char header[0x100]{};
+                u64 count = 0;
+                rc = fsFileRead(&main, 0, header, sizeof(header), FsReadOption_None, &count);
+                std::fprintf(report, "main_header rc=%08X bytes=%llu build=", rc, (unsigned long long)count);
+                if (R_SUCCEEDED(rc) && count >= 0x60 && !std::memcmp(header, "NSO0", 4))
+                    for (unsigned i = 0x40; i < 0x60; ++i) std::fprintf(report, "%02X", header[i]);
+                std::fprintf(report, "\n");
+                fsFileClose(&main);
+            } else std::fprintf(report, "open_main=%08X\n", rc);
+            fsFsClose(&fs);
+        }
+    }
+    if (R_SUCCEEDED(fs_rc)) fsldrExit();
+    if (R_SUCCEEDED(lr_rc)) lrExit();
+}
+bool persist_reload_token(const char* token) {
+    if (!reload_token_valid(token)) return false;
+    mkdir("sdmc:/switch", 0777);
+    mkdir(NXDK_SD_ROOT, 0777);
+    constexpr const char* path = NXDK_SD_ROOT "/token.txt";
+    constexpr const char* incoming = NXDK_SD_ROOT "/token.txt.incoming";
+    constexpr const char* backup = NXDK_SD_ROOT "/token.txt.previous";
+    char existing[65]{};
+    FILE* old = std::fopen(path, "rb");
+    const bool had_old = old != nullptr;
+    if (old) {
+        const auto count = std::fread(existing, 1, sizeof(existing), old);
+        std::fclose(old);
+        if ((count == 64 || (count == 65 && existing[64] == '\n'))
+            && !std::memcmp(existing, token, 64)) return true;
+    }
+    FILE* file = std::fopen(incoming, "wb");
+    if (!file) return false;
+    bool ok = std::fwrite(token, 1, 64, file) == 64;
+    if (std::fflush(file) || fsync(fileno(file))) ok = false;
+    if (std::fclose(file)) ok = false;
+    if (!ok) return false;
+    if (had_old) {
+        struct stat st{};
+        if (!stat(backup, &st)) return false; // Preserve the prior credential backup.
+        if (std::rename(path, backup)) return false;
+    }
+    if (!std::rename(incoming, path)) return true;
+    if (had_old) std::rename(backup, path);
+    return false;
+}
 void configure_reload(int argc, char** argv) {
     for (int i = 0; i < argc; ++i) {
         if (!std::strncmp(argv[i], "--token=", 8)) {
+            if (!persist_reload_token(argv[i] + 8))
+                std::fprintf(stderr, "[reload] SD credential persistence unavailable\n");
             game_reload_configure(argc, argv); return;
         }
     }
@@ -103,10 +235,36 @@ int main(int argc, char** argv) {
     consoleInit(nullptr);
     mkdir("sdmc:/config", 0777); mkdir("sdmc:/config/re4-controls", 0777);
     mkdir("sdmc:/switch", 0777); mkdir(NXDK_SD_ROOT, 0777);
+    // Album/applet launch can inspect suspended RE4 without replacing it.
+    const auto debug_init = pmdmntInitialize();
+    if (R_SUCCEEDED(debug_init)) {
+        GameLink game;
+        game.initialize(); game.connect();
+        FILE* report = std::fopen(NXDK_SD_ROOT "/reload-bridge.log", "wb");
+        if (report) {
+            std::fprintf(report, "RE4 inspection HOS=%08X applet=%u\n%s\n", hosversionGet(),
+                unsigned(appletGetAppletType()), game.details.c_str());
+            FILE* previous = std::fopen(NXDK_SD_ROOT "/game-inspection.txt", "rb");
+            if (previous) {
+                char text[701]{};
+                const auto count = std::fread(text, 1, sizeof(text) - 1, previous);
+                std::fclose(previous);
+                std::fprintf(report, "last_overlay_inspection:\n%.*s\n", int(count), text);
+            }
+            inspect_overlay_loader(report);
+            inspect_installed_re4(report);
+            std::fclose(report);
+        }
+        game.close(); pmdmntExit();
+    }
     const Result sockets = socketInitializeDefault();
     if (R_SUCCEEDED(sockets)) {
         nxlinkStdioForDebug();
-        game_reload_start(NXDK_APP_NAME, "0.1.0");
+        u64 process_id = 0;
+        svcGetProcessId(&process_id, CUR_PROCESS_HANDLE);
+        char instance[24];
+        std::snprintf(instance, sizeof(instance), "0.1.6-p%llX", (unsigned long long)process_id);
+        game_reload_start(NXDK_APP_NAME, instance);
     }
     PadState pad;
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
@@ -131,6 +289,26 @@ int main(int argc, char** argv) {
         padUpdate(&pad);
         const auto down = padGetButtonsDown(&pad);
         if (down & HidNpadButton_Plus) break;
+        if (down & (HidNpadButton_R | HidNpadButton_Minus | HidNpadButton_ZR)) {
+            u64 running_pid = 0;
+            const Result pm = pmdmntInitialize();
+            const Result info = pminfoInitialize();
+            u64 running_title = 0;
+            const bool running = R_SUCCEEDED(pm) && R_SUCCEEDED(info)
+                && R_SUCCEEDED(pmdmntGetApplicationProcessId(&running_pid))
+                && R_SUCCEEDED(pminfoGetProgramId(&running_title, running_pid))
+                && running_title == 0x010099A00BC1E000ull;
+            if (running) status = "Close Resident Evil 4 before changing files.";
+            else if (down & HidNpadButton_Minus) status = (padGetButtons(&pad) & HidNpadButton_ZL)
+                ? re4::disable_overlay_loader("sdmc:") : re4::disable_game_files("sdmc:");
+            else if (R_SUCCEEDED(romfsInit())) {
+                status = (down & HidNpadButton_ZR) ? re4::install_overlay_only("romfs:", "sdmc:")
+                    : re4::install_game_files("romfs:", "sdmc:");
+                romfsExit();
+            } else status = "Bundled game files unavailable.";
+            if (R_SUCCEEDED(info)) pminfoExit();
+            if (R_SUCCEEDED(pm)) pmdmntExit();
+        }
         if (sensors.select(pad)) {
             integrator.reset(); calibration_left = 0; aim_x = aim_y = 0;
         }
@@ -177,7 +355,7 @@ int main(int argc, char** argv) {
         const float lx = re4::shape_axis(left.x / 32767.f, settings.left_deadzone, settings.turn_gain);
         const float rx = re4::shape_axis(right.x / 32767.f, settings.right_deadzone, settings.aim_gain_x);
         const float ry = re4::shape_axis(right.y / 32767.f, settings.right_deadzone, settings.aim_gain_y);
-        std::printf("\x1b[HRE4 CONTROLS - diagnostic 0.1.0\x1b[K\n"
+        std::printf("\x1b[HRE4 CONTROLS - diagnostic 0.1.6\x1b[K\n"
             "Pad connected: %s  style: %08lX\x1b[K\n"
             "Raw LEFT  X:%7ld Y:%7ld\x1b[K\nRaw RIGHT X:%7ld Y:%7ld\x1b[K\n"
             "Processed turn:% .3f  aim:% .3f % .3f\x1b[K\n"
@@ -194,10 +372,12 @@ int main(int argc, char** argv) {
             std::printf("%c %-17s %5.2f\x1b[K\n", i == row ? '>' : ' ', names[i], *values[i]);
         std::printf("\nUP/DOWN select  LEFT/RIGHT change\x1b[K\n"
             "A gyro on/off  Y calibrate  X reset preview\x1b[K\n"
-            "B save  PLUS exit\x1b[K\n%s\x1b[K\n"
-            "NRO receiver: %s  title:%016llX\x1b[K\n"
+            "B save  R install  MINUS disable patch  PLUS exit\x1b[K\n%s\x1b[K\n"
+            "ZR install RE4 menu (keeps existing Uberhand)\x1b[K\n"
+            "Network: %s  configured title:%016llX\x1b[K\n"
+            "Verify NRO receiver with host STATUS.\x1b[K\n"
             "Automatic RUN needs own installed forwarder.\x1b[K\n",
-            status, R_SUCCEEDED(sockets) ? "enabled with token" : "network unavailable",
+            status, R_SUCCEEDED(sockets) ? "initialized" : "unavailable",
             (unsigned long long)NXDK_TITLE_ID);
         if (++frame % 120 == 0) std::fprintf(stderr,
             "[input] style=%08lX raw=%ld,%ld,%ld,%ld gyro_samples=%u sensor_rc=%08lX\n",

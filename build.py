@@ -32,6 +32,9 @@ def tests():
          'tests/settings_file_tests.cpp', 'source/settings.cpp', 'source/settings_file.cpp',
          '-o', OUT / 'settings_file_tests.exe'])
     run([OUT / 'settings_file_tests.exe'])
+    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
+         'tests/install_tests.cpp', 'source/install.cpp', '-o', OUT / 'install_tests.exe'])
+    run([OUT / 'install_tests.exe'])
 
 
 def diagnostic():
@@ -40,7 +43,7 @@ def diagnostic():
     config.mkdir(exist_ok=True)
     (config / 'reload_project.h').write_text(header(cfg), encoding='utf-8')
     receiver = KIT / 'receiver'
-    includes = ['-I' + str(p) for p in (ROOT / 'include', receiver, config)]
+    includes = ['-I' + str(p) for p in (ROOT / 'include', ROOT / 'source/overlay', receiver, config)]
     includes += ['-isystem', str(SDK / 'libnx/include')]
     common = ['-O2', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-misleading-indentation',
               '-march=armv8-a+crc+crypto', '-mtune=cortex-a57', '-ffixed-x18',
@@ -51,7 +54,8 @@ def diagnostic():
         dest = OUT / (name + '.o')
         run([tool('gcc'), '-std=gnu11', *common, '-c', receiver / (name + '.c'), '-o', dest])
         objects.append(dest)
-    for source in ('source/input.cpp', 'source/settings.cpp', 'source/settings_file.cpp',
+    for source in ('source/input.cpp', 'source/settings.cpp', 'source/settings_file.cpp', 'source/install.cpp',
+                   'source/overlay/game_link.cpp',
                    'source/diagnostic/main.cpp'):
         dest = OUT / (Path(source).stem + '.o')
         run([tool('g++'), '-std=gnu++17', '-fno-exceptions', '-fno-rtti', *common,
@@ -62,9 +66,17 @@ def diagnostic():
     env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), '-specs=' + str(SDK / 'libnx/switch.specs'), *common,
          *objects, '-L' + str(SDK / 'libnx/lib'), '-lnx', '-lm', '-o', elf], env=env)
-    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.1.0', nacp,
+    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.1.6', nacp,
          '--titleid=' + cfg['title_id']])
-    run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp)])
+    payload = OUT / 'diagnostic-romfs'
+    payload.mkdir(exist_ok=True)
+    base = OUT / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
+    for name, source in {'subsdk9': base / 'subsdk9', 'main.npdm': base / 'main.npdm',
+                         're4-controls.ovl': OUT / 'experimental/switch/.overlays/re4-controls.ovl'}.items():
+        if not source.is_file():
+            raise RuntimeError('Build --module --overlay before the bundled diagnostic NRO')
+        shutil.copy2(source, payload / name)
+    run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp), '--romfsdir=' + str(payload)])
     digest = hashlib.sha256(nro.read_bytes()).hexdigest()
     (OUT / 'diagnostic.json').write_text(json.dumps({'file': nro.name,
         'bytes': nro.stat().st_size, 'sha256': digest, 'title_id': cfg['title_id']}, indent=2) + '\n')
@@ -125,6 +137,7 @@ def module():
     command = ['C:/msys64/usr/bin/make.exe', '-j4', 'PROGRAM_ID=010099A00BC1E000',
                'CXX_FLAGS=' + flags]
     subprocess.run(command, cwd=stage, env=env, check=True)
+    run([sys.executable, ROOT / 'tools/check_hook_abi.py', stage / 'build/inline_asm.o'])
     package = OUT / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
     package.mkdir(parents=True, exist_ok=True)
     shutil.copy2(stage / 'deploy/subsdk9', package / 'subsdk9')
@@ -151,7 +164,9 @@ def overlay():
          '-lnx', '-lm', '-o', elf], env=env)
     output = OUT / 'experimental/switch/.overlays/re4-controls.ovl'
     output.parent.mkdir(parents=True, exist_ok=True)
-    run([sdk_tool('elf2nro'), elf, output])
+    nacp = OUT / 're4-controls-overlay.nacp'
+    run([sdk_tool('nacptool'), '--create', 'RE4 Controls', 're4-controls', '0.1.0', nacp])
+    run([sdk_tool('elf2nro'), elf, output, '--nacp=' + str(nacp)])
     print('Built EXPERIMENTAL overlay:', output)
 
 
@@ -165,11 +180,11 @@ if __name__ == '__main__':
     OUT.mkdir(exist_ok=True)
     if args.test:
         tests()
-    if args.nro:
-        diagnostic()
     if args.module:
         module()
     if args.overlay:
         overlay()
+    if args.nro:
+        diagnostic()
     if not (args.test or args.nro or args.module or args.overlay):
         parser.print_help()

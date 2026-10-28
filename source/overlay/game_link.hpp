@@ -9,6 +9,7 @@ class GameLink {
     u64 process_ = 0, address_ = 0;
     bool info_ready_ = false;
 public:
+    std::string details;
     std::string message = "Подключение не выполнено";
     void initialize();
     void close();

@@ -44,16 +44,28 @@ void GameLink::close() {
 }
 bool GameLink::connect() {
     address_ = process_ = 0;
+    details = "RE4 process unavailable";
     u64 pid = 0, title = 0;
     if (!info_ready_ || R_FAILED(pmdmntGetApplicationProcessId(&pid))
         || R_FAILED(pminfoGetProgramId(&title, pid)) || title != re4::profile::title_id) {
         message = "Запусти Resident Evil 4"; return false;
     }
     if (!serviceIsActive(&service_) || R_FAILED(serviceDispatch(&service_, 65003))) {
+        details = "RE4 found, dmnt attach unavailable";
         message = "Не удалось подключиться к игре"; return false;
     }
     Metadata metadata{};
-    if (R_FAILED(serviceDispatchOut(&service_, 65002, metadata)) || !supported(metadata)) {
+    const auto metadata_result = serviceDispatchOut(&service_, 65002, metadata);
+    char diagnostic[256];
+    std::snprintf(diagnostic, sizeof(diagnostic), "metadata_rc=%08X pid=%llX title=%016llX main=%llX build=",
+        metadata_result, (unsigned long long)metadata.pid, (unsigned long long)metadata.title,
+        (unsigned long long)metadata.main.base);
+    details = diagnostic;
+    for (const auto byte : metadata.build_id) {
+        std::snprintf(diagnostic, sizeof(diagnostic), "%02X", byte); details += diagnostic;
+    }
+    if (R_FAILED(metadata_result) || !supported(metadata)) {
+        details += "\nunsupported profile";
         message = "Эта сборка RE4 пока не поддерживается"; return false;
     }
     std::array<MemoryInfo, 32> mappings;
@@ -75,6 +87,10 @@ bool GameLink::connect() {
                     re4::SharedControl block{};
                     if (std::memcmp(buffer.data() + j, re4::kSharedMarker, sizeof(re4::kSharedMarker))) continue;
                     std::memcpy(&block, buffer.data() + j, sizeof(block));
+                    std::snprintf(diagnostic, sizeof(diagnostic), "\nmodule=%llX abi=%u status=%u frames=%llu raw_lx=%.3f",
+                        (unsigned long long)(mapping.addr + page + j), block.abi, block.status,
+                        (unsigned long long)block.frames, block.raw_lx);
+                    details += diagnostic;
                     if (block.abi != 1 || block.status != 1 || !(block.capabilities & re4::kCapabilityTurning)) continue;
                     address_ = mapping.addr + page + j; process_ = metadata.pid;
                     message = "Подключено: повороты в движении";

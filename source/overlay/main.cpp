@@ -8,6 +8,11 @@ namespace {
 GameLink link;
 re4::Settings settings;
 std::string note;
+void record_connection() {
+    mkdir("sdmc:/switch", 0777); mkdir("sdmc:/switch/re4-controls", 0777);
+    FILE* file = std::fopen("sdmc:/switch/re4-controls/game-inspection.txt", "wb");
+    if (file) { std::fprintf(file, "%s\n", link.details.c_str()); std::fclose(file); }
+}
 void change() {
     const bool saved = re4::save_settings_file(re4::kSettingsPath, settings);
     link.apply(settings);
@@ -26,7 +31,7 @@ public:
         status_ = new tsl::elm::ListItem("Подключиться к игре", "A");
         status_->setClickListener([](u64 keys) {
             if (!(keys & HidNpadButton_A)) return false;
-            link.connect(); note = link.message; return true;
+            link.connect(); record_connection(); note = link.message; return true;
         });
         list->addItem(status_);
         list->addItem(new tsl::elm::CategoryHeader("Повороты при ходьбе и беге"));

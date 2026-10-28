@@ -42,13 +42,18 @@ bool save_settings_file(const char* path, const Settings& settings) {
     if (!written || !synced || !closed) return false;
     struct stat original{};
     const bool had_original = stat(path, &original) == 0;
-    if (had_original) {
+    Settings current;
+    const bool rotated = had_original && read(path, current);
+    if (rotated) {
         struct stat backup{};
         if (stat(previous.c_str(), &backup) == 0 && std::remove(previous.c_str())) return false;
         if (std::rename(path, previous.c_str())) return false;
+    } else if (had_original && std::remove(path)) {
+        // Retain the known-good recovery copy when the primary is corrupt.
+        return false;
     }
     if (std::rename(incoming.c_str(), path) == 0) return true;
-    if (had_original) std::rename(previous.c_str(), path);
+    if (rotated) std::rename(previous.c_str(), path);
     return false;
 }
 }

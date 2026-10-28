@@ -19,6 +19,12 @@ int main() {
     FILE* corrupt = std::fopen(path, "wb"); assert(corrupt);
     std::fputs("interrupted/corrupt", corrupt); std::fclose(corrupt);
     assert(re4::load_settings_file(path, loaded) && loaded.turn_gain == 1);
+    // Saving after recovery must not rotate the corrupt primary over the
+    // only valid backup. Losing the newly published primary models an
+    // interruption before publication of the incoming replacement.
+    assert(re4::save_settings_file(path, second));
+    assert(std::remove(path) == 0);
+    assert(re4::load_settings_file(path, loaded) && loaded.turn_gain == 1);
     std::remove("build/settings-test.bin.previous");
     loaded.turn_gain = 3;
     assert(!re4::load_settings_file(path, loaded) && loaded.turn_gain == 3);

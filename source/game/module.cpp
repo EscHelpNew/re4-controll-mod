@@ -7,6 +7,7 @@
 #include "re4/settings.hpp"
 #include "re4/shared.hpp"
 #include "re4/turn.hpp"
+#include "re4/hook_context.hpp"
 #include <atomic>
 
 namespace {
@@ -110,8 +111,8 @@ HOOK_DEFINE_INLINE(TurnDirection) {
 HOOK_DEFINE_INLINE(TurnSpeed) {
     static void Callback(exl::hook::InlineFloatCtx* context) {
         if (settings.analog_enabled)
-            context->S[0] *= re4::turn_factor(raw_left_x, dpad_turn,
-                                             settings.left_deadzone, settings.turn_gain);
+            re4::scale_saved_s0(context, re4::turn_factor(raw_left_x, dpad_turn,
+                                             settings.left_deadzone, settings.turn_gain));
     }
 };
 }
