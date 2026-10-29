@@ -45,7 +45,7 @@ struct SensorBackend {
 
 __attribute__((used, section(".data.re4control")))
 volatile re4::SharedControl control = {
-    "RE4CTL_SHARED_6", re4::kSharedAbi, 0, 0, re4::kCapabilityTurning, {}, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    "RE4CTL_SHARED_7", re4::kSharedAbi, 0, 0, re4::kCapabilityTurning, {}, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 re4::Settings settings;
 float raw_left_x = 0;
@@ -209,7 +209,7 @@ HOOK_DEFINE_TRAMPOLINE(MovementTurn) {
         if (normal) control.direction_calls = control.direction_calls + 1;
         if (!manual || bytes[0x114] != 0 || bytes[0x115] > 4) return;
         const float after = *reinterpret_cast<float*>(bytes + 0xB4);
-        const float factor = re4::turn_factor(raw_left_x, dpad_turn, settings.left_deadzone, settings.turn_gain);
+        const float factor = re4::turn_factor(raw_left_x, dpad_turn, settings.left_deadzone, settings.turn_gain, settings.stick_curve);
         const float corrected = re4::corrected_turn_yaw(before, after, factor);
         if (!std::isfinite(before) || !std::isfinite(after) || !std::isfinite(corrected)) return;
         control.speed_calls = control.speed_calls + 1;
@@ -231,7 +231,7 @@ HOOK_DEFINE_TRAMPOLINE(MotionAdvance) {
         if (!ours || dpad_move) return Orig(motion);
         auto* speed = reinterpret_cast<float*>(static_cast<std::uint8_t*>(motion) + 0xDC);
         const float original = *speed;
-        const float factor = std::fabs(re4::shape_axis(control.raw_ly, settings.left_deadzone, 1)) * settings.movement_gain;
+        const float factor = std::fabs(re4::shape_axis(control.raw_ly, settings.left_deadzone, 1, settings.stick_curve));
         if (!std::isfinite(original) || std::fabs(original) > 16) return Orig(motion);
         *speed = original * factor;
         control.movement_calls = control.movement_calls + 1;
@@ -249,8 +249,8 @@ HOOK_DEFINE_TRAMPOLINE(CameraInput) {
         auto* input = reinterpret_cast<std::int8_t*>(main_base + 0x124EC38 + (alternate ? 0xC0 : 8));
         const auto x = input[0], y = input[1];
         control.camera_calls = control.camera_calls + 1;
-        input[0] = re4::camera_axis(control.raw_rx, settings.right_deadzone, settings.camera_gain);
-        input[1] = re4::camera_axis(control.raw_ry, settings.right_deadzone, settings.camera_gain);
+        input[0] = re4::camera_axis(control.raw_rx, settings.right_deadzone, settings.camera_gain, settings.stick_curve);
+        input[1] = re4::camera_axis(control.raw_ry, settings.right_deadzone, settings.camera_gain, settings.stick_curve);
         Orig(camera);
         input[0] = x; input[1] = y;
     }
@@ -290,10 +290,10 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
         if (!settings.analog_enabled) return result;
         // Preserve the configured game's choice of aiming stick and direction;
         // use its output delta and the physical deflection magnitude.
-        const float x = std::fmax(std::fabs(re4::shape_axis(control.raw_lx, settings.left_deadzone, 1)),
-                                  std::fabs(re4::shape_axis(control.raw_rx, settings.right_deadzone, 1)));
-        const float y = std::fmax(std::fabs(re4::shape_axis(control.raw_ly, settings.left_deadzone, 1)),
-                                  std::fabs(re4::shape_axis(control.raw_ry, settings.right_deadzone, 1)));
+        const float x = std::fmax(std::fabs(re4::shape_axis(control.raw_lx, settings.left_deadzone, 1, settings.stick_curve)),
+                                  std::fabs(re4::shape_axis(control.raw_rx, settings.right_deadzone, 1, settings.stick_curve)));
+        const float y = std::fmax(std::fabs(re4::shape_axis(control.raw_ly, settings.left_deadzone, 1, settings.stick_curve)),
+                                  std::fabs(re4::shape_axis(control.raw_ry, settings.right_deadzone, 1, settings.stick_curve)));
         const float fx = (dpad_turn ? 1 : x) * settings.aim_gain_x;
         const float fy = (dpad_move ? 1 : y) * settings.aim_gain_y;
         if (dpad_turn || std::fabs(control.raw_lx) > 0.05f || std::fabs(control.raw_rx) > 0.05f) {

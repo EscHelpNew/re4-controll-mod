@@ -1,9 +1,10 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include "settings.hpp"
 
 namespace re4 {
-float shape_axis(float raw, float deadzone, float gain);
+float shape_axis(float raw, float deadzone, float gain, StickCurve curve = StickCurve::Linear);
 struct GyroSample {
     std::uint64_t number;
     std::uint64_t interval_ns;

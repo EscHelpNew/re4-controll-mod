@@ -51,7 +51,10 @@ public:
     void setState(bool value){state=value;}
 };
 class CategoryHeader:public Element {
-public: explicit CategoryHeader(const char*){}
+public:
+    std::string label;
+    explicit CategoryHeader(const char* value):label(value){}
+    void setText(const std::string& value){label=value;}
 };
 class List:public Element {
 public:
@@ -62,7 +65,10 @@ public:
 class OverlayFrame:public Element {
 protected: Element* m_contentElement=nullptr;
 public:
-    OverlayFrame(const std::string&,const std::string&){}
+    std::string title,subtitle;
+    OverlayFrame(const std::string& a,const std::string& b):title(a),subtitle(b){}
+    void setTitle(const std::string& value){title=value;}
+    void setSubtitle(const std::string& value){subtitle=value;}
     ~OverlayFrame(){delete m_contentElement;}
     void setContent(Element* p){m_contentElement=p;}
     Element* content(){return m_contentElement;}

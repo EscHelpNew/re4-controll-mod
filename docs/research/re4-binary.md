@@ -144,6 +144,24 @@ with independent user gain (not a claim of physically exact pitch tracking).
 
 ## References
 
+Version0.3.0 uses shared ABI7 with the same200-byte block and settings wirev4.
+Flags4..5 store the response curve and bit6 stores language. Old settings load
+English/linear; legacy walking-gain slots validate then reset to1.00 because
+the manual walking-speed control is removed. Old default0.15 deadzones migrate
+to0.05; other custom values are preserved. Both inversions stay on by default.
+
+Stick shaping follows deadzone normalization with x, x², log(1+9x)/log(10), or
+an exponential/log blend. The hybrid blend is smoothstep over x=0.25..0.75,
+keeping monotonicity, endpoints and sign. All movement/turn/camera/aim stick
+paths consume the selected curve; six-axis integration does not. Native
+callback tests verify curve propagation to animation speed, yaw, camera and aim.
+
+The standalone NRO now links installed SDL2 and uses HOS pl:u Standard shared
+font with unchanged stb_truetype. Font memory stays mapped until after texture/
+renderer cleanup. The actual renderer is exercised on Windows with EN/RU frames,
+then cross-built for Switch. Remote-reload polling remains on every main-loop
+iteration and the existing receiver finish path remains after cleanup.
+
 Version0.2.2 corrects native sway interaction: function0x33EC50 receives actor,
 changed-input flags, pitch*, relative-yaw*. Bit0 records a fresh manual baseline
 in actor+0x938 weapon context fields+0x28/+0x2C. With no changed-input flag,

@@ -126,7 +126,7 @@ static const char* install_bundle(const char* payload_root, const char* sd_root,
     if (!publish(receipt_path, receipt)) return "Files installed; receipt write failed";
     return loader ? "Installed overlay loader. Reboot CFW to enable the menu." : only_overlay
         ? "Installed RE4 overlay. Open the existing Uberhand menu."
-        : "Installed movement patch. Restart RE4. Gyro in game is pending.";
+        : "Installed RE4 Controls. Restart RE4.";
 }
 static const char* disable_bundle(const char* sd_root, bool loader) {
     if (!sd_root) return "Conflict: no SD root";

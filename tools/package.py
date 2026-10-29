@@ -31,16 +31,21 @@ def package() -> None:
         'licenses/libtesla-GPL2.txt': ROOT / 'third_party/libtesla/LICENSE',
         'licenses/Switch-Debug-Kit-MIT.txt': ROOT / 'third_party/switch-debug-kit/LICENSE',
         'licenses/nx-ovlloader-GPL2.txt': ROOT / 'third_party/nx-ovlloader/LICENSE.md',
+        'licenses/graphics-NOTICES.txt': ROOT / 'third_party/graphics-NOTICES.txt',
     }
     manifest = {'status': 'experimental; core controls confirmed on hardware in 0.2.2',
-                'version': '0.2.3',
+                'version': '0.3.0',
                 'features': ['proportional turning and walking', 'camera/aim sensitivity',
-                             'additive firearm-aim gyro', 'Russian settings overlay', 'reloadable diagnostic NRO'],
+                             'additive firearm-aim gyro', 'English/Russian settings',
+                             'four stick response curves', 'themed reloadable installer'],
                 'verified': ['user confirmed movement/camera/aim in 0.2.0',
                              'user confirmed additive aim-only gyro, vertical range, help and speed caps in 0.2.2',
                              'overlay UI on existing Uberhand',
+                             'user confirmed themed installer and mod installation in 0.3.0',
+                             'user confirmed EN/RU, four curves and removed walk-speed menu in 0.3.0',
                              'diagnostic sticks/gyro on console', 'NRO changed-image reload and new PID', 'cold-launch credential'],
-                'pending': ['icon display on console', 'special weapons and all gameplay contexts', 'controller switch in game'],
+                'pending': ['updated icon on HOME after DBI reinstallation',
+                            'special weapons and all gameplay contexts', 'controller switch in game'],
                 'files': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}}
     destination = OUT / 're4-controls-experimental.zip'
     local = OUT / 'local-sd'

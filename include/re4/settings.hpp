@@ -5,7 +5,11 @@
 namespace re4 {
 constexpr std::size_t kSettingsBytes = 64;
 constexpr const char* kSettingsPath = "sdmc:/config/re4-controls/settings.bin";
+enum class Language : std::uint8_t { English, Russian };
+enum class StickCurve : std::uint8_t { Linear, Exponential, Logarithmic, Hybrid };
 struct Settings {
+    Language language = Language::English;
+    StickCurve stick_curve = StickCurve::Linear;
     bool analog_enabled = true;
     bool gyro_enabled = false;
     bool invert_x = true;
@@ -15,13 +19,13 @@ struct Settings {
     float camera_gain = 1;
     float aim_gain_x = 1;
     float aim_gain_y = 1;
-    float left_deadzone = 0.15f;
-    float right_deadzone = 0.15f;
+    float left_deadzone = 0.05f;
+    float right_deadzone = 0.05f;
     float gyro_gain_x = 1;
     float gyro_gain_y = 1;
     float gyro_bias_x = 0;
     float gyro_bias_y = 0;
-    float movement_gain = 1;
+    float movement_gain = 1; // Legacy wire field; native walking maximum in v4.
 };
 bool valid_settings(const Settings& settings);
 bool encode_settings(const Settings& settings, std::uint8_t* out, std::size_t size);

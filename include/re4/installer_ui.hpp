@@ -1,0 +1,51 @@
+#pragma once
+#include "control_menu.hpp"
+#include <cstddef>
+#include <string>
+
+namespace re4 {
+enum class InstallerPage { Home, Controls, Diagnostics };
+enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview };
+enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview };
+enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
+struct DiagnosticSnapshot {
+    bool connected=false,network=false;
+    unsigned style=0,sensors=0,sensor_result=0,samples=0,calibration_remaining=0;
+    float raw[4]{},processed[4]{},gyro_rate[3]{},gyro_preview[2]{};
+};
+struct HomeItem {Bilingual label,help;};
+const std::array<HomeItem,7>& installer_home_items();
+class InstallerModel {
+public:
+    Settings settings;
+    InstallerPage page=InstallerPage::Home;
+    unsigned selected=0,home_selected=0;
+    InstallerStatus status=InstallerStatus::Ready;
+    DiagnosticSnapshot diagnostic;
+    std::string detail;
+    unsigned item_count()const;
+    InstallerAction handle(UiEvent);
+    const char* status_text()const;
+    const char* page_title()const;
+    const char* selected_help()const;
+    std::string item_label(unsigned index)const;
+    std::string item_value(unsigned index)const;
+    void installation_result(const char* result);
+    bool allow_installation(bool process_identified,bool re4_running);
+};
+
+class InstallerRenderer {
+    struct Impl;
+    Impl* impl_=nullptr;
+public:
+    InstallerRenderer();
+    ~InstallerRenderer();
+    InstallerRenderer(const InstallerRenderer&)=delete;
+    InstallerRenderer& operator=(const InstallerRenderer&)=delete;
+    bool initialize(const void* font,std::size_t font_size,const char* logo_bmp,bool hidden=false);
+    void draw(const InstallerModel&);
+    bool save_preview(const char* bmp_path);
+    void close();
+    const char* error()const;
+};
+}

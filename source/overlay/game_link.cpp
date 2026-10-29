@@ -35,7 +35,7 @@ Result write_memory(Service* service, u64 address, const void* data, size_t size
 void GameLink::initialize() {
     info_ready_ = R_SUCCEEDED(pminfoInitialize());
     if (R_FAILED(smGetService(&service_, "dmnt:cht")))
-        message = "Сервис отладки недоступен";
+        message = tr("Debug service unavailable","Сервис отладки недоступен");
 }
 void GameLink::close() {
     if (serviceIsActive(&service_)) serviceClose(&service_);
@@ -48,11 +48,11 @@ bool GameLink::connect() {
     u64 pid = 0, title = 0;
     if (!info_ready_ || R_FAILED(pmdmntGetApplicationProcessId(&pid))
         || R_FAILED(pminfoGetProgramId(&title, pid)) || title != re4::profile::title_id) {
-        message = "Запусти Resident Evil 4"; return false;
+        message = tr("Start Resident Evil 4","Запусти Resident Evil 4"); return false;
     }
     if (!serviceIsActive(&service_) || R_FAILED(serviceDispatch(&service_, 65003))) {
         details = "RE4 found, dmnt attach unavailable";
-        message = "Не удалось подключиться к игре"; return false;
+        message = tr("Could not connect to game","Не удалось подключиться к игре"); return false;
     }
     Metadata metadata{};
     const auto metadata_result = serviceDispatchOut(&service_, 65002, metadata);
@@ -66,7 +66,7 @@ bool GameLink::connect() {
     }
     if (R_FAILED(metadata_result) || !supported(metadata)) {
         details += "\nunsupported profile";
-        message = "Эта сборка RE4 пока не поддерживается"; return false;
+        message = tr("Unsupported RE4 build","Эта сборка RE4 пока не поддерживается"); return false;
     }
     std::array<MemoryInfo, 32> mappings;
     std::array<std::uint8_t, 0x1000 + sizeof(re4::SharedControl)> buffer;
@@ -108,14 +108,14 @@ bool GameLink::connect() {
                     details += diagnostic;
                     if (block.abi != re4::kSharedAbi || block.status != 1 || !(block.capabilities & re4::kCapabilityTurning)) continue;
                     address_ = mapping.addr + page + j; process_ = metadata.pid;
-                    message = "Подключено к игровому модулю";
+                    message = tr("Connected to game module","Подключено к игровому модулю");
                     return true;
                 }
             }
         }
         offset += count;
     }
-    message = "Мод не найден. Проверь установку и перезапусти RE4";
+    message = tr("Mod not found. Install and restart RE4","Мод не найден. Проверь установку и перезапусти RE4");
     return false;
 }
 bool GameLink::apply(const re4::Settings& settings) {
@@ -123,12 +123,12 @@ bool GameLink::apply(const re4::Settings& settings) {
     Metadata metadata{};
     if (R_FAILED(serviceDispatchOut(&service_, 65002, metadata)) || !supported(metadata)
         || metadata.pid != process_) {
-        address_ = process_ = 0; message = "Игра перезапущена. Подключись снова"; return false;
+        address_ = process_ = 0; message = tr("Game restarted. Reconnect","Игра перезапущена. Подключись снова"); return false;
     }
     re4::SharedControl block{};
     if (R_FAILED(read_memory(&service_, address_, &block, sizeof(block)))
         || std::memcmp(block.marker, re4::kSharedMarker, 16) || block.abi != re4::kSharedAbi || block.status != 1) {
-        address_ = 0; message = "Связь с модом потеряна"; return false;
+        address_ = 0; message = tr("Connection to mod lost","Связь с модом потеряна"); return false;
     }
     std::uint8_t bytes[re4::kSettingsBytes];
     if (!re4::encode_settings(settings, bytes, sizeof(bytes))) return false;
@@ -137,6 +137,7 @@ bool GameLink::apply(const re4::Settings& settings) {
     const bool applied = R_SUCCEEDED(write_memory(&service_, sequence, &odd, sizeof(odd)))
         && R_SUCCEEDED(write_memory(&service_, address_ + offsetof(re4::SharedControl, settings), bytes, sizeof(bytes)))
         && R_SUCCEEDED(write_memory(&service_, sequence, &even, sizeof(even)));
-    message = applied ? "Настройки отправлены в игру" : "Не удалось отправить настройки";
+    message = applied ? tr("Settings sent to game","Настройки отправлены в игру")
+                      : tr("Could not send settings","Не удалось отправить настройки");
     return applied;
 }

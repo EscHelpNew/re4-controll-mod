@@ -106,14 +106,14 @@ int main() {
         too_fast.*member = 1.01f;
         assert(!valid_settings(too_fast));
     }
-    settings.movement_gain = 0.4f;
+    settings.movement_gain = 1;
     std::uint8_t encoded[kSettingsBytes];
     assert(encode_settings(settings, encoded, sizeof(encoded)));
     Settings decoded;
     decoded.turn_gain = 2;
     assert(decode_settings(encoded, sizeof(encoded), decoded));
     assert(decoded.turn_gain == 1 && !decoded.gyro_enabled);
-    assert(close(decoded.movement_gain, 0.4f));
+    assert(decoded.movement_gain == 1);
     // Version 1's reserved slot was zero. Preserve existing SD settings and
     // give old files the original full walking speed.
     auto legacy = std::vector<std::uint8_t>(encoded, encoded + sizeof(encoded));
@@ -139,7 +139,7 @@ int main() {
     assert(decoded.left_deadzone==settings.left_deadzone);
     settings.movement_gain = std::numeric_limits<float>::quiet_NaN();
     assert(!encode_settings(settings, encoded, sizeof(encoded)));
-    settings.movement_gain = 0.4f;
+    settings.movement_gain = 1;
     assert(encode_settings(settings, encoded, sizeof(encoded)));
     encoded[24] ^= 1;
     assert(!decode_settings(encoded, sizeof(encoded), decoded));

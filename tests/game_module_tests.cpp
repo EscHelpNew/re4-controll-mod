@@ -84,6 +84,7 @@ struct Fixture {
         game_test::apply_sway=false;game_test::aim_step=0.08f;game_test::sway_baseline=0;
         game_test::program=re4::profile::title_id;
         settings={};settings.invert_x=settings.invert_y=false;
+        settings.left_deadzone=settings.right_deadzone=0.15f;
         file_read=false;last_sequence=0;raw_left_x=0;dpad_move=dpad_turn=false;movement_actor=nullptr;
         std::memset(const_cast<re4::SharedControl*>(&control),0,sizeof(control));
         std::memcpy(image.data()+re4::profile::build_id_offset,re4::profile::build_id,32);
@@ -117,11 +118,11 @@ int main(){
     }
     {
         Fixture f;f.actor[0x115]=1;f.flags()=0x45;
-        raw_left_x=control.raw_ly=0.575f;settings.turn_gain=0;settings.movement_gain=0.3f;
+        raw_left_x=control.raw_ly=0.575f;settings.turn_gain=0;
         MovementTurn::Callback(f.actor);
         assert(near(f.yaw(),0) && game_test::directions_seen==5);
         assert(f.flags()==0x85); // Only temporarily remapped direction bits restored.
-        assert(near(game_test::motion_speed_seen,1.25f*0.15f));
+        assert(near(game_test::motion_speed_seen,1.25f*0.5f));
         assert(*reinterpret_cast<float*>(f.actor+0x304)==1.25f);
         dpad_turn=dpad_move=true;MovementTurn::Callback(f.actor);
         assert(near(f.yaw(),0.04f) && game_test::motion_speed_seen==1.25f);
@@ -139,6 +140,15 @@ int main(){
             f.actor[0x114]=1;CameraInput::Callback(nullptr);
             assert(game_test::camera_x==12 && game_test::camera_y==-9);f.actor[0x114]=0;
         }
+    }
+    {
+        Fixture f;f.actor[0x115]=1;f.flags()=5;
+        settings.stick_curve=re4::StickCurve::Exponential;raw_left_x=control.raw_ly=0.575f;
+        MovementTurn::Callback(f.actor);
+        assert(near(f.yaw(),0.01f) && near(game_test::motion_speed_seen,1.25f*0.25f));
+        control.raw_rx=0.575f;CameraInput::Callback(nullptr);assert(game_test::camera_x==16);
+        f.aim();control.raw_lx=control.raw_ly=0.575f;f.yaw()=0;
+        AimSensitivity::Callback(f.actor,0);assert(near(f.yaw(),0.01f) && near(f.pitch()[0],0.02f));
     }
     {
         Fixture f;f.aim();settings.gyro_enabled=true;

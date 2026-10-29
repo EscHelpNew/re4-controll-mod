@@ -13,7 +13,7 @@ KIT = ROOT / 'third_party/switch-debug-kit'
 sys.path.insert(0, str(KIT / 'host'))
 from sdk import SDK, tool, sdk_tool
 from project import load, header, prepare
-from tools.prepare_icon import prepare as prepare_app_icon
+from tools.prepare_icon import prepare as prepare_app_icon, prepare_bitmap
 
 OUT = ROOT / 'build'
 
@@ -53,12 +53,43 @@ def tests():
     native('game_module_tests.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
-         'tests/overlay_ui_tests.cpp', 'source/settings.cpp', '-o', OUT / 'overlay_ui_tests.exe'])
+         'tests/overlay_ui_tests.cpp', 'source/settings.cpp', 'source/control_menu.cpp', '-o', OUT / 'overlay_ui_tests.exe'])
     native('overlay_ui_tests.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
          'tests/game_link_tests.cpp', 'source/settings.cpp', '-o', OUT / 'game_link_tests.exe'])
     native('game_link_tests.exe')
+    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
+         'tests/response_curve_tests.cpp', 'source/input.cpp', 'source/settings.cpp',
+         '-o', OUT / 'response_curve_tests.exe'])
+    native('response_curve_tests.exe')
+    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
+         'tests/control_menu_tests.cpp', 'source/control_menu.cpp', 'source/settings.cpp',
+         '-o', OUT / 'control_menu_tests.exe'])
+    native('control_menu_tests.exe')
+    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
+         'tests/installer_model_tests.cpp', 'source/diagnostic/installer_model.cpp',
+         'source/control_menu.cpp', 'source/settings.cpp', '-o', OUT / 'installer_model_tests.exe'])
+    native('installer_model_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/calibration_tests.cpp','-o',OUT/'calibration_tests.exe'])
+    native('calibration_tests.exe')
+    prepare_bitmap(ROOT / 'assets/icon-original.png',OUT / 'app-logo.bmp')
+    run([host,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static-libgcc','-static-libstdc++',
+         '-Iinclude','-IC:/msys64/mingw64/include/SDL2','-isystem','third_party/libtesla/include',
+         'tests/installer_preview.cpp','source/diagnostic/installer_renderer.cpp',
+         'source/diagnostic/installer_model.cpp','source/control_menu.cpp','source/settings.cpp','source/input.cpp',
+         '-LC:/msys64/mingw64/lib','-lSDL2','-o',OUT/'installer_preview.exe'])
+    preview_env=os.environ.copy()
+    preview_env['PATH']='C:/msys64/mingw64/bin'+os.pathsep+preview_env.get('PATH','')
+    preview_env['SDL_VIDEODRIVER']='dummy'
+    run([OUT/'installer_preview.exe'],env=preview_env,timeout=20)
+    from PIL import Image
+    for bitmap in OUT.glob('installer-*.bmp'):
+        with Image.open(bitmap) as frame:
+            if frame.size!=(1280,720) or len(frame.getcolors(1280*720))<30:
+                raise RuntimeError('Installer rendered a blank or malformed frame')
+            frame.save(bitmap.with_suffix('.png'))
 
 
 def diagnostic():
@@ -69,6 +100,8 @@ def diagnostic():
     receiver = KIT / 'receiver'
     includes = ['-I' + str(p) for p in (ROOT / 'include', ROOT / 'source/overlay', receiver, config)]
     includes += ['-isystem', str(SDK / 'libnx/include')]
+    includes += ['-isystem',str(SDK/'portlibs/switch/include/SDL2'),
+                 '-isystem',str(ROOT/'third_party/libtesla/include')]
     common = ['-O2', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-misleading-indentation',
               '-march=armv8-a+crc+crypto', '-mtune=cortex-a57', '-ffixed-x18',
               '-mtp=soft', '-fPIE', '-D__SWITCH__', *includes]
@@ -78,9 +111,10 @@ def diagnostic():
         dest = OUT / (name + '.o')
         run([tool('gcc'), '-std=gnu11', *common, '-c', receiver / (name + '.c'), '-o', dest])
         objects.append(dest)
-    for source in ('source/input.cpp', 'source/settings.cpp', 'source/settings_file.cpp', 'source/install.cpp',
+    for source in ('source/input.cpp', 'source/settings.cpp', 'source/control_menu.cpp', 'source/settings_file.cpp', 'source/install.cpp',
                    'source/overlay/game_link.cpp',
                    'source/overlay/storage.cpp',
+                   'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
                    'source/diagnostic/main.cpp'):
         dest = OUT / (Path(source).stem + '.o')
         run([tool('g++'), '-std=gnu++17', '-fno-exceptions', '-fno-rtti', *common,
@@ -90,11 +124,13 @@ def diagnostic():
     env = os.environ.copy()
     env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), '-specs=' + str(SDK / 'libnx/switch.specs'), *common,
-         *objects, '-L' + str(SDK / 'libnx/lib'), '-lnx', '-lm', '-o', elf], env=env)
-    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.2.3', nacp,
+         *objects, '-L'+str(SDK/'portlibs/switch/lib'),'-lSDL2','-lEGL','-lglapi','-ldrm_nouveau',
+         '-L' + str(SDK / 'libnx/lib'), '-lnx','-lpthread', '-lm', '-o', elf], env=env)
+    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.3.0', nacp,
          '--titleid=' + cfg['title_id']])
     payload = OUT / 'diagnostic-romfs'
     payload.mkdir(exist_ok=True)
+    prepare_bitmap(ROOT/'assets/icon-original.png',payload/'app-logo.bmp')
     base = OUT / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
     for name, source in {'subsdk9': base / 'subsdk9', 'main.npdm': base / 'main.npdm',
                          're4-controls.ovl': OUT / 'experimental/switch/.overlays/re4-controls.ovl'}.items():
@@ -187,7 +223,7 @@ def overlay():
     env = os.environ.copy(); env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), *flags, 'source/overlay/main.cpp', 'source/overlay/game_link.cpp',
          'source/overlay/storage.cpp',
-         'source/settings.cpp', 'source/settings_file.cpp',
+         'source/settings.cpp', 'source/settings_file.cpp', 'source/control_menu.cpp',
          '-specs=' + str(SDK / 'libnx/switch.specs'), '-L' + str(SDK / 'libnx/lib'),
          '-lnx', '-lm', '-o', elf], env=env)
     output = OUT / 'experimental/switch/.overlays/re4-controls.ovl'

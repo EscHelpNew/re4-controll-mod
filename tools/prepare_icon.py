@@ -15,3 +15,15 @@ def prepare(source: Path, destination: Path) -> Path:
     if destination.stat().st_size > 0x20000:
         raise ValueError('Switch icon exceeds 128 KiB')
     return destination
+
+
+def prepare_bitmap(source: Path, destination: Path) -> Path:
+    from PIL import Image, ImageOps
+    if source.resolve() == destination.resolve():
+        raise ValueError('The original icon must not be overwritten')
+    with Image.open(source) as image:
+        image = ImageOps.pad(image.convert('RGB'), (256, 256),
+                             method=Image.Resampling.LANCZOS, color='black')
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        image.save(destination, format='BMP')
+    return destination

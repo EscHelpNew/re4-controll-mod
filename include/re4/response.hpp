@@ -14,8 +14,8 @@ inline float scaled_axis_state(float before, float after, float factor,
         || std::fabs(after - before) > maximum_delta) return after;
     return std::fmax(-bound, std::fmin(bound, before + (after - before) * factor));
 }
-inline std::int8_t camera_axis(float raw, float deadzone, float gain) {
-    return static_cast<std::int8_t>(std::lround(shape_axis(raw, deadzone, gain) * 63));
+inline std::int8_t camera_axis(float raw, float deadzone, float gain, StickCurve curve = StickCurve::Linear) {
+    return static_cast<std::int8_t>(std::lround(shape_axis(raw, deadzone, gain, curve) * 63));
 }
 inline float gyro_pitch(float before, float delta) {
     if (!std::isfinite(before) || !std::isfinite(delta) || std::fabs(before) > 1) return before;

@@ -5,8 +5,8 @@
 #include <atomic>
 
 namespace re4 {
-constexpr char kSharedMarker[16] = "RE4CTL_SHARED_6";
-constexpr unsigned kSharedAbi = 6;
+constexpr char kSharedMarker[16] = "RE4CTL_SHARED_7";
+constexpr unsigned kSharedAbi = 7;
 // Wire layout is shared by the module and overlay, with no runtime pointers.
 // The overlay publishes an odd sequence, payload, then the next even sequence.
 // The module validates both sequence reads and the payload checksum.

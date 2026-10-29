@@ -1,4 +1,8 @@
+#define SDL_MAIN_HANDLED
 #include <switch.h>
+#include <SDL.h>
+#include "re4/installer_ui.hpp"
+#include "re4/calibration.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -233,7 +237,6 @@ int main(int argc, char** argv) {
     AppletStorage ordinary{};
     if (game_reload_take_user_channel(&ordinary)) appletStorageClose(&ordinary);
     configure_reload(argc, argv);
-    consoleInit(nullptr);
     mkdir("sdmc:/config", 0777); mkdir("sdmc:/config/re4-controls", 0777);
     mkdir("sdmc:/switch", 0777); mkdir(NXDK_SD_ROOT, 0777);
     // Album/applet launch can inspect suspended RE4 without replacing it.
@@ -275,131 +278,141 @@ int main(int argc, char** argv) {
         u64 process_id = 0;
         svcGetProcessId(&process_id, CUR_PROCESS_HANDLE);
         char instance[24];
-        std::snprintf(instance, sizeof(instance), "0.2.3-p%llX", (unsigned long long)process_id);
+        std::snprintf(instance, sizeof(instance), "0.3.0-p%llX", (unsigned long long)process_id);
         game_reload_start(NXDK_APP_NAME, instance);
     }
     PadState pad;
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     padInitializeDefault(&pad);
     Sensors sensors;
-    re4::Settings settings;
-    re4::load_settings_file(re4::kSettingsPath, settings);
+    re4::InstallerModel model;
+    auto& settings=model.settings;
+    re4::load_settings_file(re4::kSettingsPath,settings);
+    re4::InstallerRenderer renderer;
+    PlFontData font{};
+    const Result font_service=plInitialize(PlServiceType_User);
+    const bool font_ready=R_SUCCEEDED(font_service) && R_SUCCEEDED(plGetSharedFontByType(&font,PlSharedFontType_Standard));
+    const Result logo_fs=romfsInit();
+    const bool graphics=font_ready && renderer.initialize(font.address,font.size,
+        R_SUCCEEDED(logo_fs)?"romfs:/app-logo.bmp":nullptr);
+    if(R_SUCCEEDED(logo_fs))romfsExit();
+    if(!graphics){
+        model.detail=renderer.error();renderer.close();
+        consoleInit(nullptr);
+    }
     re4::GyroIntegrator integrator;
-    float aim_x = 0, aim_y = 0;
-    u64 last_calibration_sample = 0;
-    unsigned calibration_left = 0;
-    float sum_x = 0, sum_y = 0;
-    unsigned row = 0, frame = 0;
-    const char* status = "Ready. This diagnostic does not modify RE4.";
-    constexpr const char* names[] = {"Turn speed", "Camera speed", "Aim X", "Aim Y",
-        "Left deadzone", "Right deadzone", "Gyro X", "Gyro Y", "Walk/run speed"};
-    float* values[] = {&settings.turn_gain, &settings.camera_gain, &settings.aim_gain_x,
-        &settings.aim_gain_y, &settings.left_deadzone, &settings.right_deadzone,
-        &settings.gyro_gain_x, &settings.gyro_gain_y, &settings.movement_gain};
-    while (appletMainLoop()) {
+    float aim_x=0,aim_y=0;
+    re4::GyroCalibration calibration;
+    unsigned frame=0;
+    while(appletMainLoop()){
         game_reload_main_poll();
+        bool sdl_exit=false;
+        if(graphics){
+            SDL_Event event;
+            while(SDL_PollEvent(&event))if(event.type==SDL_QUIT)sdl_exit=true;
+        }
+        if(sdl_exit)break;
         padUpdate(&pad);
-        const auto down = padGetButtonsDown(&pad);
-        if (down & HidNpadButton_Plus) break;
-        if (down & (HidNpadButton_R | HidNpadButton_Minus | HidNpadButton_ZR)) {
-            u64 running_pid = 0;
-            const Result pm = pmdmntInitialize();
-            const Result info = pminfoInitialize();
-            u64 running_title = 0;
-            const bool running = R_SUCCEEDED(pm) && R_SUCCEEDED(info)
+        const auto down=padGetButtonsDown(&pad);
+        const auto previous_page=model.page;
+        re4::InstallerAction action=re4::InstallerAction::None;
+        using Key=re4::UiEvent;
+        if(down&HidNpadButton_Plus)action=model.handle(Key::Exit);
+        else if(down&HidNpadButton_B)action=model.handle(Key::Back);
+        else if(down&HidNpadButton_Up)action=model.handle(Key::Up);
+        else if(down&HidNpadButton_Down)action=model.handle(Key::Down);
+        else if(down&HidNpadButton_Left)action=model.handle(Key::Left);
+        else if(down&HidNpadButton_Right)action=model.handle(Key::Right);
+        else if(down&HidNpadButton_A)action=model.handle(Key::Confirm);
+        else if(down&HidNpadButton_R)action=model.handle(Key::QuickInstall);
+        else if(down&HidNpadButton_ZR)action=model.handle(Key::QuickOverlay);
+        else if(down&HidNpadButton_Minus)action=model.handle(Key::QuickDisable);
+        else if(down&HidNpadButton_Y)action=model.handle(Key::Calibrate);
+        else if(down&HidNpadButton_X)action=model.handle(Key::ResetPreview);
+        if(action==re4::InstallerAction::Exit)break;
+        if(action==re4::InstallerAction::InstallGame || action==re4::InstallerAction::InstallOverlay
+           || action==re4::InstallerAction::DisableGame){
+            u64 running_pid=0,running_title=0;
+            const Result pm=pmdmntInitialize(),info=pminfoInitialize();
+            const bool identified=R_SUCCEEDED(pm) && R_SUCCEEDED(info)
                 && R_SUCCEEDED(pmdmntGetApplicationProcessId(&running_pid))
-                && R_SUCCEEDED(pminfoGetProgramId(&running_title, running_pid))
-                && running_title == 0x010099A00BC1E000ull;
-            if (running) status = "Close Resident Evil 4 before changing files.";
-            else if (down & HidNpadButton_Minus) status = (padGetButtons(&pad) & HidNpadButton_ZL)
-                ? re4::disable_overlay_loader("sdmc:") : re4::disable_game_files("sdmc:");
-            else if (R_SUCCEEDED(romfsInit())) {
-                status = (down & HidNpadButton_ZR) ? re4::install_overlay_only("romfs:", "sdmc:")
-                    : re4::install_game_files("romfs:", "sdmc:");
+                && R_SUCCEEDED(pminfoGetProgramId(&running_title,running_pid));
+            const bool allowed=model.allow_installation(identified,running_title==0x010099A00BC1E000ull);
+            if(allowed && action==re4::InstallerAction::DisableGame)
+                model.installation_result(re4::disable_game_files("sdmc:"));
+            else if(allowed && R_SUCCEEDED(romfsInit())){
+                model.installation_result(action==re4::InstallerAction::InstallOverlay
+                    ?re4::install_overlay_only("romfs:","sdmc:"):re4::install_game_files("romfs:","sdmc:"));
                 romfsExit();
-            } else status = "Bundled game files unavailable.";
-            if (R_SUCCEEDED(info)) pminfoExit();
-            if (R_SUCCEEDED(pm)) pmdmntExit();
+            }else if(allowed){model.status=re4::InstallerStatus::Failed;model.detail="Bundled game files unavailable";}
+            if(R_SUCCEEDED(info))pminfoExit();
+            if(R_SUCCEEDED(pm))pmdmntExit();
         }
-        if (sensors.select(pad)) {
-            integrator.reset(); calibration_left = 0; aim_x = aim_y = 0;
+        if(action==re4::InstallerAction::SaveSettings)
+            model.status=re4::save_settings_file(re4::kSettingsPath,settings)
+                ?re4::InstallerStatus::Saved:re4::InstallerStatus::Failed;
+        if(action==re4::InstallerAction::ResetPreview)aim_x=aim_y=0;
+        if(action==re4::InstallerAction::Calibrate && sensors.count){
+            calibration.begin();
+            model.status=re4::InstallerStatus::Calibrating;
         }
-        if (down & HidNpadButton_Up) row = (row + 8) % 9;
-        if (down & HidNpadButton_Down) row = (row + 1) % 9;
-        if (down & (HidNpadButton_Left | HidNpadButton_Right)) {
-            const float step = row == 4 || row == 5 ? 0.01f : 0.05f;
-            const float maximum = row < 4 || row == 8 ? 1.f : row < 6 ? 0.95f : 10.f;
-            *values[row] = std::clamp(*values[row] + ((down & HidNpadButton_Right) ? step : -step), 0.f, maximum);
+        const bool sensor_changed=sensors.select(pad);
+        const bool page_changed=previous_page!=model.page;
+        if(sensor_changed || page_changed){
+            if(calibration.remaining())model.status=sensors.count?re4::InstallerStatus::Ready:re4::InstallerStatus::NoSensor;
+            integrator.reset();calibration.cancel();aim_x=aim_y=0;
         }
-        if (down & HidNpadButton_A) settings.gyro_enabled = !settings.gyro_enabled;
-        if (down & HidNpadButton_X) { aim_x = aim_y = 0; }
-        if (down & HidNpadButton_B) status = re4::save_settings_file(re4::kSettingsPath, settings) ? "Settings saved." : "Settings save failed.";
-        if ((down & HidNpadButton_Y) && sensors.count) {
-            calibration_left = 200; sum_x = sum_y = 0; last_calibration_sample = 0;
-            status = "Keep controller STILL for calibration.";
-        }
+        if(model.page!=re4::InstallerPage::Diagnostics)calibration.cancel();
         HidSixAxisSensorState samples[16]{};
-        const size_t sample_count = sensors.read(samples);
+        const size_t sample_count=sensors.read(samples);
         re4::AimDelta movement;
-        for (size_t i = sample_count; i > 0; --i) {
-            const auto& sample = samples[i - 1];
-            const float yaw = -sample.angular_velocity.y * tau;
-            const float pitch = -sample.angular_velocity.x * tau;
-            if (calibration_left && sample.sampling_number > last_calibration_sample) {
-                last_calibration_sample = sample.sampling_number;
-                sum_x += yaw; sum_y += pitch;
-                if (!--calibration_left) {
-                    settings.gyro_bias_x = sum_x / 200;
-                    settings.gyro_bias_y = sum_y / 200;
-                    status = "Calibration complete. B saves it.";
-                }
+        for(size_t i=sample_count;i>0;--i){
+            const auto& sample=samples[i-1];
+            const float yaw=-sample.angular_velocity.y*tau,pitch=-sample.angular_velocity.x*tau;
+            if((sample.attributes&1) && calibration.add(sample.sampling_number,yaw,pitch)){
+                settings.gyro_bias_x=calibration.bias_x();settings.gyro_bias_y=calibration.bias_y();
+                model.status=re4::save_settings_file(re4::kSettingsPath,settings)
+                    ?re4::InstallerStatus::Calibrated:re4::InstallerStatus::Failed;
             }
-            const bool active = settings.gyro_enabled && !calibration_left &&
-                (padGetButtons(&pad) & HidNpadButton_ZL);
-            const auto delta = integrator.update({sample.sampling_number, sample.delta_time,
-                yaw - settings.gyro_bias_x, pitch - settings.gyro_bias_y}, active,
-                settings.gyro_gain_x * (settings.invert_x ? -1 : 1),
-                settings.gyro_gain_y * (settings.invert_y ? -1 : 1));
-            movement.yaw += delta.yaw; movement.pitch += delta.pitch;
+            const bool active=model.page==re4::InstallerPage::Diagnostics && !page_changed && !sensor_changed
+                && settings.gyro_enabled && !calibration.remaining() && (padGetButtons(&pad)&HidNpadButton_ZL);
+            const auto delta=integrator.update({sample.sampling_number,sample.delta_time,
+                yaw-settings.gyro_bias_x,pitch-settings.gyro_bias_y},active,
+                settings.gyro_gain_x*(settings.invert_x?-1:1),settings.gyro_gain_y*(settings.invert_y?-1:1));
+            movement.yaw+=delta.yaw;movement.pitch+=delta.pitch;
         }
-        aim_x += movement.yaw; aim_y += movement.pitch;
-        const auto left = padGetStickPos(&pad, 0), right = padGetStickPos(&pad, 1);
-        const float lx = re4::shape_axis(left.x / 32767.f, settings.left_deadzone, settings.turn_gain);
-        const float rx = re4::shape_axis(right.x / 32767.f, settings.right_deadzone, settings.aim_gain_x);
-        const float ry = re4::shape_axis(right.y / 32767.f, settings.right_deadzone, settings.aim_gain_y);
-        std::printf("\x1b[HRE4 CONTROLS - diagnostic 0.2.3\x1b[K\n"
-            "Pad connected: %s  style: %08lX\x1b[K\n"
-            "Raw LEFT  X:%7ld Y:%7ld\x1b[K\nRaw RIGHT X:%7ld Y:%7ld\x1b[K\n"
-            "Processed turn:% .3f  aim:% .3f % .3f\x1b[K\n"
-            "Gyro:%s  sensors:%u  result:%08lX\x1b[K\n"
-            "Samples:%2u dt:%llu ns rate:% .4f % .4f % .4f\x1b[K\n"
-            "Hold ZL: gyro preview (radians) X:% .3f Y:% .3f\x1b[K\n\x1b[K\n",
-            padIsConnected(&pad) ? "yes" : "no", (unsigned long)sensors.style,
-            (long)left.x, (long)left.y, (long)right.x, (long)right.y, lx, rx, ry,
-            settings.gyro_enabled ? "ON" : "OFF", sensors.count, (unsigned long)sensors.result,
-            unsigned(sample_count), (unsigned long long)samples[0].delta_time,
-            samples[0].angular_velocity.x, samples[0].angular_velocity.y,
-            samples[0].angular_velocity.z, aim_x, aim_y);
-        for (unsigned i = 0; i < 9; ++i)
-            std::printf("%c %-17s %5.2f\x1b[K\n", i == row ? '>' : ' ', names[i], *values[i]);
-        std::printf("\nUP/DOWN select  LEFT/RIGHT change\x1b[K\n"
-            "A gyro on/off  Y calibrate  X reset preview\x1b[K\n"
-            "B save  R install  MINUS disable patch  PLUS exit\x1b[K\n%s\x1b[K\n"
-            "ZR install RE4 menu (keeps existing Uberhand)\x1b[K\n"
-            "Network: %s  configured title:%016llX\x1b[K\n"
-            "Verify NRO receiver with host STATUS.\x1b[K\n"
-            "Automatic RUN needs own installed forwarder.\x1b[K\n",
-            status, R_SUCCEEDED(sockets) ? "initialized" : "unavailable",
-            (unsigned long long)NXDK_TITLE_ID);
-        if (++frame % 120 == 0) std::fprintf(stderr,
+        aim_x+=movement.yaw;aim_y+=movement.pitch;
+        const auto left=padGetStickPos(&pad,0),right=padGetStickPos(&pad,1);
+        auto& d=model.diagnostic;
+        d.connected=padIsConnected(&pad);d.network=R_SUCCEEDED(sockets);
+        d.style=sensors.style;d.sensors=sensors.count;d.sensor_result=sensors.result;
+        d.samples=unsigned(sample_count);d.calibration_remaining=calibration.remaining();
+        d.raw[0]=left.x/32767.f;d.raw[1]=left.y/32767.f;
+        d.raw[2]=right.x/32767.f;d.raw[3]=right.y/32767.f;
+        d.processed[0]=re4::shape_axis(d.raw[0],settings.left_deadzone,settings.turn_gain,settings.stick_curve);
+        d.processed[1]=re4::shape_axis(d.raw[1],settings.left_deadzone,1,settings.stick_curve);
+        d.processed[2]=re4::shape_axis(d.raw[2],settings.right_deadzone,settings.aim_gain_x,settings.stick_curve);
+        d.processed[3]=re4::shape_axis(d.raw[3],settings.right_deadzone,settings.aim_gain_y,settings.stick_curve);
+        d.gyro_rate[0]=samples[0].angular_velocity.x;d.gyro_rate[1]=samples[0].angular_velocity.y;
+        d.gyro_rate[2]=samples[0].angular_velocity.z;d.gyro_preview[0]=aim_x;d.gyro_preview[1]=aim_y;
+        if(graphics)renderer.draw(model);
+        else{
+            std::printf("\x1b[HRE4 CONTROLS 0.3.0\n%s\n\n",model.page_title());
+            for(unsigned i=0;i<model.item_count();++i)
+                std::printf("%c %-40s %s\x1b[K\n",i==model.selected?'>':' ',model.item_label(i).c_str(),model.item_value(i).c_str());
+            std::printf("\n%s\x1b[K\n%s\nUP/DOWN  A select  B back  + exit\x1b[J\n",model.status_text(),model.detail.c_str());
+            consoleUpdate(nullptr);
+        }
+        if(++frame%120==0)std::fprintf(stderr,
             "[input] style=%08lX raw=%ld,%ld,%ld,%ld gyro_samples=%u sensor_rc=%08lX\n",
-            (unsigned long)sensors.style, (long)left.x, (long)left.y, (long)right.x,
-            (long)right.y, unsigned(sample_count), (unsigned long)sensors.result);
-        consoleUpdate(nullptr);
+            (unsigned long)sensors.style,(long)left.x,(long)left.y,(long)right.x,(long)right.y,
+            unsigned(sample_count),(unsigned long)sensors.result);
     }
     sensors.stop();
+    renderer.close();
+    if(R_SUCCEEDED(font_service))plExit();
+    if(!graphics)consoleExit(nullptr);
     game_reload_main_finish();
-    if (R_SUCCEEDED(sockets)) socketExit();
-    consoleExit(nullptr);
+    if(R_SUCCEEDED(sockets))socketExit();
     return 0;
 }
