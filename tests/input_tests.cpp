@@ -3,6 +3,8 @@
 #include "re4/turn.hpp"
 #include "re4/profile.hpp"
 #include "re4/hook_context.hpp"
+#include "re4/shared.hpp"
+#include "re4/response.hpp"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -14,6 +16,37 @@ static bool close(float a, float b) { return std::fabs(a - b) < 0.0001f; }
 
 int main() {
     using namespace re4;
+    assert(close(scaled_axis_state(0.2f, 0.24f, 0, 1, 0.25f), 0.2f));
+    assert(close(scaled_axis_state(0.2f, 0.24f, 0.5f, 1, 0.25f), 0.22f));
+    assert(close(scaled_axis_state(0.96f, 0.99f, 4, 1, 0.25f), 1));
+    assert(scaled_axis_state(0, 0.9f, 0, 1, 0.25f) == 0.9f); // Preserve state resets.
+    assert(scaled_axis_state(0, 0.1f, 1, 1, 0.25f) == 0.1f);
+    assert(camera_axis(0.1f, 0.15f, 1) == 0);
+    assert(camera_axis(1, 0.15f, 1) == 63);
+    assert(camera_axis(-1, 0.15f, 1) == -63);
+    assert(camera_axis(1, 0.15f, 0) == 0);
+    assert(camera_axis(0.575f, 0.15f, 1) >= 31 && camera_axis(0.575f, 0.15f, 1) <= 32);
+    assert(close(gyro_pitch(0, 0.2f), 0.2f));
+    assert(gyro_pitch(0.99f, 0.2f) == 1);
+    assert(gyro_pitch(-0.99f, -0.2f) == -1);
+    assert(close(gyro_pitch(0.3f, 0.5f), 0.8f)); // Fresh fast motion is valid; timestamps reject backlog.
+    assert(close(gyro_yaw(0, 2.f * 10 / 30), 2.f * 10 / 30));
+    float yaw30 = 0, yaw60 = 0;
+    for (unsigned i = 0; i < 30; ++i) yaw30 = gyro_yaw(yaw30, 2.f * 10 / 30);
+    for (unsigned i = 0; i < 60; ++i) yaw60 = gyro_yaw(yaw60, 2.f * 10 / 60);
+    assert(close(yaw30, yaw60));
+    assert(close(gyro_yaw(3.13f, 0.04f), -3.1131853f));
+    assert(gyro_yaw(0.2f, std::numeric_limits<float>::infinity()) == 0.2f);
+    SharedControl shared{};
+    shared.sequence = 4;
+    Settings acknowledged;
+    acknowledged.turn_gain = 0;
+    assert(acknowledge_settings(shared, acknowledged, 4));
+    assert(shared.applied_sequence == 4 && shared.applied_turn_gain == 0);
+    shared.sequence = 5;
+    acknowledged.turn_gain = 2;
+    assert(!acknowledge_settings(shared, acknowledged, 5));
+    assert(shared.applied_sequence == 4 && shared.applied_turn_gain == 0);
     assert(shape_axis(0.1f, 0.2f, 1) == 0);
     assert(close(shape_axis(0.6f, 0.2f, 1), 0.5f));
     assert(close(shape_axis(-0.6f, 0.2f, 1), -0.5f));
@@ -28,6 +61,14 @@ int main() {
     assert(turn_flags(0xF0C, 0.1f, false, false, 0.15f) == 0xF0C);
     assert(close(turn_factor(1, false, 0.15f, 3), 3));
     assert(turn_factor(0, true, 0.15f, 3) == 1);
+    assert(close(corrected_turn_yaw(0, -0.04f, 0), 0));
+    assert(close(corrected_turn_yaw(0, -0.04f, 0.5f), -0.02f));
+    assert(close(corrected_turn_yaw(0, 0.04f, 2), 0.08f));
+    assert(close(std::fabs(corrected_turn_yaw(3.13f, -3.13f, 0.5f)), 3.14159265f));
+    assert(corrected_turn_yaw(0, 3.14159265f, 0) == 3.14159265f); // Preserve quick-turn/script jumps.
+    assert(corrected_turn_yaw(0.2f, 0.24f, 1) == 0.24f); // Full-scale leaves original bits untouched.
+    assert(yaw_delta(std::numeric_limits<float>::infinity(), 0) == 0);
+    assert(yaw_delta(1e30f, 0) == 0);
     alignas(16) std::uint8_t saved_context[0x300];
     std::memset(saved_context, 0xA5, sizeof(saved_context));
     const float s0 = 2, s16 = 7;
@@ -58,12 +99,48 @@ int main() {
     }
 
     Settings settings;
+    assert(settings.invert_x && settings.invert_y);
+    for (auto member : {&Settings::turn_gain, &Settings::camera_gain, &Settings::aim_gain_x,
+                        &Settings::aim_gain_y, &Settings::movement_gain}) {
+        Settings too_fast;
+        too_fast.*member = 1.01f;
+        assert(!valid_settings(too_fast));
+    }
+    settings.movement_gain = 0.4f;
     std::uint8_t encoded[kSettingsBytes];
     assert(encode_settings(settings, encoded, sizeof(encoded)));
     Settings decoded;
     decoded.turn_gain = 2;
     assert(decode_settings(encoded, sizeof(encoded), decoded));
     assert(decoded.turn_gain == 1 && !decoded.gyro_enabled);
+    assert(close(decoded.movement_gain, 0.4f));
+    // Version 1's reserved slot was zero. Preserve existing SD settings and
+    // give old files the original full walking speed.
+    auto legacy = std::vector<std::uint8_t>(encoded, encoded + sizeof(encoded));
+    legacy[4] = 1;
+    std::memset(legacy.data() + 56, 0, 4);
+    std::uint32_t hash = 2166136261u;
+    for (unsigned i = 0; i < 60; ++i) { hash ^= legacy[i]; hash *= 16777619u; }
+    for (unsigned i = 0; i < 4; ++i) legacy[60 + i] = std::uint8_t(hash >> (8 * i));
+    assert(decode_settings(legacy.data(), legacy.size(), decoded));
+    assert(decoded.movement_gain == 1 && decoded.turn_gain == 1);
+    // Older releases allowed speed-up to4. Migrate each old stick gain down to
+    // the original game limit while preserving the remaining configuration.
+    legacy.assign(encoded, encoded + sizeof(encoded));
+    legacy[4] = 2;
+    const float old_gain = 3;
+    for (auto offset : {16,20,24,28,56}) std::memcpy(legacy.data()+offset,&old_gain,4);
+    hash = 2166136261u;
+    for (unsigned i=0;i<60;++i) { hash^=legacy[i];hash*=16777619u; }
+    for (unsigned i=0;i<4;++i) legacy[60+i]=std::uint8_t(hash>>(8*i));
+    assert(decode_settings(legacy.data(),legacy.size(),decoded));
+    assert(decoded.turn_gain==1 && decoded.camera_gain==1 && decoded.aim_gain_x==1
+           && decoded.aim_gain_y==1 && decoded.movement_gain==1);
+    assert(decoded.left_deadzone==settings.left_deadzone);
+    settings.movement_gain = std::numeric_limits<float>::quiet_NaN();
+    assert(!encode_settings(settings, encoded, sizeof(encoded)));
+    settings.movement_gain = 0.4f;
+    assert(encode_settings(settings, encoded, sizeof(encoded)));
     encoded[24] ^= 1;
     assert(!decode_settings(encoded, sizeof(encoded), decoded));
     assert(decoded.turn_gain == 1); // Failed reads cannot publish a partial snapshot.

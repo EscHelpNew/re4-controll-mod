@@ -4,16 +4,22 @@ import argparse
 import contextlib
 import json
 import sys
+import shutil
+import hashlib
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def build(keys: Path) -> None:
-    from PIL import Image, ImageDraw, ImageFont
+    sys.path.insert(0, str(ROOT))
+    from tools.prepare_icon import prepare
     from nton.constants import Directories, Files
-    output = (ROOT / 'build/forwarder').resolve()
+    output = (ROOT / 'build/forwarder-stage' / uuid.uuid4().hex).resolve()
+    published = (ROOT / 'build/forwarder').resolve()
     temporary = (ROOT / 'build/forwarder-tmp').resolve()
     output.relative_to(ROOT)
+    published.relative_to(ROOT)
     temporary.relative_to(ROOT)
     output.mkdir(parents=True, exist_ok=True)
     Directories.output = output
@@ -22,16 +28,14 @@ def build(keys: Path) -> None:
     if not Files.keys.is_file():
         raise ValueError('Local key file does not exist')
     config = json.loads((ROOT / 'project.json').read_text(encoding='utf-8-sig'))
+    title = config.get('title_id', '')
+    if not isinstance(title, str) or len(title) != 16 or any(c not in '0123456789abcdefABCDEF' for c in title):
+        raise ValueError('Diagnostic title ID must contain sixteen hexadecimal digits')
+    config['title_id'] = title.upper()
     if config['title_id'] in ('0000000000000000', '010099A00BC1E000'):
         raise ValueError('Configure the diagnostic application\'s own nonzero title ID')
-    image = Image.new('RGB', (256, 256), '#15251E')
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((15, 15, 241, 241), radius=24, outline='#9EDABD', width=5)
-    font = ImageFont.truetype('C:/Windows/Fonts/segoeuib.ttf', 62)
-    draw.multiline_text((128, 128), 'RE4\nCTRL', fill='#D5F2E0', font=font,
-                        anchor='mm', align='center', spacing=0)
     icon = output / 'icon.jpg'
-    image.save(icon, quality=95)
+    prepare(ROOT / 'assets/icon-original.png', icon)
     from nton.main import main
     log = ROOT / 'build/forwarder-build.log'
     with log.open('w', encoding='utf-8') as stream:
@@ -43,7 +47,19 @@ def build(keys: Path) -> None:
     packages = list(output.glob('*.nsp'))
     if len(packages) != 1:
         raise RuntimeError('Forwarder build did not produce exactly one NSP; inspect private build log')
-    print('Built own forwarder:', packages[0])
+    published.mkdir(parents=True, exist_ok=True)
+    previous = list(published.glob('*.nsp'))
+    for package in previous:
+        backup = ROOT / 'build/forwarder-previous' / (hashlib.sha256(package.read_bytes()).hexdigest()[:16] + '-' + package.name)
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(package, backup)
+    target = published / packages[0].name
+    shutil.copy2(packages[0], target)
+    for package in previous:
+        if package != target:
+            package.unlink()
+    shutil.copy2(icon, published / 'icon.jpg')
+    print('Built own forwarder:', target)
     print('No console installation performed; installed-title collision check is still required.')
 
 

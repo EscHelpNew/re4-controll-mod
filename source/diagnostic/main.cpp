@@ -275,7 +275,7 @@ int main(int argc, char** argv) {
         u64 process_id = 0;
         svcGetProcessId(&process_id, CUR_PROCESS_HANDLE);
         char instance[24];
-        std::snprintf(instance, sizeof(instance), "0.1.7-p%llX", (unsigned long long)process_id);
+        std::snprintf(instance, sizeof(instance), "0.2.3-p%llX", (unsigned long long)process_id);
         game_reload_start(NXDK_APP_NAME, instance);
     }
     PadState pad;
@@ -292,10 +292,10 @@ int main(int argc, char** argv) {
     unsigned row = 0, frame = 0;
     const char* status = "Ready. This diagnostic does not modify RE4.";
     constexpr const char* names[] = {"Turn speed", "Camera speed", "Aim X", "Aim Y",
-        "Left deadzone", "Right deadzone", "Gyro X", "Gyro Y"};
+        "Left deadzone", "Right deadzone", "Gyro X", "Gyro Y", "Walk/run speed"};
     float* values[] = {&settings.turn_gain, &settings.camera_gain, &settings.aim_gain_x,
         &settings.aim_gain_y, &settings.left_deadzone, &settings.right_deadzone,
-        &settings.gyro_gain_x, &settings.gyro_gain_y};
+        &settings.gyro_gain_x, &settings.gyro_gain_y, &settings.movement_gain};
     while (appletMainLoop()) {
         game_reload_main_poll();
         padUpdate(&pad);
@@ -324,11 +324,11 @@ int main(int argc, char** argv) {
         if (sensors.select(pad)) {
             integrator.reset(); calibration_left = 0; aim_x = aim_y = 0;
         }
-        if (down & HidNpadButton_Up) row = (row + 7) % 8;
-        if (down & HidNpadButton_Down) row = (row + 1) % 8;
+        if (down & HidNpadButton_Up) row = (row + 8) % 9;
+        if (down & HidNpadButton_Down) row = (row + 1) % 9;
         if (down & (HidNpadButton_Left | HidNpadButton_Right)) {
             const float step = row == 4 || row == 5 ? 0.01f : 0.05f;
-            const float maximum = row < 4 ? 4.f : row < 6 ? 0.95f : 10.f;
+            const float maximum = row < 4 || row == 8 ? 1.f : row < 6 ? 0.95f : 10.f;
             *values[row] = std::clamp(*values[row] + ((down & HidNpadButton_Right) ? step : -step), 0.f, maximum);
         }
         if (down & HidNpadButton_A) settings.gyro_enabled = !settings.gyro_enabled;
@@ -367,7 +367,7 @@ int main(int argc, char** argv) {
         const float lx = re4::shape_axis(left.x / 32767.f, settings.left_deadzone, settings.turn_gain);
         const float rx = re4::shape_axis(right.x / 32767.f, settings.right_deadzone, settings.aim_gain_x);
         const float ry = re4::shape_axis(right.y / 32767.f, settings.right_deadzone, settings.aim_gain_y);
-        std::printf("\x1b[HRE4 CONTROLS - diagnostic 0.1.7\x1b[K\n"
+        std::printf("\x1b[HRE4 CONTROLS - diagnostic 0.2.3\x1b[K\n"
             "Pad connected: %s  style: %08lX\x1b[K\n"
             "Raw LEFT  X:%7ld Y:%7ld\x1b[K\nRaw RIGHT X:%7ld Y:%7ld\x1b[K\n"
             "Processed turn:% .3f  aim:% .3f % .3f\x1b[K\n"
@@ -380,7 +380,7 @@ int main(int argc, char** argv) {
             unsigned(sample_count), (unsigned long long)samples[0].delta_time,
             samples[0].angular_velocity.x, samples[0].angular_velocity.y,
             samples[0].angular_velocity.z, aim_x, aim_y);
-        for (unsigned i = 0; i < 8; ++i)
+        for (unsigned i = 0; i < 9; ++i)
             std::printf("%c %-17s %5.2f\x1b[K\n", i == row ? '>' : ' ', names[i], *values[i]);
         std::printf("\nUP/DOWN select  LEFT/RIGHT change\x1b[K\n"
             "A gyro on/off  Y calibrate  X reset preview\x1b[K\n"

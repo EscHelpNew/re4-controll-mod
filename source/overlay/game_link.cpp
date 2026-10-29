@@ -91,9 +91,24 @@ bool GameLink::connect() {
                         (unsigned long long)(mapping.addr + page + j), block.abi, block.status,
                         (unsigned long long)block.frames, block.raw_lx);
                     details += diagnostic;
-                    if (block.abi != 1 || block.status != 1 || !(block.capabilities & re4::kCapabilityTurning)) continue;
+                    std::snprintf(diagnostic, sizeof(diagnostic), "\nsensor_rc=%08X running=%u samples=%u gyro_delta=%.6f,%.6f",
+                        block.sensor_result, block.sensor_running, block.sensor_samples, block.gyro_yaw, block.gyro_pitch);
+                    details += diagnostic;
+                    std::snprintf(diagnostic, sizeof(diagnostic), "\nmovement_calls=%u factor=%.3f camera_calls=%u aim_calls=%u",
+                        block.movement_calls, block.movement_factor, block.camera_calls, block.aim_calls);
+                    details += diagnostic;
+                    std::snprintf(diagnostic, sizeof(diagnostic), "\nyaw_delta_original=%.6f corrected=%.6f",
+                        block.original_yaw_delta, block.corrected_yaw_delta);
+                    details += diagnostic;
+                    std::snprintf(diagnostic, sizeof(diagnostic), "\nsequence=%u applied=%u gain=%.2f direction_calls=%u speed_calls=%u",
+                        block.sequence, block.applied_sequence, block.applied_turn_gain, block.direction_calls, block.speed_calls);
+                    details += diagnostic;
+                    std::snprintf(diagnostic, sizeof(diagnostic), "\npad_samples=%u pad_id=%u max_raw=%.3f last_factor=%.3f",
+                        block.pad_samples, block.last_pad_id, block.maximum_raw_lx, block.last_turn_factor);
+                    details += diagnostic;
+                    if (block.abi != re4::kSharedAbi || block.status != 1 || !(block.capabilities & re4::kCapabilityTurning)) continue;
                     address_ = mapping.addr + page + j; process_ = metadata.pid;
-                    message = "Подключено: повороты в движении";
+                    message = "Подключено к игровому модулю";
                     return true;
                 }
             }
@@ -112,7 +127,7 @@ bool GameLink::apply(const re4::Settings& settings) {
     }
     re4::SharedControl block{};
     if (R_FAILED(read_memory(&service_, address_, &block, sizeof(block)))
-        || std::memcmp(block.marker, re4::kSharedMarker, 16) || block.abi != 1 || block.status != 1) {
+        || std::memcmp(block.marker, re4::kSharedMarker, 16) || block.abi != re4::kSharedAbi || block.status != 1) {
         address_ = 0; message = "Связь с модом потеряна"; return false;
     }
     std::uint8_t bytes[re4::kSettingsBytes];
@@ -122,6 +137,6 @@ bool GameLink::apply(const re4::Settings& settings) {
     const bool applied = R_SUCCEEDED(write_memory(&service_, sequence, &odd, sizeof(odd)))
         && R_SUCCEEDED(write_memory(&service_, address_ + offsetof(re4::SharedControl, settings), bytes, sizeof(bytes)))
         && R_SUCCEEDED(write_memory(&service_, sequence, &even, sizeof(even)));
-    message = applied ? "Изменения применены" : "Не удалось применить изменения";
+    message = applied ? "Настройки отправлены в игру" : "Не удалось отправить настройки";
     return applied;
 }

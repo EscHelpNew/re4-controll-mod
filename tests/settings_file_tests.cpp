@@ -8,14 +8,14 @@ int main() {
     constexpr const char* path = "build/settings-test.bin";
     for (auto p : {path, "build/settings-test.bin.previous", "build/settings-test.bin.incoming"}) std::remove(p);
     re4::Settings first, second, loaded;
-    second.turn_gain = 2;
+    second.turn_gain = 0.5f;
     assert(re4::save_settings_file(path, first));
     assert(re4::save_settings_file(path, second));
-    assert(re4::load_settings_file(path, loaded) && loaded.turn_gain == 2);
+    assert(re4::load_settings_file(path, loaded) && loaded.turn_gain == 0.5f);
     re4::Settings invalid;
     invalid.turn_gain = std::numeric_limits<float>::quiet_NaN();
     assert(!re4::save_settings_file(path, invalid));
-    assert(re4::load_settings_file(path, loaded) && loaded.turn_gain == 2);
+    assert(re4::load_settings_file(path, loaded) && loaded.turn_gain == 0.5f);
     FILE* corrupt = std::fopen(path, "wb"); assert(corrupt);
     std::fputs("interrupted/corrupt", corrupt); std::fclose(corrupt);
     assert(re4::load_settings_file(path, loaded) && loaded.turn_gain == 1);

@@ -1,7 +1,9 @@
 # RE4 Switch binary findings
 
 Inspected 2026-10-28. All addresses below are offsets from the **main NSO**,
-not runtime absolute addresses. Hardware verification is still pending.
+not runtime absolute addresses. Turning was confirmed on hardware on 2026-10-29;
+movement/camera/aim paths and additive firearm gyro were subsequently confirmed
+by the user through0.2.2. Special weapon/state coverage remains limited.
 
 ## Identity and extraction
 
@@ -62,15 +64,103 @@ The forward/backward interpretation is supported by checks for input bits 0/1
 and comparison with the independently reverse-engineered PC logic. Names are
 research labels; execution in the target game must confirm state coverage.
 
-## Pending before game deployment
+## Runtime findings, 2026-10-29
 
-- Running turn and stationary turn sites; input scheme selection; aim/camera
-  calculations and scoped weapons; reliable pause/cutscene/aim state signals.
-- Loader compatibility and minimal permissions for settings access.
-- Validation against the actual installed executable Build ID.
-- No runtime hooks have yet been installed or claimed to work in RE4.
+Installed update is 65536. Its main/sdk/rtld/subsdk0 are byte-identical to update
+131072; their Build IDs are the same. The original NPDM signature regions differ.
+The module checks the Program ID, full main Build ID and original instructions
+before installing any hooks. Loader SDK 5 compatibility is implemented in the
+disposable exlaunch build directory. Existing Uberhand is retained unchanged.
+
+Normal movement dispatcher `0x30D430` uses table `0xB067C0`: idle, walk, back,
+run, stationary turn, quick turn (indices 0..5). Active player pointer slot is
+`0x113B398`, actor mode/routine bytes are +0x114/+0x115. Correction of bounded
+net yaw +0xB4 around this dispatcher covers animation-driven turning, which
+individual float speed sites did not fully cover. User confirmed L-stick turns
+now respond to sensitivity. Quick turn and other routines are excluded.
+
+Movement animation advance `0x2B8F10` takes a motion pointer and returns unsigned
+motion flags. It advances frame +0xD4 by speed +0xDC times global deltaTime and
+updates packed interpolation frame +0xC8. Primary motion is actor+0x228, secondary
+motion pointer actor+0x320. Root update `0x2B7C60` evaluates the previous frame's
+root displacement, advances animation, then continues normal ground/physics.
+The new hook temporarily scales only the primary/secondary motion speed during
+normal manual walk/back/run dispatch; restores it immediately after the call.
+No final world position is scaled and collision code is unchanged. Root motion
+uses the previously advanced animation frame, so speed changes have one-frame
+latency. User confirmed movement speed changes in0.2.0.
+
+Camera update `0x19B20` reads game right-stick signed bytes at input+8/+9, or
++0xC0/+0xC1 when mode `0x11C7D68` equals 1. It computes pitch +0x270 from byte/59
+and yaw +0x274 from byte/59 times -pi/3; zero input decays existing offsets.
+Scoped replacement from raw SDK right stick preserves full byte range +/-63,
+sets configurable deadzone/sensitivity, and restores both bytes after the call.
+It affects free-look amplitude/response, not a free-rotating camera rate.
+
+Common firearm aim calculation `0x33DF80` takes actor and integer mode, used by
+the shared weapon handler `0x31CC60` (e.g. `0x31CE5C`). Input source is a distinct
+structure at `0x124E9C8`, not the movement input at `0x124EC38`. It changes current
+and pending normalized pitch at `0x1265A08/+4`, relative yaw actor+0x524, and body
+yaw +0xB4 after relative limits. Post-call bounded corrections scale only manual
+stick/dpad deltas, preserving large resets and state transitions. The caller
+then performs aim/model updates (`0x3183F0`). Scoped/special weapon coverage
+remains unverified. Older `0x305xxx/0x308xxx` fields +0x660/+0x680 belong to other
+state paths and are not used by this adapter.
+
+Shared ABI 4 exposes separate movement/camera/aim counters. Settings wire format
+2 reuses the old reserved float slot for independent movement gain, keeps the
+64-byte wire size/checksum and reads version 1 with movement gain default 1.
+
+Hardware feedback: user confirms all three new paths (walking speed, camera,
+aim sensitivity) work in 0.2.0. Gyro requested strictly as an additive aiming
+input while aiming a firearm, with stick input retained simultaneously.
+
+## Six-axis adapter evidence
+
+SDK exports provide Result-returning detail functions (public wrappers abort on
+failure): GetSixAxisSensorHandle `0x2C6440` (handles*, count*, capacity, pad ID,
+style bitset), Start `0x2C0F60`/Stop `0x2C0FE0` (handle const&), GetStates
+`0x2C6610` (count*, states*, capacity, handle const&). Handles are 4 bytes.
+FullKey/Handheld/JoyDual styles 1/2/4, IDs 0/32; JoyDual supports two handles.
+GetStates validates handle kind then dispatches to style-specific readers.
+State stride 0x60, sampling number +8, angular velocity +28, attributes +88.
+The layout matches the independently working diagnostic libnx sensor reader.
+
+The adapter starts only the selected controller's sensor while enabled,
+prefer the connected right Joy-Con, consume oldest-to-newest fresh samples,
+and discard motion on initial selection/resume gaps over 100 ms. Sensor service
+errors stop polling until selection changes or gyro is toggled off/on.
+No public SDK assert-on-error wrappers are used. Every pointer/capacity passed
+to the detail functions is fixed and valid; only verified handle outputs are
+passed to Start/GetStates. Native backend tests cover lifecycle and failures.
+
+Game `0x317630` is the camera's own is-aiming predicate. Its state logic excludes
+reload/transition substates within routine6. Gyro also requires active player,
+mode0, firearm routines6/11/15 and held abstract aim bit0x10. Motion is added
+before the common firearm aim calculation `0x33DF80`, so normal stick calculation
+still runs and model updates see the gyro change. Horizontal baseline uses
+body yaw radians; vertical baseline adds to the game's normalized pitch [-1,1],
+with independent user gain (not a claim of physically exact pitch tracking).
 
 ## References
+
+Version0.2.2 corrects native sway interaction: function0x33EC50 receives actor,
+changed-input flags, pitch*, relative-yaw*. Bit0 records a fresh manual baseline
+in actor+0x938 weapon context fields+0x28/+0x2C. With no changed-input flag,
+the function bounds sway around the old baseline. Injecting gyro coordinates
+without that flag reproduced a narrow vertical window. The scoped AimSway
+trampoline sets bit0 only while a real gyro delta is applied to the same actor
+inside the common aiming calculation. It leaves native behavior otherwise.
+Pitch is converted to radians by pi/2 on entry and back on exit. The actual
+callback regression reproduces the clamp and verifies accumulation beyond it;
+the user confirmed the corrected vertical range on the console.
+
+Current shared ABI6 keeps the200-byte layout of ABI5 but requires the matching
+overlay so older modules cannot silently reject settings wirev3. Wirev3 caps
+movement/turn/camera/stick-aim gains at1.00. Decoders for old wirev1/v2 validate
+the old0..4 range and reduce those gains to1 while preserving other settings.
+Both gyro inversions default on after the user's axis-direction test. Their
+existing saved choices are retained.
 
 - https://github.com/SciresM/hactool — upstream extraction tool and NCA logic.
 - https://github.com/nicoboss/nsz — upstream NCZ decompression.

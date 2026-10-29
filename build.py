@@ -13,6 +13,7 @@ KIT = ROOT / 'third_party/switch-debug-kit'
 sys.path.insert(0, str(KIT / 'host'))
 from sdk import SDK, tool, sdk_tool
 from project import load, header, prepare
+from tools.prepare_icon import prepare as prepare_app_icon
 
 OUT = ROOT / 'build'
 
@@ -22,23 +23,42 @@ def run(args, **kwargs):
 
 
 def tests():
+    def native(name):
+        # Windows CRT assertion dialogs must not leave an unattended test run
+        # hanging indefinitely. Successful native cases finish in milliseconds.
+        run([OUT / name], timeout=20)
     run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'])
     host = os.environ.get('CXX', 'C:/msys64/mingw64/bin/g++.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/input_tests.cpp', 'source/input.cpp', 'source/settings.cpp',
          '-o', OUT / 'input_tests.exe'])
-    run([OUT / 'input_tests.exe'])
+    native('input_tests.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/settings_file_tests.cpp', 'source/settings.cpp', 'source/settings_file.cpp',
          '-o', OUT / 'settings_file_tests.exe'])
-    run([OUT / 'settings_file_tests.exe'])
+    native('settings_file_tests.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/install_tests.cpp', 'source/install.cpp', '-o', OUT / 'install_tests.exe'])
-    run([OUT / 'install_tests.exe'])
+    native('install_tests.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/stubs', '-Isource/overlay', 'tests/overlay_storage_tests.cpp',
          'source/overlay/storage.cpp', '-o', OUT / 'overlay_storage_tests.exe'])
-    run([OUT / 'overlay_storage_tests.exe'])
+    native('overlay_storage_tests.exe')
+    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
+         'tests/sensor_tests.cpp', '-o', OUT / 'sensor_tests.exe'])
+    native('sensor_tests.exe')
+    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static',
+         '-Itests/game_stubs', '-Iinclude', 'tests/game_module_tests.cpp',
+         'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'game_module_tests.exe'])
+    native('game_module_tests.exe')
+    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
+         '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
+         'tests/overlay_ui_tests.cpp', 'source/settings.cpp', '-o', OUT / 'overlay_ui_tests.exe'])
+    native('overlay_ui_tests.exe')
+    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
+         '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
+         'tests/game_link_tests.cpp', 'source/settings.cpp', '-o', OUT / 'game_link_tests.exe'])
+    native('game_link_tests.exe')
 
 
 def diagnostic():
@@ -71,7 +91,7 @@ def diagnostic():
     env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), '-specs=' + str(SDK / 'libnx/switch.specs'), *common,
          *objects, '-L' + str(SDK / 'libnx/lib'), '-lnx', '-lm', '-o', elf], env=env)
-    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.1.7', nacp,
+    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.2.3', nacp,
          '--titleid=' + cfg['title_id']])
     payload = OUT / 'diagnostic-romfs'
     payload.mkdir(exist_ok=True)
@@ -81,7 +101,9 @@ def diagnostic():
         if not source.is_file():
             raise RuntimeError('Build --module --overlay before the bundled diagnostic NRO')
         shutil.copy2(source, payload / name)
-    run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp), '--romfsdir=' + str(payload)])
+    icon = prepare_app_icon(ROOT / 'assets/icon-original.png', OUT / 'icon.jpg')
+    run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp), '--icon=' + str(icon),
+         '--romfsdir=' + str(payload)])
     digest = hashlib.sha256(nro.read_bytes()).hexdigest()
     (OUT / 'diagnostic.json').write_text(json.dumps({'file': nro.name,
         'bytes': nro.stat().st_size, 'sha256': digest, 'title_id': cfg['title_id']}, indent=2) + '\n')
@@ -172,7 +194,8 @@ def overlay():
     output.parent.mkdir(parents=True, exist_ok=True)
     nacp = OUT / 're4-controls-overlay.nacp'
     run([sdk_tool('nacptool'), '--create', 'RE4 Controls', 're4-controls', '0.1.0', nacp])
-    run([sdk_tool('elf2nro'), elf, output, '--nacp=' + str(nacp)])
+    icon = prepare_app_icon(ROOT / 'assets/icon-original.png', OUT / 'icon.jpg')
+    run([sdk_tool('elf2nro'), elf, output, '--nacp=' + str(nacp), '--icon=' + str(icon)])
     print('Built EXPERIMENTAL overlay:', output)
 
 

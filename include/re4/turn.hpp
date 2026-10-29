@@ -13,4 +13,24 @@ inline std::uint32_t turn_flags(std::uint32_t original, float raw,
 inline float turn_factor(float raw, bool dpad, float deadzone, float gain) {
     return dpad ? 1.f : std::fabs(shape_axis(raw, deadzone, 1)) * gain;
 }
+inline float yaw_delta(float before, float after) {
+    constexpr float pi = 3.14159265359f, tau = 2 * pi;
+    if (!std::isfinite(before) || !std::isfinite(after) || std::fabs(before) > tau || std::fabs(after) > tau) return 0;
+    float delta = after - before;
+    while (delta > pi) delta -= tau;
+    while (delta < -pi) delta += tau;
+    return delta;
+}
+inline float corrected_turn_yaw(float before, float after, float factor) {
+    constexpr float pi = 3.14159265359f, tau = 2 * pi;
+    if (!std::isfinite(before) || !std::isfinite(after) || !std::isfinite(factor)
+        || std::fabs(before) > tau || std::fabs(after) > tau || factor < 0 || factor > 4 || factor == 1)
+        return after;
+    const float delta = yaw_delta(before, after);
+    if (std::fabs(delta) > 0.35f) return after;
+    float result = before + delta * factor;
+    while (result > pi) result -= tau;
+    while (result < -pi) result += tau;
+    return result;
+}
 }

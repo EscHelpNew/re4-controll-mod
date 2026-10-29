@@ -11,6 +11,8 @@ OUT = ROOT / 'build'
 
 def package() -> None:
     config = json.loads((ROOT / 'project.json').read_text(encoding='utf-8-sig'))
+    if config.get('sd_directory') != 're4-controls':
+        raise ValueError('Review package allowlist for a different SD directory')
     nro = OUT / 're4-controls.nro'
     own = list((OUT / 'forwarder').glob('*.nsp'))
     if len(own) != 1:
@@ -30,10 +32,15 @@ def package() -> None:
         'licenses/Switch-Debug-Kit-MIT.txt': ROOT / 'third_party/switch-debug-kit/LICENSE',
         'licenses/nx-ovlloader-GPL2.txt': ROOT / 'third_party/nx-ovlloader/LICENSE.md',
     }
-    manifest = {'status': 'experimental; hardware acceptance pending',
-                'features': ['proportional movement turning', 'turning overlay', 'sensor diagnostic NRO'],
-                'verified': ['diagnostic sticks/gyro on console', 'NRO changed-image reload and new PID', 'cold-launch credential'],
-                'pending': ['movement hook activation', 'stationary turning', 'in-game gyro', 'aim/camera gains', 'overlay loader hardware'],
+    manifest = {'status': 'experimental; core controls confirmed on hardware in 0.2.2',
+                'version': '0.2.3',
+                'features': ['proportional turning and walking', 'camera/aim sensitivity',
+                             'additive firearm-aim gyro', 'Russian settings overlay', 'reloadable diagnostic NRO'],
+                'verified': ['user confirmed movement/camera/aim in 0.2.0',
+                             'user confirmed additive aim-only gyro, vertical range, help and speed caps in 0.2.2',
+                             'overlay UI on existing Uberhand',
+                             'diagnostic sticks/gyro on console', 'NRO changed-image reload and new PID', 'cold-launch credential'],
+                'pending': ['icon display on console', 'special weapons and all gameplay contexts', 'controller switch in game'],
                 'files': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}}
     destination = OUT / 're4-controls-experimental.zip'
     local = OUT / 'local-sd'
