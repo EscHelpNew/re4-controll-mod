@@ -3,6 +3,7 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
 #include "re4/installer_ui.hpp"
+#include "re4/version.hpp"
 #include "re4/input.hpp"
 #include <algorithm>
 #include <cmath>
@@ -118,6 +119,24 @@ struct InstallerRenderer::Impl {
         text("0",graph.x-2,graph.y+graph.h+5,14,muted);
         text("1",graph.x+graph.w-8,graph.y+graph.h+5,14,muted);
     }
+    void updates(const InstallerModel& m){
+        text("GITHUB RELEASES",76,184,17,muted);
+        text(kUpdateRepository,78,223,24,cream,690);
+        text(std::string(tr(m,"Installed: ","Установлена: "))+kVersion,78,275,21,muted);
+        text(std::string(tr(m,"Latest: ","Последняя: "))+(m.update.version.empty()?"—":m.update.version),78,312,21,cream);
+        if(m.update.total){
+            char progress[80];std::snprintf(progress,sizeof(progress),"%.2f / %.2f MiB",m.update.received/1048576.f,m.update.total/1048576.f);
+            text(progress,78,368,18,muted);
+            fill({78,407,690,8},{10,12,9,255});
+            fill({78,407,int(690*std::min(1.f,float(m.update.received)/m.update.total)),8},red);
+        }
+        if(!m.update.detail.empty())text(m.update.detail,78,438,15,muted,690);
+        for(unsigned i=0;i<2;++i){
+            const int y=498+int(i)*49;
+            if(i==m.selected){fill({65,y-2,723,43},highlight);fill({65,y-2,4,43},red);}
+            text(m.item_label(i),81,y+7,23,i==m.selected?cream:muted,690);
+        }
+    }
     void diagnostics(const InstallerModel& m){
         char out[256];
         text(tr(m,"LIVE INPUT","ПОКАЗАНИЯ КОНТРОЛЛЕРА"),76,184,17,muted);
@@ -196,11 +215,12 @@ void InstallerRenderer::draw(const InstallerModel& m){
     if(p.logo){const SDL_Rect dest{42,23,128,128};SDL_RenderCopy(p.renderer,p.logo,nullptr,&dest);}
     p.text("RE4 CONTROLS",183,43,46,cream);
     p.text(m.page_title(),186,106,18,muted);
-    p.text("0.3.0",1150,51,18,muted);
+    p.text(re4::kVersion,1150,51,18,muted);
     p.fill({52,151,1176,1},line);
     p.fill({52,167,750,449},panel);p.border({52,167,750,449},line);
     p.fill({838,167,390,449},panel);p.border({838,167,390,449},line);
     if(m.page==InstallerPage::Diagnostics)p.diagnostics(m);
+    else if(m.page==InstallerPage::Updates)p.updates(m);
     else{
         p.text(m.page==InstallerPage::Home?tr(m,"OPERATIONS","ДЕЙСТВИЯ"):tr(m,"SETTINGS","НАСТРОЙКИ"),76,184,17,muted);
         const unsigned count=m.item_count(),visible=8;
@@ -220,12 +240,20 @@ void InstallerRenderer::draw(const InstallerModel& m){
     }
     p.text(tr(m,"FIELD NOTES","ОПИСАНИЕ"),862,185,17,muted);
     p.text(m.selected_help(),862,224,19,cream,344,true,5);
-    p.text(tr(m,"STICK RESPONSE","КРИВАЯ СТИКОВ"),862,360,16,muted);
-    p.text(curve_name(m.settings.stick_curve,m.settings.language),862,386,18,cream);
-    p.curve(m);
-    p.text(m.page==InstallerPage::Home?tr(m,"In game: L + R + UP","В игре: L + R + вверх")
-                                     :tr(m,"Native stick maximum: 1.00","Максимум скорости стиков: 1.00"),862,585,15,muted,344);
-    const bool error=m.status==InstallerStatus::Failed||m.status==InstallerStatus::Conflict||m.status==InstallerStatus::GameRunning;
+    if(m.page==InstallerPage::Updates){
+        p.text(tr(m,"BEFORE YOU UPDATE","ПЕРЕД ОБНОВЛЕНИЕМ"),862,360,16,muted);
+        p.text(tr(m,"Keep Wi-Fi connected.\nReopen the app after installation.\nYour settings are preserved.",
+                    "Не отключайте Wi-Fi.\nПосле установки откройте\nприложение заново. Ваши\nнастройки сохраняются."),862,399,19,cream,344,true,6);
+        p.text(tr(m,"Wi-Fi connection required","Требуется подключение Wi-Fi"),862,585,15,muted,344);
+    }else{
+        p.text(tr(m,"STICK RESPONSE","КРИВАЯ СТИКОВ"),862,360,16,muted);
+        p.text(curve_name(m.settings.stick_curve,m.settings.language),862,386,18,cream);
+        p.curve(m);
+        p.text(m.page==InstallerPage::Home?tr(m,"In game: L + R + UP","В игре: L + R + вверх")
+                                         :tr(m,"Native stick maximum: 1.00","Максимум скорости стиков: 1.00"),862,585,15,muted,344);
+    }
+    const bool error=m.status==InstallerStatus::Failed||m.status==InstallerStatus::Conflict||m.status==InstallerStatus::GameRunning
+        || (m.page==InstallerPage::Updates && m.update.stage==UpdateStage::Failed);
     p.text(m.status_text(),55,632,21,error?red:cream,1170);
     p.fill({52,665,1176,1},line);
     p.text(tr(m,"UP/DOWN: select    A: confirm    LEFT/RIGHT: change    B: back    +: exit",

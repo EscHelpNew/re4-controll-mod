@@ -19,10 +19,14 @@ struct Settings {
     float camera_gain = 1;
     float aim_gain_x = 1;
     float aim_gain_y = 1;
+    float right_aim_gain_x = 1;
+    float right_aim_gain_y = 1;
     float left_deadzone = 0.05f;
     float right_deadzone = 0.05f;
     float gyro_gain_x = 1;
     float gyro_gain_y = 1;
+    float gyro_speed = 1;
+    float gyro_deadzone_dps = 0.5f;
     float gyro_bias_x = 0;
     float gyro_bias_y = 0;
     float movement_gain = 1; // Legacy wire field; native walking maximum in v4.

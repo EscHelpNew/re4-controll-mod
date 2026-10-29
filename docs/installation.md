@@ -1,121 +1,95 @@
-# Установка экспериментальной сборки
+# Installation and updates
 
-Статус: в RE4 **подтверждены пользователем** плавные повороты, регулировки
-ходьбы, камеры и прицела (0.2.0). Меню оверлея и обновление собственного NRO
-через Switch Debug Kit protocol 2 также проверены на консоли.
-В0.2.2 пользователь также подтвердил гироскоп совместно со стиками только при
-наведении из оружия, исправление вертикального диапазона, подсказки и максимум
-скоростей стиков/ходьбы1.00. В0.2.3 добавлена пользовательская иконка.
-Полное покрытие особого оружия и всех игровых режимов не заявлено.
+RE4 Controls supports the original Switch port of Resident Evil4,
+Title ID `010099A00BC1E000`, main Build ID
+`82C2A04A21D3E0B850F273D4149C900300000000000000000000000000000000`.
+It requires Atmosphere with `dmnt:cht` and a Tesla-compatible overlay loader.
+The executable profile is checked before hooks are enabled.
 
-В0.3.0 отдельное приложение открывает графический установщик.
-Пользователь подтвердил его запуск и установку мода на консоли.
-`Install / update mod` устанавливает модуль и меню; `Install overlay menu` —
-только меню; `Disable mod` отключает собственные файлы мода.
-`Control settings` открывает настройки, `Controller diagnostics` —показания
-датчиков и калибровку. Язык меняется пунктом `Language`; английский —по умолчанию.
+## Install the standalone NRO
 
-## Игровой модуль и меню
+1. Copy `re4-controls.nro` from the release to
+   `sdmc:/switch/re4-controls/re4-controls.nro`.
+2. Close RE4 and launch hbmenu in **application mode**: hold R while starting an
+   installed title, then select RE4 Controls. Do not use Album while RE4 is suspended.
+3. The app prepares its own `bridge.nro`/`game.nro` files and HOME shortcut.
+   It updates only its own application, `0100E4C04E540000`.
+4. Select **Install / update mod**. The game must be closed.
 
-Нужны Atmosphere с доступным `dmnt:cht` и загрузчик Tesla-совместимых оверлеев.
-На проверяемой консоли уже есть работающий Uberhand. Его сочетание открытия,
-прочитанное из конфигурации: **L + R + вверх на крестовине**.
-Наш пакет добавляет только `re4-controls.ovl`, сохраняя существующий `ovlmenu.ovl`
-и загрузчик. Резервная сборка официального nx-ovlloader с текущим SDK находится
-локально в `build/diagnostic-romfs/`, исходники — `third_party/nx-ovlloader`.
-Она не устанавливалась: установщик правильно отказался заменять чужие файлы.
-Если другой мод уже устанавливает
-`exefs/subsdk9` или `main.npdm` для этой игры, требуется согласовать их совместимость
-до замены файлов. Русификатор в исходной папке игры использует RomFS.
+No console keys or GitHub token are required. Existing Uberhand/Tesla files,
+game saves and RomFS translations are preserved. A foreign `subsdk9` or
+`main.npdm` produces a conflict rather than being silently replaced.
 
-После сборки `tools/package.py` формирует `build/re4-controls-experimental.zip`
-и дерево `build/local-sd/`. Перенести содержимое дерева SD в корень карты.
-Для игрового модуля используются:
+## Install the SD ZIP manually
+
+Extract the following directories from `re4-controls-sd.zip` to the SD root:
 
 ```text
 atmosphere/contents/010099A00BC1E000/exefs/subsdk9
 atmosphere/contents/010099A00BC1E000/exefs/main.npdm
 switch/.overlays/re4-controls.ovl
-```
-
-Запустить RE4 заново, поставить игру на паузу, открыть оверлей и выбрать
-«Connect to game / Подключиться к игре». Отдельно доступны скорость поворота,
-чувствительность камеры и прицела по двум осям, мёртвые зоны обоих стиков.
-Закрыть оверлей и проверить малое/среднее/полное отклонение стика при движении.
-Пауза нужна до подтверждения блокировки ввода на конкретном загрузчике оверлеев.
-После изменения оверлей сохраняет настройки и передаёт их модулю без перезапуска.
-Максимум скорости ходьбы, поворотов, камеры и прицела от стиков —1.00;
-старые настройки выше1 автоматически снижаются. Описания выделенных пунктов
-показываются под списком. Чувствительности гироскопа X/Y регулируются отдельно.
-В0.3.0 кривые стиков меняются в `Stick response / Кривая стиков`.
-Мёртвые зоны по умолчанию0.05, обе инверсии включены. Отдельной регулировки
-скорости ходьбы больше нет: ходьба остаётся плавной, максимум —штатный.
-Неизвестная сборка или изменённые инструкции оставляют игровые перехваты выключенными.
-
-Для проверки гироскопа включить «Прицеливание гироскопом», оставить X/Y на
-1.00 и закрыть оверлей. Наклон должен менять прицел только при наведении из
-оружия, одновременно с обычным управлением. При отпускании прицела движение
-гироскопом прекращается. При паузе/смене контроллера накопленные показания
-отбрасываются. Вертикальная чувствительность задаётся в нормализованных единицах
-игрового прицела, поэтому X/Y допускают независимую подстройку.
-
-## Диагностический NRO и его обновление
-
-Подготовлен отдельный ярлык RE4 Controls. Его локальный ProgramId задаётся в
-`project.json`; он должен быть свободен на консоли и совпадать с собранным NSP.
-Для текущей локальной сборки это `0100E4C04E540000`.
-Иконка HOME берётся из установленного NSP: для её замены нужно переустановить
-обновлённый ярлык из `build/forwarder/`. Одного обновления NRO недостаточно.
-
-Один раз установить собственный NSP из `build/forwarder/`, перенести файлы:
-
-```text
 switch/re4-controls/bridge.nro
 switch/re4-controls/game.nro
-switch/re4-controls/token.txt
 ```
 
-Первые два — собственный диагностический NRO, третий — локальный ключ приёмника.
-Полное локальное дерево с ключом находится в `build/local-sd/`; ключ исключён
-из Git и публичного ZIP. Его содержимое не нужно сообщать в чате.
-Начиная с NRO 0.1.1, запуск через netloader с переданным библиотекой ключом
-сохраняет его в собственную папку SD. При повторном запуске ярлыка ключ
-читается оттуда. Замена отличающегося ключа сохраняет одну прежнюю копию;
-существующая копия блокирует дальнейшую автоматическую ротацию.
+`install/re4-controls-forwarder.nsp` is the own optional HOME launcher for manual
+installation. Do not copy an entire ZIP over another mod's ExeFS files without
+checking compatibility. The standalone installer performs ownership checks for you.
 
-Открыть ярлык RE4 Controls, затем на ПК выполнить:
+## In-game controls
 
-```powershell
-.venv\Scripts\python.exe tools\reload.py status
-.venv\Scripts\python.exe tools\reload.py deploy GAME build\re4-controls.nro
-```
+Start RE4 again. Open your overlay loader using its configured shortcut and select
+**RE4 Controls → Connect to game**. Connecting sends your saved settings to the mod.
+On the development console, the existing loader shortcut is **L + R + D-pad Up**;
+other loader installations may use a different combination.
 
-Проверка `status` должна показать protocol 2, приложение RE4 Controls и
-`title_verified: true`. Для приёмки обновления пересобрать изменённый NRO,
-проверить новый SHA-256, повторное подключение и новый PID процесса.
-Успешный PUT сам по себе не подтверждает запуск новой сборки.
-Аппаратно проверено: 0.1.1 PID 0x92 → другая сборка 0.1.2 PID 0x93,
-ожидаемый SHA-256 получен от запущенного NRO. Ключ сохранился и сработал
-после полного перезапуска консоли.
+Settings are saved on SD and apply without restarting the game:
 
-NRO0.3.0: D-pad выбирает пункты; A подтверждает; влево/вправо меняет значение;
-B возвращает назад; PLUS выходит. Настройки сохраняются сразу.
-На странице диагностики A включает гироскопический просмотр, удержание ZL
-показывает результат, Y калибрует неподвижный контроллер и автоматически
-сохраняет результат, X сбрасывает просмотр. Это проверка датчиков вне RE4.
-R устанавливает игровые файлы из встроенного RomFS; MINUS отключает только
-файлы, совпадающие с нашей квитанцией установки, сохраняя их под другим именем.
-ZR отдельно устанавливает только пункт **RE4 Controls** для существующего
-Uberhand/Tesla, оставляя игровой патч отключённым. Перезапуск консоли не нужен.
+- **Camera sensitivity** adjusts normal right-stick look.
+- **Left-stick aim X/Y** and **Right-stick aim X/Y** adjust firearm aiming separately.
+- Stick deadzones default to0.05. Four response curves are available.
+- Stick gains are capped at1.00, the native maximum.
+- **Gyro aiming** defaults to off. When enabled, motion adds to stick input only
+  during firearm aiming. **Gyro aiming speed** multiplies the X/Y sensitivities.
+- **Gyro deadzone** is measured in degrees/second; default0.50. Two readings
+  separated by10ms of sensor time are averaged. Both gyro inversions default to on.
 
-Работающий приёмник BLACK protocol 1 не используется для установки этих файлов:
-он привязан к собственным путям и своему ярлыку. Ему отправлялись только
-явно разрешённые пользователем AUTH/STATUS, без PUT/RUN.
+The standalone **Controller diagnostics** page shows raw sticks and motion.
+Hold ZL for the aiming preview. Y calibrates a stationary controller and saves
+the bias; X resets the preview. Each setting has a focused description.
 
-## Снятие мода
+## Update over Wi-Fi
 
-При закрытой игре нажать MINUS в отдельной диагностике RE4 Controls: установщик
-отключит только файлы, совпадающие с собственной квитанцией. Либо удалить только
-перечисленные файлы модуля и оверлея вручную.
-Если до установки были другие `subsdk9`/`main.npdm`, восстановить их копии.
-RomFS русификатора и сохранения RE4 этот пакет не меняет.
+Choose **Updates → Check for updates → Download / install**. The app checks the
+public GitHub release manifest, size, SHA-256, NRO structure, application identity
+and embedded version before replacing both app images. Previous images are kept,
+and failed publication attempts restore the old files when possible.
+
+Reopen RE4 Controls after installation. With RE4 closed, choose **Install / update
+mod** to install the new bundled game module and overlay. A private repository or
+missing release returns an unavailable message; users should never enter a token.
+
+## Remove the mod
+
+Close RE4, open the standalone app and select **Disable mod**. It disables only
+files matching its own installation receipt. If installing manually, remove only
+the three game/overlay files listed above and restore your previous ExeFS files.
+The own HOME application can be removed separately from System Settings.
+
+## Русский кратко
+
+Скопируйте NRO на SD, закройте RE4 и запустите приложение из hbmenu в режиме
+приложения. Выберите «Установить / обновить мод». Затем в игре откройте свой
+загрузчик оверлеев, выберите RE4 Controls и «Подключиться к игре».
+
+Обычная камера, прицел левым/правым стиком и гироскоп регулируются отдельно.
+Гироскоп действует только при наведении из оружия. Мёртвая зона гироскопа —0.50°/с,
+мёртвые зоны стиков —0.05; максимальная скорость стиков —1.00.
+
+Обновление: «Обновления → Проверить обновления → Скачать / установить», затем
+откройте приложение заново и обновите мод при закрытой игре. Ключи и токены
+пользователю не нужны. Отключение мода: «Отключить мод» при закрытой RE4.
+
+The package is experimental. Special weapons and every scripted/QTE state have
+not been exhaustively checked. Developer build/reload instructions and dependency
+notices are available in the source repository.

@@ -1,12 +1,13 @@
 #pragma once
 #include "control_menu.hpp"
+#include "update.hpp"
 #include <cstddef>
 #include <string>
 
 namespace re4 {
-enum class InstallerPage { Home, Controls, Diagnostics };
+enum class InstallerPage { Home, Controls, Diagnostics, Updates };
 enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview };
-enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview };
+enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate };
 enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
 struct DiagnosticSnapshot {
     bool connected=false,network=false;
@@ -14,7 +15,7 @@ struct DiagnosticSnapshot {
     float raw[4]{},processed[4]{},gyro_rate[3]{},gyro_preview[2]{};
 };
 struct HomeItem {Bilingual label,help;};
-const std::array<HomeItem,7>& installer_home_items();
+const std::array<HomeItem,8>& installer_home_items();
 class InstallerModel {
 public:
     Settings settings;
@@ -22,6 +23,7 @@ public:
     unsigned selected=0,home_selected=0;
     InstallerStatus status=InstallerStatus::Ready;
     DiagnosticSnapshot diagnostic;
+    UpdateSnapshot update;
     std::string detail;
     unsigned item_count()const;
     InstallerAction handle(UiEvent);

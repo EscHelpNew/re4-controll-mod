@@ -13,7 +13,7 @@ int main(){
         assert(std::strstr(spec.label.english,"Walk")==nullptr);
         assert(std::strstr(spec.label.russian,"ходьбы")==nullptr);
     }
-    assert(ids.size()==15);
+    assert(ids.size()==19);
     Settings s;
     assert(change_control(s,ControlId::Language,1) && s.language==Language::Russian);
     assert(control_value_text(control_spec(ControlId::Language),s)=="Русский");

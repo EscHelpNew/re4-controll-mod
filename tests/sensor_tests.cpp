@@ -1,6 +1,7 @@
 #include "re4/sensor.hpp"
 #include <cassert>
 #include <cstdio>
+#include <initializer_list>
 struct Backend {
     static inline unsigned gets=0, starts=0, stops=0, reads=0;
     static inline unsigned get_rc=0, start_rc=0, read_rc=0, last=0;
@@ -30,9 +31,9 @@ int main() {
     const auto failed_reads = Backend::reads;
     assert(reader.read(states,16) == 0 && Backend::reads == failed_reads);
     Backend::read_rc=0; Backend::count=2;
-    assert(reader.select(0,4,1|8,true));
+    assert(reader.select(0,4,1|16,true)); // SDK bit4 is RightConnected; bit3 is LeftWired.
     assert(Backend::stops == 1 && Backend::last == 20); // Prefer connected right Joy-Con.
-    assert(reader.select(0,4,1|8,false) && !reader.running());
+    assert(reader.select(0,4,1|16,false) && !reader.running());
     assert(Backend::stops == 2);
     Backend::start_rc=5;
     assert(reader.select(0,1,1,true) && !reader.running() && reader.result == 5);
@@ -46,5 +47,14 @@ int main() {
     assert(reader.select(0,1,1,true) && reader.running());
     assert(reader.read(states,16) == 0 && !reader.running()); // Malformed count cannot index stack.
     assert(reader.result == 0xFFFFFFFFu && Backend::stops == 3);
+    Backend::samples=1;Backend::start_rc=5;Backend::count=1;
+    assert(!reader.restart() && !reader.running() && reader.result==5);
+    Backend::start_rc=0;assert(reader.restart() && reader.running());reader.stop();
+    Backend::count=2;
+    for(unsigned attributes:{1u|4u,1u|16u,1u|4u|16u,1u|4u|8u}){
+        reader.select(0,4,attributes,true);
+        assert(Backend::last==((attributes&16)?20u:10u));
+    }
+    reader.select(0,4,0,true);assert(!reader.running());
     std::puts("sensor lifecycle: selection, failures, bounds and reconnect PASS");
 }

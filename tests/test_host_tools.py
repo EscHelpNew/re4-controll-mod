@@ -41,7 +41,7 @@ class PackageTests(unittest.TestCase):
             self.write('build/' + name, ('OWN_BINARY_' + name).encode())
         for name in ('docs/installation.md', 'LICENSE', 'third_party/exlaunch/LICENSE',
                      'third_party/libtesla/LICENSE', 'third_party/switch-debug-kit/LICENSE',
-                     'third_party/nx-ovlloader/LICENSE.md','third_party/graphics-NOTICES.txt'):
+                     'third_party/nx-ovlloader/LICENSE.md','third_party/graphics-NOTICES.txt','third_party/NTON-GPL3.txt'):
             self.write(name, ('PUBLIC_' + name).encode())
         self.tool = load('package')
         self.tool.ROOT, self.tool.OUT = self.root, self.out

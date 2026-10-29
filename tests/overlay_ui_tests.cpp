@@ -28,8 +28,15 @@ int main(){
         assert(list->y+list->height+16<=unsigned(renderer.text.back().y));
         ++descriptions;
     }
-    assert(descriptions==16 && sends==before && saves==0); // Hover must not save/send.
+    assert(descriptions==20 && sends==before && saves==0); // Hover must not save/send.
     assert(frame->title=="RE4 Controls");
+    for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e)){
+        if(item->label=="Connect to game"){
+            const auto before_connect=sends;
+            assert(item->click(HidNpadButton_A));
+            assert(sends==before_connect+1 && saves==0); // Saved gyro settings must reach a restarted module.
+        }
+    }
     tsl::elm::ListItem* language=nullptr;
     for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e)){
         assert(item->label.find("Walk")==std::string::npos);

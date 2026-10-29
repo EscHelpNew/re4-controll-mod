@@ -1,102 +1,94 @@
-# RE4 Controls — Nintendo Switch
+# RE4 Controls for Nintendo Switch
 
-Мод управления для установленной Resident Evil 4, Title ID `010099A00BC1E000`.
-В версии **0.2.0 пользователь подтвердил в игре** плавные повороты, изменение
-скорости ходьбы, чувствительности камеры и прицела. Русское меню открывается
-через существующий Uberhand сочетанием **L + R + вверх на крестовине**.
-Настройки сохраняются на SD и применяются без перезапуска игры.
+<img src="assets/icon-original.png" width="128" alt="RE4 Controls">
 
-В **0.2.2 пользователь подтвердил** исправленный вертикальный гироскоп,
-совместную работу гироскопа и стиков только при наведении из оружия, подсказки
-при выделении каждого пункта и предел скорости ходьбы/стиков **1.00**.
-Старые сохранённые значения выше1 снижаются при загрузке. Гироскоп по умолчанию
-выключен, обе инверсии включены по результату проверки направления осей.
-В0.2.3 добавлена предоставленная пользователем иконка. Особое оружие, все игровые
-режимы и смена контроллера требуют дополнительной проверки; сборка остаётся
-экспериментальной.
+Smooth stick controls and motion aiming for the original Nintendo Switch release
+of **Resident Evil 4**. Includes an English/Russian overlay, a standalone installer
+and updates from GitHub Releases. English is the default language.
 
-В0.3.0 добавлены английский и русский языки с переключением без перезапуска,
-четыре кривые стиков и графический установщик. Английский выбран по умолчанию,
-мёртвые зоны —0.05, обе инверсии включены. Пункт скорости ходьбы убран;
-плавная ходьба от стика сохраняется со штатным максимумом. Кривые: линейная,
-экспоненциальная, логарифмическая и плавный переход эксп.→лог.
-Пользователь подтвердил запуск нового установщика, установку мода0.3.0,
-переключение языков и четырёх кривых в игре и отсутствие пункта скорости ходьбы.
-Показания гироскопа в диагностике и замена NRO через библиотеку с новым хешем
-и PID уже проверены на консоли, включая запуск после перезагрузки.
+[Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
+[Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-## Файлы проекта
+## Features
 
-| Путь | Содержание |
+- Proportional turning, walking, camera and firearm aiming.
+- Separate left/right aiming sensitivities and adjustable stick deadzones.
+- Linear, exponential, logarithmic and blended response curves.
+- Additive gyro aiming **only while aiming a firearm**; independent X/Y gains,
+  motion speed, calibration and a deadzone in degrees/second.
+- Gyro filtering averages two readings separated by 10 ms of sensor time.
+- Live settings, help for every control, English/Russian language selection.
+- A standalone installer that creates its own HOME shortcut with the supplied icon.
+- In-app HTTPS updates with size, SHA-256, application identity and version checks.
+
+Stick speed is capped at the game's native maximum. Default stick deadzones
+are 0.05. Both gyro inversions default to on; gyro aiming defaults to off.
+
+## Supported game
+
+| Item | Supported value |
 |---|---|
-| `source/game/module.cpp` | Реальные перехваты обработки ввода и поворота RE4 |
-| `source/overlay/` | Меню EN/RU поверх игры, передача настроек модулю |
-| `source/diagnostic/` | Графический установщик, диагностика и приёмник обновлений NRO |
-| `include/re4/` | Обработка ввода, профиль сборки и протокол настроек |
-| `profiles/010099A00BC1E000/npdm.json` | Политика процесса для игрового модуля |
-| `third_party/` | Закреплённые исходники Switch Debug Kit, exlaunch и libtesla |
-| `tools/` | Инспектор NSO, клиент библиотеки, сборка ярлыка и пакета |
-| `tests/` | Проверки форматов, аналогового ввода, настроек и профиля |
-| `build/` | Локальные готовые сборки; не входит в Git |
-| `data/` | Локальные извлечённые файлы, ключ приёмника и журналы; не входит в Git |
+| Game | Resident Evil 4, original Nintendo Switch port |
+| Title ID | `010099A00BC1E000` |
+| Main Build ID | `82C2A04A21D3E0B850F273D4149C900300000000000000000000000000000000` |
+| Runtime | Atmosphere with `dmnt:cht`; Tesla-compatible overlay loader |
+| Tested console firmware | Horizon 22.1.0 with CFW |
 
-Поддерживаемый Build ID:
-`82C2A04A21D3E0B850F273D4149C900300000000000000000000000000000000`.
-Мод проверяет ProgramId, Build ID и исходные инструкции до установки перехватов.
-Подробности разбора: [docs/research/re4-binary.md](docs/research/re4-binary.md).
+The module checks the title, full Build ID and original instructions before
+installing hooks. Other builds remain unsupported until their executable is checked.
+This is an **experimental homebrew mod**. Special weapons and every scripted/QTE
+context have not been exhaustively tested. Game files are not included.
 
-## Сборка на Windows
+## Install
 
-Нужны Windows Python 3.13 и devkitPro/devkitA64 с libnx и switch-tools.
-Здесь SDK установлен в `C:/msys64/opt/devkitpro`.
-Графический установщик использует установленный switch-sdl2. Для тестовых
-кадров нужна SDL2 в MinGW64. Шрифт загружается из системы консоли;
-файлы шрифтов Nintendo в проект и пакет не копируются.
+1. Download `re4-controls.nro` from Releases and copy it to
+   `sdmc:/switch/re4-controls/re4-controls.nro`.
+2. Close RE4. Open hbmenu in **application mode** by holding R while launching
+   an installed title, then start RE4 Controls. It prepares its own HOME shortcut.
+3. Choose **Install / update mod**. Keep your existing Uberhand/Tesla installation;
+   RE4 Controls installs only its own overlay.
+4. Start RE4, open your loader's overlay menu, select **RE4 Controls**, then
+   **Connect to game**. Adjust settings and enable gyro if wanted.
+
+The SD ZIP is an alternative manual installation package. Installation and removal
+details are in [docs/installation.md](docs/installation.md).
+
+## Update
+
+Open **RE4 Controls → Updates → Check for updates**. If a newer release exists,
+choose **Download / install**. Reopen the app after installation, then choose
+**Install / update mod** while RE4 is closed to update its bundled game module.
+
+Updates use the public releases of this repository. No GitHub token or console key
+is required. A private repository or missing release produces an unavailable message.
+Previous app images are retained; failed validation leaves the current app intact.
+
+## Build and test
+
+Windows build requirements: Python 3.13, devkitA64/libnx, switch-tools, switch-sdl2,
+switch-curl and switch-zlib. Host C++ tests use MinGW64 and SDL2.
+See [build instructions](docs/building.md) and [test coverage](docs/testing.md).
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+Copy-Item project.release.json project.json
 .venv\Scripts\python.exe build.py --test
-.venv\Scripts\python.exe build.py --nro --module --overlay
+.venv\Scripts\python.exe build.py --module --overlay --nro
 ```
 
-`project.example.json` — публичный пример с выключенным автоматическим RUN.
-Локальный `project.json` задаёт имя собственного приложения, его ProgramId,
-папку SD и IP консоли. Для автоматического перезапуска нужен соответствующий
-установленный ярлык. Идентификатор RE4 для NRO использовать нельзя.
+The own HOME payload is included in `assets/home-launcher.bin`. Normal NRO builds
+need no console keys. Regenerating the forwarder is a separate local packaging step.
+Developer LAN reload support uses the pinned
+[Switch Debug Kit](https://github.com/EscHelpNew/switch-monitor); its credential is
+local and excluded from source and public release assets.
 
-```powershell
-.venv\Scripts\python.exe tools\build_forwarder.py --keys "путь\к\prod.keys"
-.venv\Scripts\python.exe tools\package.py
-```
+## Contributing and licenses
 
-Установка и текущие ограничения: [docs/installation.md](docs/installation.md).
-Автоматические и аппаратные проверки: [docs/testing.md](docs/testing.md).
+Include the game Build ID, controller style, settings and reproduction steps in bug
+reports. Never attach keys, tokens, game containers or private debug logs.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
-## Обновление NRO
-
-Используется Switch Debug Kit **protocol 2** из
-[EscHelpNew/switch-monitor](https://github.com/EscHelpNew/switch-monitor).
-При первом запуске собственного ярлыка диагностический NRO читает локальный
-`sdmc:/switch/re4-controls/token.txt` и передаёт ключ в неизменённый приёмник.
-Ключ не вшит в NRO или NSP. После этого:
-
-```powershell
-.venv\Scripts\python.exe tools\reload.py status
-.venv\Scripts\python.exe tools\reload.py deploy GAME build\re4-controls.nro
-```
-
-Это аппаратно проверенная передача и запуск нового процесса с проверкой digest.
-Уже работающий на
-консоли BLACK использует protocol 1; его файлы эта работа не обновляет.
-Игровой `subsdk9` обновляется при закрытой RE4, отдельно от NRO.
-
-## Лицензии
-
-Собственный код — MIT, см. [LICENSE](LICENSE). Игровой модуль использует
-exlaunch (GPL-2.0), оверлей — libtesla (GPL-2.0-or-later); соответствующие
-составные бинарники распространяются на условиях GPL-2.0 с исходниками.
-Switch Debug Kit — MIT. Лицензии и сведения о ревизиях находятся в `third_party/`.
-NTON используется как инструмент для сборки собственного homebrew-ярлыка.
-Игровые контейнеры, исполняемые файлы Capcom и криптографические ключи в исходники
-и публичный пакет не включаются.
+Own code: [MIT](LICENSE). The game module uses exlaunch (GPL-2.0), and the overlay
+uses libtesla (GPL-2.0-or-later). Complete pinned sources and dependency notices
+are in `third_party/`. Release artifacts include their notices.

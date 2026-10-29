@@ -38,7 +38,7 @@ int main(){
     assert(shape_axis(0.5f,0,1,static_cast<StickCurve>(255))==0);
     std::uint8_t bytes[kSettingsBytes];
     Settings s;s.language=Language::Russian;s.stick_curve=StickCurve::Hybrid;
-    assert(encode_settings(s,bytes,sizeof(bytes)) && bytes[4]==4);
+    assert(encode_settings(s,bytes,sizeof(bytes)) && bytes[4]==6);
     Settings decoded;assert(decode_settings(bytes,sizeof(bytes),decoded));
     assert(decoded.language==Language::Russian && decoded.stick_curve==StickCurve::Hybrid);
     s.language=static_cast<Language>(2);assert(!valid_settings(s));
@@ -46,7 +46,7 @@ int main(){
     // Legacy preset: keep custom turn gain, migrate the old default deadzone,
     // reset the removed manual walk-speed control to native full scale.
     s={};s.turn_gain=0.3f;assert(encode_settings(s,bytes,sizeof(bytes)));
-    bytes[4]=3;bytes[8]&=15;
+    bytes[4]=3;bytes[8]&=15;bytes[9]=bytes[10]=bytes[11]=0;
     const float old_zone=0.15f,old_walk=0.3f;
     std::memcpy(bytes+32,&old_zone,4);std::memcpy(bytes+36,&old_zone,4);
     std::memcpy(bytes+56,&old_walk,4);seal(bytes);

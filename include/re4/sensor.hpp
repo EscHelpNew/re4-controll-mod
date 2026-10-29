@@ -31,7 +31,7 @@ public:
         int count = 0;
         result = Backend::handles(handles_, &count, 2, id, style);
         if (result || count < 1 || count > 2) return true;
-        selected_ = style == 4 && count == 2 && (attributes & 8) ? 1 : 0;
+        selected_ = style == 4 && count == 2 && (attributes & 16) ? 1 : 0;
         result = Backend::start(handles_[selected_]);
         if (result && count == 2) { selected_ ^= 1; result = Backend::start(handles_[selected_]); }
         started_ = result == 0;
@@ -49,5 +49,11 @@ public:
         return !result && count >= 0 && count <= capacity ? count : 0;
     }
     bool running() const { return started_; }
+    bool restart() {
+        if (!enabled_ || !(attributes_&1)) return false;
+        stop();enabled_=false;
+        select(id_,style_,attributes_,true);
+        return started_;
+    }
 };
 }

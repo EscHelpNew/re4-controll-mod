@@ -10,8 +10,8 @@ struct Bilingual {
     const char* get(Language language) const { return language==Language::Russian ? russian : english; }
 };
 enum class ControlId : unsigned {
-    Language, Curve, Analog, Turn, Camera, AimX, AimY, LeftDeadzone, RightDeadzone,
-    Gyro, GyroX, GyroY, InvertX, InvertY, Reset, Count
+    Language, Curve, Analog, Turn, Camera, AimX, AimY, RightAimX, RightAimY, LeftDeadzone, RightDeadzone,
+    Gyro, GyroSpeed, GyroDeadzone, GyroX, GyroY, InvertX, InvertY, Reset, Count
 };
 enum class ControlKind { Selector, Toggle, Slider, Action };
 struct ControlSpec {

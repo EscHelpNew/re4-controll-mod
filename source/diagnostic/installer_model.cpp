@@ -1,8 +1,8 @@
 #include "re4/installer_ui.hpp"
 #include <cstring>
 namespace re4 {
-const std::array<HomeItem,7>& installer_home_items(){
-    static constexpr std::array<HomeItem,7> items{{
+const std::array<HomeItem,8>& installer_home_items(){
+    static constexpr std::array<HomeItem,8> items{{
         {{"Install / update mod","Установить / обновить мод"},
          {"Install smooth controls and the overlay.\nClose Resident Evil 4 before installing.",
           "Установить управление и меню оверлея.\nПеред установкой закройте Resident Evil 4."}},
@@ -18,6 +18,9 @@ const std::array<HomeItem,7>& installer_home_items(){
         {{"Controller diagnostics","Проверка контроллера"},
          {"Check raw sticks, gyro and calibration.\nHold ZL to preview motion aiming.",
           "Проверить стики, гироскоп и калибровку.\nУдерживайте ZL для проверки прицела."}},
+        {{"Updates","Обновления"},
+         {"Download a new app from GitHub Releases.\nWi-Fi is required. The previous app is kept.",
+          "Скачать новую версию из GitHub Releases.\nНужен Wi-Fi. Предыдущая версия сохраняется."}},
         {{"Language","Язык"},
          {"Choose English or Russian.\nUse LEFT/RIGHT or A to change.",
           "Выберите русский или английский.\nСмена: влево/вправо или A."}},
@@ -28,13 +31,16 @@ const std::array<HomeItem,7>& installer_home_items(){
     return items;
 }
 unsigned InstallerModel::item_count()const{
-    return page==InstallerPage::Home?7:page==InstallerPage::Controls?unsigned(ControlId::Count):0;
+    return page==InstallerPage::Home?8:page==InstallerPage::Controls?unsigned(ControlId::Count):page==InstallerPage::Updates?2:0;
 }
 InstallerAction InstallerModel::handle(UiEvent event){
     if(event==UiEvent::Exit)return InstallerAction::Exit;
     if(event==UiEvent::Back){
         if(page==InstallerPage::Home)return InstallerAction::Exit;
-        page=InstallerPage::Home;selected=home_selected;return InstallerAction::None;
+        const bool cancel=page==InstallerPage::Updates && (update.stage==UpdateStage::Checking
+            || update.stage==UpdateStage::Downloading || update.stage==UpdateStage::Installing);
+        page=InstallerPage::Home;selected=home_selected;
+        return cancel?InstallerAction::CancelUpdate:InstallerAction::None;
     }
     if(page==InstallerPage::Home){
         if(event==UiEvent::QuickInstall)return InstallerAction::InstallGame;
@@ -54,6 +60,12 @@ InstallerAction InstallerModel::handle(UiEvent event){
         }
         return InstallerAction::None;
     }
+    if(page==InstallerPage::Updates){
+        if(event!=UiEvent::Confirm || update.stage==UpdateStage::Checking || update.stage==UpdateStage::Downloading
+            || update.stage==UpdateStage::Installing || update.stage==UpdateStage::Installed)return InstallerAction::None;
+        if(selected==0)return InstallerAction::CheckUpdates;
+        return update.stage==UpdateStage::Available?InstallerAction::InstallUpdate:InstallerAction::None;
+    }
     if(page==InstallerPage::Controls){
         if(selected>=count)selected=0;
         const auto& spec=control_specs()[selected];
@@ -63,25 +75,41 @@ InstallerAction InstallerModel::handle(UiEvent event){
         if(change_control(settings,spec.id,event==UiEvent::Left?-1:1))return InstallerAction::SaveSettings;
         return InstallerAction::None;
     }
-    if(selected==5 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
+    if(selected==6 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
         change_control(settings,ControlId::Language,1);return InstallerAction::SaveSettings;
     }
     if(event!=UiEvent::Confirm)return InstallerAction::None;
     if(selected==0)return InstallerAction::InstallGame;
     if(selected==1)return InstallerAction::InstallOverlay;
     if(selected==2)return InstallerAction::DisableGame;
-    if(selected==6)return InstallerAction::Exit;
+    if(selected==7)return InstallerAction::Exit;
     home_selected=selected;
-    page=selected==3?InstallerPage::Controls:InstallerPage::Diagnostics;
+    page=selected==3?InstallerPage::Controls:selected==4?InstallerPage::Diagnostics:InstallerPage::Updates;
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
     const Bilingual text=page==InstallerPage::Home?Bilingual{"MOD INSTALLER","УСТАНОВКА МОДА"}
         :page==InstallerPage::Controls?Bilingual{"CONTROL SETTINGS","НАСТРОЙКИ УПРАВЛЕНИЯ"}
-        :Bilingual{"CONTROLLER DIAGNOSTICS","ПРОВЕРКА КОНТРОЛЛЕРА"};
+        :page==InstallerPage::Diagnostics?Bilingual{"CONTROLLER DIAGNOSTICS","ПРОВЕРКА КОНТРОЛЛЕРА"}
+        :Bilingual{"APP UPDATES","ОБНОВЛЕНИЯ ПРИЛОЖЕНИЯ"};
     return text.get(settings.language);
 }
 const char* InstallerModel::status_text()const{
+    if(page==InstallerPage::Updates){
+        static constexpr Bilingual updates[]={
+            {"Check for a newer version","Проверьте наличие новой версии"},
+            {"Checking GitHub Releases...","Проверка GitHub Releases..."},
+            {"A new version is available","Доступна новая версия"},
+            {"You have the latest version","Установлена актуальная версия"},
+            {"Downloading update...","Загрузка обновления..."},
+            {"Verifying and installing...","Проверка и установка..."},
+            {"Update installed. Reopen RE4 Controls.","Обновление установлено. Откройте приложение заново."},
+            {"Update unavailable. Check Wi-Fi or try later.","Обновление недоступно. Проверьте Wi-Fi или повторите позже."},
+            {"Download cancelled; current app kept","Загрузка отменена; текущая версия сохранена"}
+        };
+        const auto index=unsigned(update.stage);
+        return updates[index<9?index:7].get(settings.language);
+    }
     static constexpr Bilingual messages[]={
         {"Ready","Готово"},
         {"Settings saved","Настройки сохранены"},
@@ -99,18 +127,28 @@ const char* InstallerModel::status_text()const{
     return messages[index<sizeof(messages)/sizeof(*messages)?index:unsigned(InstallerStatus::Failed)].get(settings.language);
 }
 const char* InstallerModel::selected_help()const{
-    if(page==InstallerPage::Home)return installer_home_items()[selected<7?selected:0].help.get(settings.language);
+    if(page==InstallerPage::Home)return installer_home_items()[selected<8?selected:0].help.get(settings.language);
+    if(page==InstallerPage::Updates){
+        if(update.stage==UpdateStage::Installed)return Bilingual{
+            "Reopen this app to start the new version.\nThen use Install / update mod while\nResident Evil4 is closed.",
+            "Откройте приложение заново. Затем\nвыберите «Установить / обновить мод»,\nпока Resident Evil4 закрыта."}.get(settings.language);
+        return Bilingual{"Check the latest public GitHub release,\nthen choose Download / install.\nSettings are kept. No token is needed.",
+            "Проверьте последний публичный релиз,\nзатем выберите «Скачать / установить».\nНастройки сохраняются. Токен не нужен."}.get(settings.language);
+    }
     if(page==InstallerPage::Controls)return control_spec(static_cast<ControlId>(selected)).help.get(settings.language);
     return Bilingual{"ZL: gyro preview  A: gyro on/off\nY: calibrate  X: reset preview",
                      "ZL: проверка  A: гироскоп вкл./выкл.\nY: калибровать  X: сбросить прицел"}.get(settings.language);
 }
 std::string InstallerModel::item_label(unsigned index)const{
-    if(page==InstallerPage::Home)return installer_home_items()[index<7?index:0].label.get(settings.language);
+    if(page==InstallerPage::Home)return installer_home_items()[index<8?index:0].label.get(settings.language);
+    if(page==InstallerPage::Updates)return (index==0?Bilingual{"Check for updates","Проверить обновления"}
+        :Bilingual{"Download / install","Скачать / установить"}).get(settings.language);
     return control_spec(static_cast<ControlId>(index)).label.get(settings.language);
 }
 std::string InstallerModel::item_value(unsigned index)const{
     if(page==InstallerPage::Controls)return control_value_text(control_spec(static_cast<ControlId>(index)),settings);
-    if(index==5)return settings.language==Language::Russian?"Русский":"English";
+    if(page==InstallerPage::Updates)return index==1?update.version:"";
+    if(index==6)return settings.language==Language::Russian?"Русский":"English";
     if(index==3)return curve_name(settings.stick_curve,settings.language);
     return "";
 }

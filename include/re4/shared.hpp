@@ -5,8 +5,8 @@
 #include <atomic>
 
 namespace re4 {
-constexpr char kSharedMarker[16] = "RE4CTL_SHARED_7";
-constexpr unsigned kSharedAbi = 7;
+constexpr char kSharedMarker[16] = "RE4CTL_SHARED_9";
+constexpr unsigned kSharedAbi = 9;
 // Wire layout is shared by the module and overlay, with no runtime pointers.
 // The overlay publishes an odd sequence, payload, then the next even sequence.
 // The module validates both sequence reads and the payload checksum.
@@ -41,12 +41,28 @@ struct alignas(8) SharedControl {
     std::uint32_t sensor_samples;
     float gyro_yaw;
     float gyro_pitch;
+    std::uint32_t sensor_fresh_samples;
+    std::uint32_t sensor_restarts;
+    std::uint32_t gyro_active;
+    std::uint32_t pad_style;
+    float gyro_rate_yaw;
+    float gyro_rate_pitch;
+    std::uint32_t aim_source;
+    std::int32_t applied_aim_x;
+    std::int32_t applied_aim_y;
+    float aim_full_scale;
 };
 static_assert(offsetof(SharedControl, settings) == 32);
 static_assert(offsetof(SharedControl, frames) == 96);
 static_assert(offsetof(SharedControl, applied_sequence) == 120);
-static_assert(sizeof(SharedControl) == 200);
+static_assert(sizeof(SharedControl) == 240);
 constexpr unsigned kCapabilityTurning = 1;
+constexpr SharedControl initial_shared_control() {
+    SharedControl result{};
+    for(unsigned i=0;i<16;++i) result.marker[i]=kSharedMarker[i];
+    result.abi=kSharedAbi;result.capabilities=kCapabilityTurning;
+    return result;
+}
 inline bool acknowledge_settings(volatile SharedControl& control, const Settings& settings,
                                  std::uint32_t sequence) {
     if ((sequence & 1) || control.sequence != sequence || !valid_settings(settings)) return false;

@@ -4,8 +4,11 @@ import hashlib
 import json
 import shutil
 import zipfile
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+from tools.version import get_version
 OUT = ROOT / 'build'
 
 
@@ -15,6 +18,11 @@ def package() -> None:
         raise ValueError('Review package allowlist for a different SD directory')
     nro = OUT / 're4-controls.nro'
     own = list((OUT / 'forwarder').glob('*.nsp'))
+    if not own:
+        from tools.launcher_bundle import export_nsp
+        target=OUT/'forwarder/RE4-Controls-HOME.nsp'
+        export_nsp((ROOT/'assets/home-launcher.bin').read_bytes(),target)
+        own=[target]
     if len(own) != 1:
         raise RuntimeError('Build this project\'s own forwarder first')
     prefix = 'atmosphere/contents/010099A00BC1E000/exefs/'
@@ -32,19 +40,23 @@ def package() -> None:
         'licenses/Switch-Debug-Kit-MIT.txt': ROOT / 'third_party/switch-debug-kit/LICENSE',
         'licenses/nx-ovlloader-GPL2.txt': ROOT / 'third_party/nx-ovlloader/LICENSE.md',
         'licenses/graphics-NOTICES.txt': ROOT / 'third_party/graphics-NOTICES.txt',
+        'licenses/NTON-GPL3.txt': ROOT / 'third_party/NTON-GPL3.txt',
     }
-    manifest = {'status': 'experimental; core controls confirmed on hardware in 0.2.2',
-                'version': '0.3.0',
+    manifest = {'status': 'experimental; core controls and updated gyro/HOME confirmed on hardware',
+                'version': get_version(),
                 'features': ['proportional turning and walking', 'camera/aim sensitivity',
                              'additive firearm-aim gyro', 'English/Russian settings',
-                             'four stick response curves', 'themed reloadable installer'],
+                             'four stick response curves', 'themed reloadable installer',
+                             'separate right-stick aiming','10ms gyro average and angular deadzone','public GitHub OTA updates'],
                 'verified': ['user confirmed movement/camera/aim in 0.2.0',
                              'user confirmed additive aim-only gyro, vertical range, help and speed caps in 0.2.2',
                              'overlay UI on existing Uberhand',
                              'user confirmed themed installer and mod installation in 0.3.0',
                              'user confirmed EN/RU, four curves and removed walk-speed menu in 0.3.0',
+                             'user confirmed gyro filter/speed/deadzone and automatic HOME icon in 0.3.1',
+                             'user confirmed right-stick aim zero/variable-speed behavior in 0.4.0',
                              'diagnostic sticks/gyro on console', 'NRO changed-image reload and new PID', 'cold-launch credential'],
-                'pending': ['updated icon on HOME after DBI reinstallation',
+                'pending': ['public anonymous OTA hardware download (repository currently private)',
                             'special weapons and all gameplay contexts', 'controller switch in game'],
                 'files': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}}
     destination = OUT / 're4-controls-experimental.zip'
@@ -63,10 +75,10 @@ def package() -> None:
             shutil.copy2(path, target)
         archive.writestr('manifest.json', json.dumps(manifest, indent=2) + '\n')
     token = local / f'switch/{config["sd_directory"]}/token.txt'
-    shutil.copy2(ROOT / 'data/token.txt', token)
+    if (ROOT/'data/token.txt').is_file():shutil.copy2(ROOT / 'data/token.txt', token)
     (OUT / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     print('Public package:', destination)
-    print('Private local SD tree (includes receiver credential):', local)
+    print('Local SD tree (credential copied only when configured):', local)
 
 
 if __name__ == '__main__':

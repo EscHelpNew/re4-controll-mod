@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import re
 
 ROOT = Path(__file__).resolve().parent
 KIT = ROOT / 'third_party/switch-debug-kit'
@@ -14,8 +15,10 @@ sys.path.insert(0, str(KIT / 'host'))
 from sdk import SDK, tool, sdk_tool
 from project import load, header, prepare
 from tools.prepare_icon import prepare as prepare_app_icon, prepare_bitmap
+from tools.payload import stage_payload
 
 OUT = ROOT / 'build'
+VERSION = re.search(r'kVersion="([^"]+)"',(ROOT/'include/re4/version.hpp').read_text()).group(1)
 
 
 def run(args, **kwargs):
@@ -63,6 +66,27 @@ def tests():
          'tests/response_curve_tests.cpp', 'source/input.cpp', 'source/settings.cpp',
          '-o', OUT / 'response_curve_tests.exe'])
     native('response_curve_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/gyro_filter_tests.cpp','source/input.cpp','source/settings.cpp','-o',OUT/'gyro_filter_tests.exe'])
+    native('gyro_filter_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/aim_input_tests.cpp','source/input.cpp','source/settings.cpp','-o',OUT/'aim_input_tests.exe'])
+    native('aim_input_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/home_launcher_tests.cpp','source/diagnostic/home_policy.cpp','-o',OUT/'home_launcher_tests.exe'])
+    native('home_launcher_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-static',
+         '-Itests/home_stubs','-Iinclude','tests/actual_home_tests.cpp','source/diagnostic/home_policy.cpp',
+         '-ladvapi32','-o',OUT/'actual_home_tests.exe'])
+    native('actual_home_tests.exe')
+    run([host.replace('g++','gcc'),'-std=c11','-Itests/update_stubs','-I'+str(KIT/'receiver'),
+         '-c',KIT/'receiver/reload_core.c','-o',OUT/'reload_core_host.o'])
+    for name,sources in [('update_tests',['source/update.cpp']),
+                         ('update_worker_tests',['source/update.cpp','source/diagnostic/update_worker.cpp'])]:
+        run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static',
+             '-Itests/update_stubs','-Iinclude','-I'+str(KIT/'receiver'),
+             'tests/'+name+'.cpp',*sources,OUT/'reload_core_host.o','-ladvapi32','-o',OUT/(name+'.exe')])
+        native(name+'.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/control_menu_tests.cpp', 'source/control_menu.cpp', 'source/settings.cpp',
          '-o', OUT / 'control_menu_tests.exe'])
@@ -101,6 +125,7 @@ def diagnostic():
     includes = ['-I' + str(p) for p in (ROOT / 'include', ROOT / 'source/overlay', receiver, config)]
     includes += ['-isystem', str(SDK / 'libnx/include')]
     includes += ['-isystem',str(SDK/'portlibs/switch/include/SDL2'),
+                 '-isystem',str(SDK/'portlibs/switch/include'),
                  '-isystem',str(ROOT/'third_party/libtesla/include')]
     common = ['-O2', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-misleading-indentation',
               '-march=armv8-a+crc+crypto', '-mtune=cortex-a57', '-ffixed-x18',
@@ -111,10 +136,12 @@ def diagnostic():
         dest = OUT / (name + '.o')
         run([tool('gcc'), '-std=gnu11', *common, '-c', receiver / (name + '.c'), '-o', dest])
         objects.append(dest)
-    for source in ('source/input.cpp', 'source/settings.cpp', 'source/control_menu.cpp', 'source/settings_file.cpp', 'source/install.cpp',
+    for source in ('source/input.cpp', 'source/settings.cpp', 'source/control_menu.cpp', 'source/settings_file.cpp', 'source/install.cpp','source/update.cpp',
                    'source/overlay/game_link.cpp',
                    'source/overlay/storage.cpp',
                    'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
+                   'source/diagnostic/home_policy.cpp','source/diagnostic/home_launcher.cpp',
+                   'source/diagnostic/update_worker.cpp',
                    'source/diagnostic/main.cpp'):
         dest = OUT / (Path(source).stem + '.o')
         run([tool('g++'), '-std=gnu++17', '-fno-exceptions', '-fno-rtti', *common,
@@ -124,19 +151,15 @@ def diagnostic():
     env = os.environ.copy()
     env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), '-specs=' + str(SDK / 'libnx/switch.specs'), *common,
-         *objects, '-L'+str(SDK/'portlibs/switch/lib'),'-lSDL2','-lEGL','-lglapi','-ldrm_nouveau',
+         *objects, '-L'+str(SDK/'portlibs/switch/lib'),'-lSDL2','-lEGL','-lglapi','-ldrm_nouveau','-lcurl','-lz',
          '-L' + str(SDK / 'libnx/lib'), '-lnx','-lpthread', '-lm', '-o', elf], env=env)
-    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.3.0', nacp,
+    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], VERSION, nacp,
          '--titleid=' + cfg['title_id']])
-    payload = OUT / 'diagnostic-romfs'
-    payload.mkdir(exist_ok=True)
-    prepare_bitmap(ROOT/'assets/icon-original.png',payload/'app-logo.bmp')
+    prepare_bitmap(ROOT/'assets/icon-original.png',OUT/'app-logo.bmp')
     base = OUT / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
-    for name, source in {'subsdk9': base / 'subsdk9', 'main.npdm': base / 'main.npdm',
-                         're4-controls.ovl': OUT / 'experimental/switch/.overlays/re4-controls.ovl'}.items():
-        if not source.is_file():
-            raise RuntimeError('Build --module --overlay before the bundled diagnostic NRO')
-        shutil.copy2(source, payload / name)
+    payload=stage_payload(ROOT,{'app-logo.bmp':OUT/'app-logo.bmp',
+        'home-launcher.bin':ROOT/'assets/home-launcher.bin','subsdk9':base/'subsdk9','main.npdm':base/'main.npdm',
+        're4-controls.ovl':OUT/'experimental/switch/.overlays/re4-controls.ovl'})
     icon = prepare_app_icon(ROOT / 'assets/icon-original.png', OUT / 'icon.jpg')
     run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp), '--icon=' + str(icon),
          '--romfsdir=' + str(payload)])
@@ -229,7 +252,7 @@ def overlay():
     output = OUT / 'experimental/switch/.overlays/re4-controls.ovl'
     output.parent.mkdir(parents=True, exist_ok=True)
     nacp = OUT / 're4-controls-overlay.nacp'
-    run([sdk_tool('nacptool'), '--create', 'RE4 Controls', 're4-controls', '0.1.0', nacp])
+    run([sdk_tool('nacptool'), '--create', 'RE4 Controls', 're4-controls', VERSION, nacp])
     icon = prepare_app_icon(ROOT / 'assets/icon-original.png', OUT / 'icon.jpg')
     run([sdk_tool('elf2nro'), elf, output, '--nacp=' + str(nacp), '--icon=' + str(icon)])
     print('Built EXPERIMENTAL overlay:', output)

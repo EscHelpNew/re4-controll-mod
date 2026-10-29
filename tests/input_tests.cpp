@@ -118,6 +118,7 @@ int main() {
     // give old files the original full walking speed.
     auto legacy = std::vector<std::uint8_t>(encoded, encoded + sizeof(encoded));
     legacy[4] = 1;
+    legacy[8]&=15;legacy[9]=legacy[10]=legacy[11]=0;
     std::memset(legacy.data() + 56, 0, 4);
     std::uint32_t hash = 2166136261u;
     for (unsigned i = 0; i < 60; ++i) { hash ^= legacy[i]; hash *= 16777619u; }
@@ -128,6 +129,7 @@ int main() {
     // the original game limit while preserving the remaining configuration.
     legacy.assign(encoded, encoded + sizeof(encoded));
     legacy[4] = 2;
+    legacy[8]&=15;legacy[9]=legacy[10]=legacy[11]=0;
     const float old_gain = 3;
     for (auto offset : {16,20,24,28,56}) std::memcpy(legacy.data()+offset,&old_gain,4);
     hash = 2166136261u;
@@ -172,5 +174,10 @@ int main() {
         }
     }
     assert(close(totals[0], 1) && close(totals[0], totals[1]));
+    Settings diagnostic_settings;diagnostic_settings.aim_gain_x=0;diagnostic_settings.right_aim_gain_x=0.5f;
+    diagnostic_settings.right_aim_gain_y=0.25f;diagnostic_settings.right_deadzone=0;
+    const float raw[]={0,0,1,-1};float processed[4]{};
+    process_stick_diagnostics(raw,diagnostic_settings,processed);
+    assert(processed[2]==0.5f && processed[3]==-0.25f);
     std::puts("input/settings: all checks passed");
 }

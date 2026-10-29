@@ -94,6 +94,16 @@ bool GameLink::connect() {
                     std::snprintf(diagnostic, sizeof(diagnostic), "\nsensor_rc=%08X running=%u samples=%u gyro_delta=%.6f,%.6f",
                         block.sensor_result, block.sensor_running, block.sensor_samples, block.gyro_yaw, block.gyro_pitch);
                     details += diagnostic;
+                    re4::Settings applied_settings;
+                    if(re4::decode_settings(block.settings,sizeof(block.settings),applied_settings)){
+                        std::snprintf(diagnostic,sizeof(diagnostic),
+                            "\ngyro_enabled=%u speed=%.2f gain=%.2f,%.2f deadzone_dps=%.2f active=%u fresh=%u restarts=%u rate=%.4f,%.4f style=%u",
+                            unsigned(applied_settings.gyro_enabled),applied_settings.gyro_speed,
+                            applied_settings.gyro_gain_x,applied_settings.gyro_gain_y,applied_settings.gyro_deadzone_dps,
+                            block.gyro_active,block.sensor_fresh_samples,block.sensor_restarts,
+                            block.gyro_rate_yaw,block.gyro_rate_pitch,block.pad_style);
+                        details+=diagnostic;
+                    }
                     std::snprintf(diagnostic, sizeof(diagnostic), "\nmovement_calls=%u factor=%.3f camera_calls=%u aim_calls=%u",
                         block.movement_calls, block.movement_factor, block.camera_calls, block.aim_calls);
                     details += diagnostic;

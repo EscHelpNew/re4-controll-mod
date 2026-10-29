@@ -5,10 +5,10 @@
 int main(){
     using namespace re4;
     InstallerModel m;
-    assert(m.settings.language==Language::English && m.page==InstallerPage::Home && m.item_count()==7);
+    assert(m.settings.language==Language::English && m.page==InstallerPage::Home && m.item_count()==8);
     assert(m.handle(UiEvent::Confirm)==InstallerAction::InstallGame);
     m.selected=3;assert(m.handle(UiEvent::Confirm)==InstallerAction::None && m.page==InstallerPage::Controls);
-    assert(m.item_count()==15 && m.selected==0);
+    assert(m.item_count()==unsigned(ControlId::Count) && m.selected==0);
     assert(m.handle(UiEvent::QuickInstall)==InstallerAction::None); // Never install from a settings page.
     m.selected=unsigned(ControlId::Reset);m.settings.turn_gain=0.4f;m.settings.gyro_bias_x=1.2f;
     assert(m.handle(UiEvent::Left)==InstallerAction::None);
@@ -36,5 +36,16 @@ int main(){
     assert(!m.allow_installation(false,false) && m.status==InstallerStatus::Failed);
     assert(!m.allow_installation(true,true) && m.status==InstallerStatus::GameRunning);
     assert(m.allow_installation(true,false));
+    m.page=InstallerPage::Home;m.selected=5;
+    m.handle(UiEvent::Confirm);assert(m.page==InstallerPage::Updates && m.item_count()==2);
+    assert(m.handle(UiEvent::QuickInstall)==InstallerAction::None);
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::CheckUpdates);
+    m.update.stage=UpdateStage::Checking;
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::None);
+    m.update.stage=UpdateStage::Available;m.selected=1;
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::InstallUpdate);
+    m.update.stage=UpdateStage::Downloading;
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::None);
+    assert(m.handle(UiEvent::Back)==InstallerAction::CancelUpdate && m.page==InstallerPage::Home);
     std::puts("installer navigation: page-safe actions, language, controls and calibration PASS");
 }

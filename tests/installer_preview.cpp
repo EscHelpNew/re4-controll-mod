@@ -20,6 +20,11 @@ int main(){
     model.diagnostic.connected=true;model.diagnostic.sensors=1;model.diagnostic.raw[0]=0.65f;
     model.diagnostic.processed[0]=0.5f;
     renderer.draw(model);assert(renderer.save_preview("build/installer-diagnostics-en.bmp"));
+    model.page=re4::InstallerPage::Updates;model.update.stage=re4::UpdateStage::Available;
+    model.update.version="0.4.0";model.update.total=8*1024*1024;model.selected=1;
+    renderer.draw(model);assert(renderer.save_preview("build/installer-updates-en.bmp"));
+    model.settings.language=re4::Language::Russian;model.update.stage=re4::UpdateStage::Downloading;model.update.received=4*1024*1024;
+    renderer.draw(model);assert(renderer.save_preview("build/installer-updates-ru.bmp"));
     renderer.close();renderer.close();
     std::puts("actual installer renderer: EN/RU frames, diagnostics and cleanup PASS");
 }

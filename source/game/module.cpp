@@ -9,6 +9,7 @@
 #include "re4/hook_context.hpp"
 #include "re4/response.hpp"
 #include "re4/sensor.hpp"
+#include "re4/aim_input.hpp"
 #include <atomic>
 
 namespace {
@@ -44,9 +45,7 @@ struct SensorBackend {
 };
 
 __attribute__((used, section(".data.re4control")))
-volatile re4::SharedControl control = {
-    "RE4CTL_SHARED_7", re4::kSharedAbi, 0, 0, re4::kCapabilityTurning, {}, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
+volatile re4::SharedControl control = re4::initial_shared_control();
 re4::Settings settings;
 float raw_left_x = 0;
 bool dpad_turn = false;
@@ -57,11 +56,24 @@ bool file_read = false;
 std::uintptr_t main_base = 0;
 std::uint32_t sensor_pad = 0, sensor_style = 0, sensor_attributes = 0;
 re4::SensorReader<SensorBackend> sensor;
-re4::GyroIntegrator gyro;
+re4::GyroFilter gyro;
 re4::AimDelta gyro_pending;
 std::uint64_t last_sensor_tick = 0;
+std::uint64_t next_sensor_retry = 0, last_fresh_tick = 0, last_sensor_number = 0;
 int (*aiming_predicate)(void*) = nullptr;
 void* gyro_input_actor = nullptr;
+re4::AimRoute aim_route(){
+    const auto* type=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE10);
+    if(*reinterpret_cast<const int*>(main_base+0xAFF39C)!=2 || !type || type[11]!=2)return {false,63};
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    if(!state)return {false,63};
+    if(state[0x5096]&0x80){
+        const float dt=*reinterpret_cast<const float*>(state+0xA4);
+        return {true,std::isfinite(dt)?63*std::fmin(4.f,std::fmax(0.f,dt)):0};
+    }
+    const bool left=state[0x5099]&0x80;
+    return {!left,left?63.f:127.f};
+}
 
 bool firearm_aim(void* actor) {
     auto* bytes = static_cast<std::uint8_t*>(actor);
@@ -72,19 +84,32 @@ bool firearm_aim(void* actor) {
 }
 void poll_sensors() {
     gyro_pending = {};
+    const auto now = svcGetSystemTick();
     if (sensor.select(sensor_pad, sensor_style, sensor_attributes, settings.gyro_enabled)) {
         gyro.reset(); last_sensor_tick = 0;
+        next_sensor_retry=now+19'200'000;last_fresh_tick=now;last_sensor_number=0;
+    }
+    void* actor = *reinterpret_cast<void**>(main_base + re4::profile::player_slot);
+    const bool aiming=firearm_aim(actor);
+    if (settings.gyro_enabled && (sensor_attributes&1) && now>=next_sensor_retry
+        && (!sensor.running() || (aiming && now-last_fresh_tick>9'600'000))) {
+        if (sensor.restart()) {
+            gyro.reset();last_sensor_tick=0;last_sensor_number=0;last_fresh_tick=now;
+            control.sensor_restarts=control.sensor_restarts+1;
+        }
+        next_sensor_retry=now+19'200'000;
     }
     control.sensor_result = sensor.result;
     control.sensor_running = sensor.running();
+    control.gyro_active=0;control.pad_style=sensor_style;
     if (!sensor.running()) return;
-    const auto now = svcGetSystemTick();
     // Tegra's system counter runs at 19.2 MHz. Ignore the first batch and any
     // batch following a >100 ms gap (HOME, overlay pause, controller switch).
     const bool continuous = last_sensor_tick && now >= last_sensor_tick && now - last_sensor_tick <= 1'920'000;
     last_sensor_tick = now;
-    void* actor = *reinterpret_cast<void**>(main_base + re4::profile::player_slot);
-    const bool active = continuous && firearm_aim(actor);
+    const bool active = continuous && aiming;
+    control.gyro_active=active;
+    if(!active)gyro.reset();
     re4::SensorState samples[16]{};
     const int count = sensor.read(samples, 16);
     control.sensor_result = sensor.result;
@@ -95,9 +120,14 @@ void poll_sensors() {
         const bool connected = s.attributes & 1;
         const float yaw = -s.angular_velocity[1] * tau - settings.gyro_bias_x;
         const float pitch = -s.angular_velocity[0] * tau - settings.gyro_bias_y;
+        if(s.number>last_sensor_number){
+            last_sensor_number=s.number;last_fresh_tick=now;
+            control.sensor_fresh_samples=control.sensor_fresh_samples+1;
+            control.gyro_rate_yaw=yaw;control.gyro_rate_pitch=pitch;
+        }
         const auto d = gyro.update({s.number, s.interval_ns, yaw, pitch}, active && connected,
-            settings.gyro_gain_x * (settings.invert_x ? -1 : 1),
-            settings.gyro_gain_y * (settings.invert_y ? -1 : 1));
+            settings.gyro_speed * settings.gyro_gain_x * (settings.invert_x ? -1 : 1),
+            settings.gyro_speed * settings.gyro_gain_y * (settings.invert_y ? -1 : 1),settings.gyro_deadzone_dps);
         gyro_pending.yaw += d.yaw; gyro_pending.pitch += d.pitch;
     }
     control.sensor_samples = control.sensor_samples + count;
@@ -151,7 +181,7 @@ void capture(const NpadState& pad, std::uint32_t id, std::uint32_t style) {
     if (id != 0 && id != 0x20) return;
     const bool connected = pad.attributes & 1;
     if (connected) {
-        sensor_pad = id; sensor_style = style; sensor_attributes = pad.attributes & 13u;
+        sensor_pad = id; sensor_style = style; sensor_attributes = pad.attributes & 21u;
     } else if (id == sensor_pad && style == sensor_style) sensor_attributes = 0;
     raw_left_x = connected ? pad.lx / 32767.f : 0;
     if (std::fabs(raw_left_x) > control.maximum_raw_lx) control.maximum_raw_lx = std::fabs(raw_left_x);
@@ -279,31 +309,21 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
             if (*yaw != old_yaw || pitch[1] != old_pitch) gyro_input_actor = actor;
             control.gyro_yaw = d.yaw; control.gyro_pitch = d.pitch;
         }
-        const float p0 = pitch[0], p1 = pitch[1];
-        auto* offset = reinterpret_cast<float*>(bytes + 0x524);
-        const float y0 = *yaw, o0 = *offset;
-        const auto routine = bytes[0x115];
-        const int result = Orig(actor, mode);
-        gyro_input_actor = previous_input_actor;
-        if (bytes[0x114] != 0 || bytes[0x115] != routine) return result;
-        control.aim_calls = control.aim_calls + 1;
-        if (!settings.analog_enabled) return result;
-        // Preserve the configured game's choice of aiming stick and direction;
-        // use its output delta and the physical deflection magnitude.
-        const float x = std::fmax(std::fabs(re4::shape_axis(control.raw_lx, settings.left_deadzone, 1, settings.stick_curve)),
-                                  std::fabs(re4::shape_axis(control.raw_rx, settings.right_deadzone, 1, settings.stick_curve)));
-        const float y = std::fmax(std::fabs(re4::shape_axis(control.raw_ly, settings.left_deadzone, 1, settings.stick_curve)),
-                                  std::fabs(re4::shape_axis(control.raw_ry, settings.right_deadzone, 1, settings.stick_curve)));
-        const float fx = (dpad_turn ? 1 : x) * settings.aim_gain_x;
-        const float fy = (dpad_move ? 1 : y) * settings.aim_gain_y;
-        if (dpad_turn || std::fabs(control.raw_lx) > 0.05f || std::fabs(control.raw_rx) > 0.05f) {
-            *yaw = re4::corrected_turn_yaw(y0, *yaw, fx);
-            *offset = re4::scaled_axis_state(o0, *offset, fx, 3.14159265f, 0.35f);
+        auto* axes=reinterpret_cast<std::int32_t*>(main_base+0x124E9C8);
+        const std::int32_t old_x=axes[0],old_y=axes[1];
+        if(settings.analog_enabled){
+            const auto route=aim_route();
+            const auto shaped=re4::shape_aim_input(control.raw_lx,control.raw_ly,control.raw_rx,control.raw_ry,settings,route);
+            axes[0]=shaped.x;axes[1]=shaped.y;
+            control.aim_source=route.right;control.applied_aim_x=shaped.x;control.applied_aim_y=shaped.y;
+            control.aim_full_scale=route.full_scale;
         }
-        if (dpad_move || std::fabs(control.raw_ly) > 0.05f || std::fabs(control.raw_ry) > 0.05f) {
-            pitch[0] = re4::scaled_axis_state(p0, pitch[0], fy, 1, 0.25f);
-            pitch[1] = re4::scaled_axis_state(p1, pitch[1], fy, 1, 0.25f);
-        }
+        // Native aim consumes these axes for reticle, sway baseline, animation
+        // and cached aim matrices. Shape once before any of those consumers.
+        const int result=Orig(actor,mode);
+        axes[0]=old_x;axes[1]=old_y;
+        gyro_input_actor=previous_input_actor;
+        control.aim_calls=control.aim_calls+1;
         return result;
     }
 };

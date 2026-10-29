@@ -5,6 +5,7 @@
 #include "storage.hpp"
 #include "re4/settings_file.hpp"
 #include "re4/control_menu.hpp"
+#include "re4/version.hpp"
 
 namespace {
 GameLink link;
@@ -28,7 +29,7 @@ class DescriptionFrame : public tsl::elm::OverlayFrame {
     const char* description_="Select a setting to see its description.";
     unsigned help_y_=tsl::cfg::FramebufferHeight-152;
 public:
-    DescriptionFrame():OverlayFrame("RE4 Controls","0.3.0 - Control settings"){}
+    DescriptionFrame():OverlayFrame("RE4 Controls",std::string(re4::kVersion)+" - Control settings"){}
     void set_help(const char* text){description_=text;}
     void layout(u16 x,u16 y,u16 width,u16 height)override{
         OverlayFrame::layout(x,y,width,height);help_y_=y+height-152;
@@ -58,7 +59,7 @@ class ControlsGui : public tsl::Gui {
     void refresh(){
         link.language=settings.language;
         description_frame_->setTitle(tr("RE4 Controls","RE4 Управление"));
-        description_frame_->setSubtitle(tr("0.3.0 - Control settings","0.3.0 - Настройки управления"));
+        description_frame_->setSubtitle(std::string(re4::kVersion)+tr(" - Control settings"," - Настройки управления"));
         status_->setText(tr("Connect to game","Подключиться к игре"));
         for(const auto& header:headers_)header.item->setText(header.text.get(settings.language));
         for(const auto& binding:bindings_){
@@ -76,7 +77,10 @@ public:
         status_=new tsl::elm::ListItem(tr("Connect to game","Подключиться к игре"),"A");
         status_->setClickListener([](u64 keys){
             if(!(keys&HidNpadButton_A))return false;
-            link.language=settings.language;link.connect();record_connection();note=link.message;return true;
+            link.language=settings.language;
+            const bool connected=link.connect();record_connection();
+            if(connected)link.apply(settings);
+            note=link.message;return true;
         });
         list->addItem(status_);
         for(const auto& spec:re4::control_specs()){

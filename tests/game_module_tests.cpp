@@ -20,6 +20,9 @@ void test_AimSway(void*, unsigned, float*, float*);
 #include <vector>
 namespace {
 std::vector<re4::SensorState> sensor_batch;
+bool consume_aim_axes=false;
+int seen_aim_x=0,seen_aim_y=0;
+float aim_full_scale=63,cached_aim_yaw=0,cached_aim_pitch=0,native_pitch_sign=1;
 void test_FullPad(NpadState* state, const std::uint32_t&) { *state={}; state->attributes=game_test::pad_attributes; }
 void test_HandheldPad(NpadState* state, const std::uint32_t& id) { test_FullPad(state,id); }
 void test_DualPad(NpadState* state, const std::uint32_t& id) { test_FullPad(state,id); }
@@ -43,14 +46,20 @@ void test_CameraInput(void*) {
 }
 int test_AimSensitivity(void* actor,int) {
     auto* b=static_cast<std::uint8_t*>(actor);
-    *reinterpret_cast<float*>(b+0xB4)+=0.04f;
-    *reinterpret_cast<float*>(b+0x524)+=0.02f;
+    auto* axes=reinterpret_cast<std::int32_t*>(main_base+0x124E9C8);
+    seen_aim_x=axes[0];seen_aim_y=axes[1];
+    const auto raw_dpad=*reinterpret_cast<std::uint32_t*>(main_base+0x124E9C8+0x14);
+    const float x=(consume_aim_axes?float(axes[0])/aim_full_scale:1)+((raw_dpad&1)?1:0);
+    const float y=(consume_aim_axes?float(axes[1])/aim_full_scale:1)*native_pitch_sign;
+    *reinterpret_cast<float*>(b+0xB4)+=0.04f*x;
+    *reinterpret_cast<float*>(b+0x524)+=0.02f*x;
     auto* pitch=reinterpret_cast<float*>(main_base+0x1265A08);
-    pitch[0]+=game_test::aim_step; pitch[1]+=game_test::aim_step;
+    pitch[0]+=game_test::aim_step*y; pitch[1]+=game_test::aim_step*y;
     if (game_test::apply_sway) {
         AimSway::Callback(actor,0,pitch,reinterpret_cast<float*>(b+0x524));
         pitch[1]=pitch[0];
     }
+    cached_aim_yaw=*reinterpret_cast<float*>(b+0xB4);cached_aim_pitch=pitch[0];
     return 13;
 }
 void test_AimSway(void*,unsigned flags,float* pitch,float*) {
@@ -77,6 +86,8 @@ struct Fixture {
     alignas(16) std::uint8_t actor[0xA00]{};
     Fixture() {
         sensor.stop();sensor={};gyro.reset();gyro_pending={};last_sensor_tick=0;
+        consume_aim_axes=true;seen_aim_x=seen_aim_y=0;aim_full_scale=63;cached_aim_yaw=cached_aim_pitch=0;
+        native_pitch_sign=1;
         sensor_pad=0;sensor_style=0;sensor_attributes=0;
         game_test::installed=game_test::initialized=game_test::mounts=game_test::fs_opens=0;
         game_test::sensor_starts=game_test::sensor_stops=game_test::sensor_reads=0;
@@ -148,7 +159,43 @@ int main(){
         assert(near(f.yaw(),0.01f) && near(game_test::motion_speed_seen,1.25f*0.25f));
         control.raw_rx=0.575f;CameraInput::Callback(nullptr);assert(game_test::camera_x==16);
         f.aim();control.raw_lx=control.raw_ly=0.575f;f.yaw()=0;
-        AimSensitivity::Callback(f.actor,0);assert(near(f.yaw(),0.01f) && near(f.pitch()[0],0.02f));
+        AimSensitivity::Callback(f.actor,0);assert(near(f.yaw(),0.04f*16/63) && near(f.pitch()[0],0.08f*16/63));
+    }
+    {
+        Fixture f;f.aim();consume_aim_axes=true;aim_full_scale=127;
+        std::vector<std::uint8_t> global(0x5200);std::uint8_t type[16]{};type[11]=2;
+        *reinterpret_cast<void**>(f.image.data()+0xB1AE08)=global.data();
+        *reinterpret_cast<void**>(f.image.data()+0xB1AE10)=type;
+        *reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        auto* axes=reinterpret_cast<std::int32_t*>(f.image.data()+0x124E9C8);axes[0]=31;axes[1]=-63;
+        control.raw_lx=control.raw_ly=1;control.raw_rx=0.25f;control.raw_ry=-0.5f;
+        settings.left_deadzone=settings.right_deadzone=0;
+        settings.right_aim_gain_x=0.5f;settings.right_aim_gain_y=0.25f;
+        settings.gyro_enabled=true;gyro_pending.yaw=0.01f;gyro_pending.pitch=0.02f;
+        AimSensitivity::Callback(f.actor,0);
+        assert(seen_aim_x==16 && seen_aim_y==-16);
+        assert(near(f.yaw(),0.01f+0.04f*16/127) && near(f.pitch()[0],0.02f-0.08f*16/127));
+        assert(near(cached_aim_yaw,f.yaw()) && near(cached_aim_pitch,f.pitch()[0]));
+        assert(axes[0]==31 && axes[1]==-63); // Scoped engine axes restored.
+        global[0x5099]=0x80;assert(!aim_route().right && aim_route().full_scale==63);
+        global[0x5096]=0x80;*reinterpret_cast<float*>(global.data()+0xA4)=0.5f;
+        assert(aim_route().right && aim_route().full_scale==31.5f);
+        type[11]=1;assert(!aim_route().right);type[11]=2;
+        *reinterpret_cast<void**>(f.image.data()+0xB1AE08)=nullptr;assert(!aim_route().right);
+        *reinterpret_cast<void**>(f.image.data()+0xB1AE10)=nullptr;assert(!aim_route().right);
+    }
+    {
+        Fixture f;f.aim();settings.aim_gain_x=settings.aim_gain_y=0;
+        auto* dpad=reinterpret_cast<std::uint32_t*>(f.image.data()+0x124E9C8+0x14);*dpad=1;
+        AimSensitivity::Callback(f.actor,0);assert(near(f.yaw(),0.04f) && *dpad==1);
+        *dpad=0;settings.aim_gain_y=0.5f;settings.left_deadzone=0;control.raw_ly=1;
+        native_pitch_sign=-1;settings.invert_y=true; // Gyro inversion cannot replace native stick inversion.
+        AimSensitivity::Callback(f.actor,0);assert(near(f.pitch()[0],-0.08f*32/63));
+    }
+    {
+        Fixture f;NpadState pad{};pad.attributes=1|16|32;
+        capture(pad,0,4);assert(sensor_attributes==17);
+        pad.attributes=1|4|8;capture(pad,0,4);assert(sensor_attributes==5);
     }
     {
         Fixture f;f.aim();settings.gyro_enabled=true;
@@ -160,14 +207,28 @@ int main(){
     {
         Fixture f;f.aim();settings.gyro_enabled=true;
         NpadState pad{};const std::uint32_t id=32;HandheldPad::Callback(&pad,id);
+        game_test::start_result=5;poll_sensors();assert(!sensor.running());
+        const auto attempts=game_test::sensor_starts;game_test::start_result=0;
+        for(unsigned i=0;i<20;++i){game_test::tick+=480'000;poll_sensors();}
+        assert(game_test::sensor_starts==attempts); // No retry storm in first500ms.
+        game_test::tick+=19'200'000;f.sample(1);poll_sensors();
+        assert(sensor.running() && game_test::sensor_starts==attempts+1 && gyro_pending.yaw==0);
+    }
+    {
+        Fixture f;f.aim();settings.gyro_enabled=true;
+        NpadState pad{};const std::uint32_t id=32;HandheldPad::Callback(&pad,id);
         f.sample(1);poll_sensors();assert(sensor.running() && gyro_pending.yaw==0);
-        game_test::tick+=640'000;f.sample(2);poll_sensors();assert(near(gyro_pending.yaw,0.005f));
+        game_test::tick+=640'000;f.sample(2);
+        const auto s=sensor_batch[0];sensor_batch={s,s,s};
+        sensor_batch[0].number=4;sensor_batch[1].number=3;
+        poll_sensors();assert(near(gyro_pending.yaw,(1-0.5f*0.01745329252f)*0.01f));
+        const float filtered=gyro_pending.yaw;
         control.raw_lx=control.raw_ly=0.575f;settings.aim_gain_x=settings.aim_gain_y=0.3f;
         assert(AimSensitivity::Callback(f.actor,0)==13);
-        assert(near(f.yaw(),0.005f+0.04f*0.15f));
-        assert(near(f.pitch()[0],0.005f+0.08f*0.15f)); // Additive gyro and stick in same frame.
+        assert(near(f.yaw(),filtered+0.04f*9/63));
+        assert(near(f.pitch()[0],filtered+0.08f*9/63)); // Additive gyro and stick in same frame.
         const float before=f.yaw();AimSensitivity::Callback(f.actor,0);
-        assert(near(f.yaw()-before,0.04f*0.15f)); // Sensor delta applied once.
+        assert(near(f.yaw()-before,0.04f*9/63)); // Sensor delta applied once.
         game_test::tick+=2'000'000;f.sample(3);poll_sensors();assert(gyro_pending.yaw==0); // Pause backlog.
         game_test::tick+=640'000;game_test::native_aim=0;f.sample(4);poll_sensors();assert(gyro_pending.yaw==0);
         game_test::native_aim=1;f.flags()=0;f.sample(5);poll_sensors();assert(gyro_pending.yaw==0);

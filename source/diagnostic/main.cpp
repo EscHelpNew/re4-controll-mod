@@ -3,6 +3,8 @@
 #include <SDL.h>
 #include "re4/installer_ui.hpp"
 #include "re4/calibration.hpp"
+#include "re4/home_launcher.hpp"
+#include "re4/version.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -261,7 +263,7 @@ int main(int argc, char** argv) {
             } else std::fprintf(report, "overlay_storage_check=MOUNT_FAIL\n");
             FILE* previous = std::fopen(NXDK_SD_ROOT "/game-inspection.txt", "rb");
             if (previous) {
-                char text[701]{};
+                char text[1401]{};
                 const auto count = std::fread(text, 1, sizeof(text) - 1, previous);
                 std::fclose(previous);
                 std::fprintf(report, "last_overlay_inspection:\n%.*s\n", int(count), text);
@@ -278,7 +280,7 @@ int main(int argc, char** argv) {
         u64 process_id = 0;
         svcGetProcessId(&process_id, CUR_PROCESS_HANDLE);
         char instance[24];
-        std::snprintf(instance, sizeof(instance), "0.3.0-p%llX", (unsigned long long)process_id);
+        std::snprintf(instance, sizeof(instance), "%s-p%llX",re4::kVersion, (unsigned long long)process_id);
         game_reload_start(NXDK_APP_NAME, instance);
     }
     PadState pad;
@@ -295,17 +297,30 @@ int main(int argc, char** argv) {
     const Result logo_fs=romfsInit();
     const bool graphics=font_ready && renderer.initialize(font.address,font.size,
         R_SUCCEEDED(logo_fs)?"romfs:/app-logo.bmp":nullptr);
-    if(R_SUCCEEDED(logo_fs))romfsExit();
+    if(R_SUCCEEDED(logo_fs)){
+        std::string home_detail;
+        re4::UpdateFileOps operations;
+        if(re4::bootstrap_self_images(argc>0 && argv && argv[0]?argv[0]:"",NXDK_SD_ROOT,
+            re4::update_hash_file,operations,home_detail))
+            re4::install_own_home_launcher("romfs:/home-launcher.bin",home_detail);
+        model.detail=home_detail;
+        romfsExit();
+    }
     if(!graphics){
         model.detail=renderer.error();renderer.close();
         consoleInit(nullptr);
     }
-    re4::GyroIntegrator integrator;
+    re4::GyroFilter integrator;
+    re4::UpdateWorker updater;
     float aim_x=0,aim_y=0;
     re4::GyroCalibration calibration;
     unsigned frame=0;
     while(appletMainLoop()){
         game_reload_main_poll();
+        const auto update=updater.snapshot();
+        if(model.page==re4::InstallerPage::Updates && update.stage==re4::UpdateStage::Available
+            && model.update.stage!=update.stage)model.selected=1;
+        model.update=update;
         bool sdl_exit=false;
         if(graphics){
             SDL_Event event;
@@ -330,6 +345,9 @@ int main(int argc, char** argv) {
         else if(down&HidNpadButton_Y)action=model.handle(Key::Calibrate);
         else if(down&HidNpadButton_X)action=model.handle(Key::ResetPreview);
         if(action==re4::InstallerAction::Exit)break;
+        if(action==re4::InstallerAction::CheckUpdates)updater.check();
+        if(action==re4::InstallerAction::InstallUpdate)updater.install();
+        if(action==re4::InstallerAction::CancelUpdate)updater.cancel();
         if(action==re4::InstallerAction::InstallGame || action==re4::InstallerAction::InstallOverlay
            || action==re4::InstallerAction::DisableGame){
             u64 running_pid=0,running_title=0;
@@ -375,10 +393,11 @@ int main(int argc, char** argv) {
                     ?re4::InstallerStatus::Calibrated:re4::InstallerStatus::Failed;
             }
             const bool active=model.page==re4::InstallerPage::Diagnostics && !page_changed && !sensor_changed
-                && settings.gyro_enabled && !calibration.remaining() && (padGetButtons(&pad)&HidNpadButton_ZL);
+                && settings.gyro_enabled && (sample.attributes&1) && !calibration.remaining() && (padGetButtons(&pad)&HidNpadButton_ZL);
             const auto delta=integrator.update({sample.sampling_number,sample.delta_time,
                 yaw-settings.gyro_bias_x,pitch-settings.gyro_bias_y},active,
-                settings.gyro_gain_x*(settings.invert_x?-1:1),settings.gyro_gain_y*(settings.invert_y?-1:1));
+                settings.gyro_speed*settings.gyro_gain_x*(settings.invert_x?-1:1),
+                settings.gyro_speed*settings.gyro_gain_y*(settings.invert_y?-1:1),settings.gyro_deadzone_dps);
             movement.yaw+=delta.yaw;movement.pitch+=delta.pitch;
         }
         aim_x+=movement.yaw;aim_y+=movement.pitch;
@@ -389,15 +408,12 @@ int main(int argc, char** argv) {
         d.samples=unsigned(sample_count);d.calibration_remaining=calibration.remaining();
         d.raw[0]=left.x/32767.f;d.raw[1]=left.y/32767.f;
         d.raw[2]=right.x/32767.f;d.raw[3]=right.y/32767.f;
-        d.processed[0]=re4::shape_axis(d.raw[0],settings.left_deadzone,settings.turn_gain,settings.stick_curve);
-        d.processed[1]=re4::shape_axis(d.raw[1],settings.left_deadzone,1,settings.stick_curve);
-        d.processed[2]=re4::shape_axis(d.raw[2],settings.right_deadzone,settings.aim_gain_x,settings.stick_curve);
-        d.processed[3]=re4::shape_axis(d.raw[3],settings.right_deadzone,settings.aim_gain_y,settings.stick_curve);
+        re4::process_stick_diagnostics(d.raw,settings,d.processed);
         d.gyro_rate[0]=samples[0].angular_velocity.x;d.gyro_rate[1]=samples[0].angular_velocity.y;
         d.gyro_rate[2]=samples[0].angular_velocity.z;d.gyro_preview[0]=aim_x;d.gyro_preview[1]=aim_y;
         if(graphics)renderer.draw(model);
         else{
-            std::printf("\x1b[HRE4 CONTROLS 0.3.0\n%s\n\n",model.page_title());
+            std::printf("\x1b[HRE4 CONTROLS %s\n%s\n\n",re4::kVersion,model.page_title());
             for(unsigned i=0;i<model.item_count();++i)
                 std::printf("%c %-40s %s\x1b[K\n",i==model.selected?'>':' ',model.item_label(i).c_str(),model.item_value(i).c_str());
             std::printf("\n%s\x1b[K\n%s\nUP/DOWN  A select  B back  + exit\x1b[J\n",model.status_text(),model.detail.c_str());
@@ -409,6 +425,7 @@ int main(int argc, char** argv) {
             unsigned(sample_count),(unsigned long)sensors.result);
     }
     sensors.stop();
+    updater.close();
     renderer.close();
     if(R_SUCCEEDED(font_service))plExit();
     if(!graphics)consoleExit(nullptr);

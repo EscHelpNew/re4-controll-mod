@@ -1,0 +1,30 @@
+name: Bug report / Ошибка
+description: Report a reproducible controls or installer problem.
+body:
+  - type: markdown
+    attributes:
+      value: Please do not attach console keys, tokens, game binaries or private logs.
+  - type: input
+    id: version
+    attributes:
+      label: RE4 Controls version
+    validations:
+      required: true
+  - type: input
+    id: game_build
+    attributes:
+      label: Game Build ID
+    validations:
+      required: true
+  - type: input
+    id: controller
+    attributes:
+      label: Controller and handheld/docked mode
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps, settings and expected behavior
+    validations:
+      required: true

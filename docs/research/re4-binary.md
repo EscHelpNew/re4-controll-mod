@@ -186,3 +186,21 @@ existing saved choices are retained.
 - https://switchbrew.org/wiki/NPDM — META flags and process architecture.
 - https://github.com/nipkownix/re4_tweaks/blob/master/dllmain/ControllerTweaks.cpp
   — PC analogue turning/deadzone research. Its x86 patches are not portable.
+# 0.4: source-aware aiming before native consumers
+
+`33DF80` consumes signed int32 effective axes at `124E9C8+0/+4`.
+Post-return scaling is too late for all consumers: native code has already updated
+weapon sway baselines, aim animation and cached relative yaw. The adapter now
+temporarily injects shaped axes before the original call and restores them after it.
+
+The source follows `25FB10` routing: input device `AFF39C==2`, control type
+`*(B1AE10)+B==2`, state pointer `*(B1AE08)`, flags `5096/5099`. Default left scale
+is63; standard remapped right scale is127; the legacy right branch uses63 times
+the state's frame factor at+A4. SDK axis signs are retained, with native pitch
+inversion left inside the original function. Physical D-pad flags are preserved.
+Separate right aiming gains are quantized into settings-v6 flag bits8..14/16..22;
+the64-byte settings size remains unchanged. Shared ABI9 is240bytes.
+
+The native `11C7D68==1` path uses a different pitch triplet at`12661C4`, another
+reason to process input before the original function rather than rewriting only
+the usual pitch globals after it. No additional game hook is installed.
