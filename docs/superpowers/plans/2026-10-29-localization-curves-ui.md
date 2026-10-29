@@ -59,7 +59,7 @@ portable installer model. Preserve the verified remote-reload and file guards.
 ###5: Review, delivery and hardware acceptance
 - [x] One fresh-context whole-change review; fix concrete critical/important findings.
 - [x] Full tests, build, package and credential/path checks (17 Python, 13 native).
-- [ ] Commit own source, tests and assets.
+- [x] Commit own source, tests and assets (01002fb).
 - [x] Deploy paired NRO through existing library; user confirms themed installer and mod installation.
 - [x] Include updated HOME icon package and transfer it through user's DBI (FTP226).
 - [x] User confirms in-game EN/RU, four curves and removed walk-speed menu.
