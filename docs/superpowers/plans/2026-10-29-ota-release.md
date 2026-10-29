@@ -15,8 +15,8 @@
 - [x] Add release manifest/package generator tests, README EN/RU, changelog, CI and issue templates.
   Files: tools/release.py, tests/test_release.py, .github/, docs/.
 - [x] Full suite/cross-build and fresh whole-change review; right-stick aim qualified on hardware (0.4.0).
-- [ ] Commit final 0.4.1 source and release tooling.
-- [ ] Merge tested changes into main (explicit user instruction), push main and publish requested allowlisted release from main; verify remote hashes/downloads.
+- [x] Commit final 0.4.1 source and release tooling.
+- [x] Merge tested changes into main (explicit user instruction), push main and publish requested allowlisted release from main; verify remote hashes/downloads.
 - [ ] Exercise in-app update against the published release; private-repo failures remain clearly reported until public.
 
 ## Review focus
@@ -27,3 +27,5 @@
 - Public docs distinguish tests and actual console acceptance from untested contexts.
 
 Anonymous OTA hardware acceptance is deferred at the user's request: publish the release while keeping the repository private. Transport, validation, installation and rollback have automated coverage.
+
+Release v0.4.1 was published privately from main commit ff86a929213dc21fd930c7c90f1677bd4459e5ff. All four server asset digests match local files. Both console slots were updated through the pinned library; running status is 0.4.1 with the exact release NRO hash. Initial CI failed at pip cache discovery; explicitly use requirements-dev.txt for that cache.
