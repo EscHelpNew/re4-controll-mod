@@ -2,6 +2,7 @@
 #include <tesla.hpp>
 #include <sys/stat.h>
 #include "game_link.hpp"
+#include "storage.hpp"
 #include "re4/settings_file.hpp"
 
 namespace {
@@ -9,12 +10,13 @@ GameLink link;
 re4::Settings settings;
 std::string note;
 void record_connection() {
-    mkdir("sdmc:/switch", 0777); mkdir("sdmc:/switch/re4-controls", 0777);
-    FILE* file = std::fopen("sdmc:/switch/re4-controls/game-inspection.txt", "wb");
+    if (!overlay_storage::ready()) return;
+    mkdir("r4ovl:/switch", 0777); mkdir("r4ovl:/switch/re4-controls", 0777);
+    FILE* file = std::fopen("r4ovl:/switch/re4-controls/game-inspection.txt", "wb");
     if (file) { std::fprintf(file, "%s\n", link.details.c_str()); std::fclose(file); }
 }
 void change() {
-    const bool saved = re4::save_settings_file(re4::kSettingsPath, settings);
+    const bool saved = overlay_storage::ready() && re4::save_settings_file(overlay_storage::settings_path, settings);
     link.apply(settings);
     note = saved ? link.message : "Не удалось сохранить настройки на SD";
 }
@@ -72,11 +74,13 @@ public:
 };
 class ControlsOverlay : public tsl::Overlay {
     void initServices() override {
-        mkdir("sdmc:/config", 0777); mkdir("sdmc:/config/re4-controls", 0777);
-        re4::load_settings_file(re4::kSettingsPath, settings);
+        if (overlay_storage::mount()) {
+            mkdir("r4ovl:/config", 0777); mkdir("r4ovl:/config/re4-controls", 0777);
+            re4::load_settings_file(overlay_storage::settings_path, settings);
+        } else note = "Не удалось подключить SD";
         link.initialize();
     }
-    void exitServices() override { link.close(); }
+    void exitServices() override { link.close(); overlay_storage::close(); }
     std::unique_ptr<tsl::Gui> loadInitialGui() override { return initially<ControlsGui>(); }
 };
 }

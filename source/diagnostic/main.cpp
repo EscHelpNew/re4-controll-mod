@@ -10,6 +10,7 @@
 #include "re4/settings_file.hpp"
 #include "re4/install.hpp"
 #include "game_link.hpp"
+#include "storage.hpp"
 extern "C" {
 #include "remote_reload.h"
 #include "reload_main.h"
@@ -244,6 +245,17 @@ int main(int argc, char** argv) {
         if (report) {
             std::fprintf(report, "RE4 inspection HOS=%08X applet=%u\n%s\n", hosversionGet(),
                 unsigned(appletGetAppletType()), game.details.c_str());
+            if (overlay_storage::mount()) {
+                mkdir("r4ovl:/config", 0777); mkdir("r4ovl:/config/re4-controls", 0777);
+                re4::Settings check;
+                const char* check_path = "r4ovl:/config/re4-controls/storage-check.bin";
+                const bool ok = re4::save_settings_file(check_path, {})
+                    && re4::load_settings_file(check_path, check) && check.turn_gain == 1;
+                std::fprintf(report, "overlay_storage_check=%s\n", ok ? "PASS" : "FAIL");
+                std::remove(check_path);
+                std::remove("r4ovl:/config/re4-controls/storage-check.bin.previous");
+                overlay_storage::close();
+            } else std::fprintf(report, "overlay_storage_check=MOUNT_FAIL\n");
             FILE* previous = std::fopen(NXDK_SD_ROOT "/game-inspection.txt", "rb");
             if (previous) {
                 char text[701]{};
@@ -263,7 +275,7 @@ int main(int argc, char** argv) {
         u64 process_id = 0;
         svcGetProcessId(&process_id, CUR_PROCESS_HANDLE);
         char instance[24];
-        std::snprintf(instance, sizeof(instance), "0.1.6-p%llX", (unsigned long long)process_id);
+        std::snprintf(instance, sizeof(instance), "0.1.7-p%llX", (unsigned long long)process_id);
         game_reload_start(NXDK_APP_NAME, instance);
     }
     PadState pad;
@@ -355,7 +367,7 @@ int main(int argc, char** argv) {
         const float lx = re4::shape_axis(left.x / 32767.f, settings.left_deadzone, settings.turn_gain);
         const float rx = re4::shape_axis(right.x / 32767.f, settings.right_deadzone, settings.aim_gain_x);
         const float ry = re4::shape_axis(right.y / 32767.f, settings.right_deadzone, settings.aim_gain_y);
-        std::printf("\x1b[HRE4 CONTROLS - diagnostic 0.1.6\x1b[K\n"
+        std::printf("\x1b[HRE4 CONTROLS - diagnostic 0.1.7\x1b[K\n"
             "Pad connected: %s  style: %08lX\x1b[K\n"
             "Raw LEFT  X:%7ld Y:%7ld\x1b[K\nRaw RIGHT X:%7ld Y:%7ld\x1b[K\n"
             "Processed turn:% .3f  aim:% .3f % .3f\x1b[K\n"

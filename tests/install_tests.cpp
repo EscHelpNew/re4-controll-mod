@@ -51,9 +51,12 @@ int main() {
     assert(std::strstr(re4::disable_overlay_loader(sd.string().c_str()), "Disabled"));
     assert(!fs::exists(game / "subsdk9") && !fs::exists(game / "main.npdm"));
     assert(fs::exists(game / "subsdk9.re4-controls.disabled"));
-    assert(std::strstr(re4::disable_game_files(sd.string().c_str()), "Conflict"));
-    fs::remove(sd / "switch/.overlays/re4-controls.ovl"); // Preserve the earlier disabled backup.
     assert(std::strstr(re4::disable_game_files(sd.string().c_str()), "Disabled"));
+    assert(!fs::exists(sd / "switch/.overlays/re4-controls.ovl"));
+    unsigned disabled_copies = 0;
+    for (const auto& entry : fs::directory_iterator(sd / "switch/.overlays"))
+        if (entry.path().filename().string().find("re4-controls.ovl.re4-controls.disabled") == 0) ++disabled_copies;
+    assert(disabled_copies == 2); // Updated overlay gets its own backup, preserving the first.
     fs::remove_all(root);
     std::puts("installer: missing payload, foreign conflicts, idempotence and own update PASS");
 }

@@ -35,6 +35,10 @@ def tests():
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/install_tests.cpp', 'source/install.cpp', '-o', OUT / 'install_tests.exe'])
     run([OUT / 'install_tests.exe'])
+    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static',
+         '-Itests/stubs', '-Isource/overlay', 'tests/overlay_storage_tests.cpp',
+         'source/overlay/storage.cpp', '-o', OUT / 'overlay_storage_tests.exe'])
+    run([OUT / 'overlay_storage_tests.exe'])
 
 
 def diagnostic():
@@ -56,6 +60,7 @@ def diagnostic():
         objects.append(dest)
     for source in ('source/input.cpp', 'source/settings.cpp', 'source/settings_file.cpp', 'source/install.cpp',
                    'source/overlay/game_link.cpp',
+                   'source/overlay/storage.cpp',
                    'source/diagnostic/main.cpp'):
         dest = OUT / (Path(source).stem + '.o')
         run([tool('g++'), '-std=gnu++17', '-fno-exceptions', '-fno-rtti', *common,
@@ -66,7 +71,7 @@ def diagnostic():
     env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), '-specs=' + str(SDK / 'libnx/switch.specs'), *common,
          *objects, '-L' + str(SDK / 'libnx/lib'), '-lnx', '-lm', '-o', elf], env=env)
-    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.1.6', nacp,
+    run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], '0.1.7', nacp,
          '--titleid=' + cfg['title_id']])
     payload = OUT / 'diagnostic-romfs'
     payload.mkdir(exist_ok=True)
@@ -159,6 +164,7 @@ def overlay():
     elf = OUT / 're4-controls-overlay.elf'
     env = os.environ.copy(); env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), *flags, 'source/overlay/main.cpp', 'source/overlay/game_link.cpp',
+         'source/overlay/storage.cpp',
          'source/settings.cpp', 'source/settings_file.cpp',
          '-specs=' + str(SDK / 'libnx/switch.specs'), '-L' + str(SDK / 'libnx/lib'),
          '-lnx', '-lm', '-o', elf], env=env)

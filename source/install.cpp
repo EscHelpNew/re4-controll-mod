@@ -135,6 +135,7 @@ static const char* disable_bundle(const char* sd_root, bool loader) {
         || receipt.size() != 32 || std::memcmp(receipt.data(), "RE4INST1", 8))
         return "Conflict: installation receipt unavailable";
     std::array<std::string, 3> paths;
+    std::array<std::string, 3> backups;
     for (unsigned i = 0; i < 3; ++i) {
         paths[i] = std::string(sd_root) + (loader ? loader_destinations[i] : destinations[i]);
         if (!exists(paths[i])) continue;
@@ -143,13 +144,19 @@ static const char* disable_bundle(const char* sd_root, bool loader) {
         std::memcpy(&expected, receipt.data() + 8 + 8 * i, 8);
         if (!read(paths[i], current) || hash(current) != expected)
             return "Conflict: file changed outside RE4 Controls";
-        const auto backup = paths[i] + ".re4-controls.disabled";
-        if (exists(backup) && (!read(backup, disabled) || disabled != current))
-            return "Conflict: older disabled copy already exists";
+        backups[i] = paths[i] + ".re4-controls.disabled";
+        if (exists(backups[i]) && (!read(backups[i], disabled) || disabled != current)) {
+            char suffix[32];
+            std::snprintf(suffix, sizeof(suffix), "-%016llx", (unsigned long long)expected);
+            backups[i] += suffix;
+            if (exists(backups[i]) && (!read(backups[i], disabled) || disabled != current))
+                return "Conflict: disabled backup differs";
+        }
     }
-    for (const auto& path : paths) {
+    for (unsigned i = 0; i < 3; ++i) {
+        const auto& path = paths[i];
         if (!exists(path)) continue;
-        const auto backup = path + ".re4-controls.disabled";
+        const auto& backup = backups[i];
         if (exists(backup)) {
             if (std::remove(path.c_str())) return "SD error while disabling patch";
         } else if (std::rename(path.c_str(), backup.c_str())) return "SD error while disabling patch";
