@@ -1,8 +1,8 @@
 #include "re4/installer_ui.hpp"
 #include <cstring>
 namespace re4 {
-const std::array<HomeItem,8>& installer_home_items(){
-    static constexpr std::array<HomeItem,8> items{{
+const std::array<HomeItem,9>& installer_home_items(){
+    static constexpr std::array<HomeItem,9> items{{
         {{"Install / update mod","Установить / обновить мод"},
          {"Install smooth controls and the overlay.\nClose Resident Evil 4 before installing.",
           "Установить управление и меню оверлея.\nПеред установкой закройте Resident Evil 4."}},
@@ -18,6 +18,9 @@ const std::array<HomeItem,8>& installer_home_items(){
         {{"Controller diagnostics","Проверка контроллера"},
          {"Check raw sticks, gyro and calibration.\nHold ZL to preview motion aiming.",
           "Проверить стики, гироскоп и калибровку.\nУдерживайте ZL для проверки прицела."}},
+        {{"Graphics","Графика"},
+         {"Manual graphics settings, native by default.\nFiltering and AA require a game restart.",
+          "Ручная графика, штатная по умолчанию.\nФильтрация и AA: перезапуск игры."}},
         {{"Updates","Обновления"},
          {"Download a new app from GitHub Releases.\nWi-Fi is required. The previous app is kept.",
           "Скачать новую версию из GitHub Releases.\nНужен Wi-Fi. Предыдущая версия сохраняется."}},
@@ -31,13 +34,15 @@ const std::array<HomeItem,8>& installer_home_items(){
     return items;
 }
 unsigned InstallerModel::item_count()const{
+    if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
     if(page==InstallerPage::MappingTargets)return kButtonCount+1;
-    return page==InstallerPage::Home?8:page==InstallerPage::Controls?unsigned(ControlId::Count):page==InstallerPage::Updates?2:0;
+    return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlId::Count):page==InstallerPage::Updates?2:0;
 }
 InstallerAction InstallerModel::handle(UiEvent event){
     if(event==UiEvent::Exit)return InstallerAction::Exit;
     if(event==UiEvent::Back){
+        if(page==InstallerPage::Graphics){page=graphics_origin;selected=page==InstallerPage::Home?home_selected:controls_selected;return InstallerAction::None;}
         if(page==InstallerPage::MappingTargets){page=InstallerPage::Mapping;selected=mapping_source+1;return InstallerAction::None;}
         if(page==InstallerPage::Mapping){page=InstallerPage::Controls;selected=controls_selected;return InstallerAction::None;}
         if(page==InstallerPage::Home)return InstallerAction::Exit;
@@ -86,9 +91,20 @@ InstallerAction InstallerModel::handle(UiEvent event){
         if(selected==kMappingRowCount-1 && event!=UiEvent::Confirm)return InstallerAction::None;
         return change_mapping(settings,selected,event==UiEvent::Left?-1:1)?InstallerAction::SaveSettings:InstallerAction::None;
     }
+    if(page==InstallerPage::Graphics){
+        if(selected>=count)selected=0;
+        const auto& spec=graphics_specs()[selected];
+        if(spec.kind==ControlKind::Action)return event==UiEvent::Confirm && reset_graphics(settings)?InstallerAction::SaveSettings:InstallerAction::None;
+        if(event!=UiEvent::Left && event!=UiEvent::Right && !(event==UiEvent::Confirm && spec.kind!=ControlKind::Slider))return InstallerAction::None;
+        return change_graphics(settings,spec.id,event==UiEvent::Left?-1:1)?InstallerAction::SaveSettings:InstallerAction::None;
+    }
     if(page==InstallerPage::Controls){
         if(selected>=count)selected=0;
         const auto& spec=control_specs()[selected];
+        if(spec.id==ControlId::GraphicsMenu){
+            if(event==UiEvent::Confirm){controls_selected=selected;graphics_origin=page;page=InstallerPage::Graphics;selected=0;}
+            return InstallerAction::None;
+        }
         if(spec.id==ControlId::ButtonMapping){
             if(event==UiEvent::Confirm){controls_selected=selected;page=InstallerPage::Mapping;selected=0;}
             return InstallerAction::None;
@@ -99,19 +115,21 @@ InstallerAction InstallerModel::handle(UiEvent event){
         if(change_control(settings,spec.id,event==UiEvent::Left?-1:1))return InstallerAction::SaveSettings;
         return InstallerAction::None;
     }
-    if(selected==6 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
+    if(selected==7 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
         change_control(settings,ControlId::Language,1);return InstallerAction::SaveSettings;
     }
     if(event!=UiEvent::Confirm)return InstallerAction::None;
     if(selected==0)return InstallerAction::InstallGame;
     if(selected==1)return InstallerAction::InstallOverlay;
     if(selected==2)return InstallerAction::DisableGame;
-    if(selected==7)return InstallerAction::Exit;
+    if(selected==8)return InstallerAction::Exit;
     home_selected=selected;
-    page=selected==3?InstallerPage::Controls:selected==4?InstallerPage::Diagnostics:InstallerPage::Updates;
+    graphics_origin=InstallerPage::Home;
+    page=selected==3?InstallerPage::Controls:selected==4?InstallerPage::Diagnostics:selected==5?InstallerPage::Graphics:InstallerPage::Updates;
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
+    if(page==InstallerPage::Graphics)return Bilingual{"GRAPHICS","ГРАФИКА"}.get(settings.language);
     if(page==InstallerPage::Mapping)return Bilingual{"BUTTON MAPPING","НАЗНАЧЕНИЕ КНОПОК"}.get(settings.language);
     if(page==InstallerPage::MappingTargets)return Bilingual{"CHOOSE GAME BUTTON","ВЫБОР КНОПКИ ИГРЫ"}.get(settings.language);
     const Bilingual text=page==InstallerPage::Home?Bilingual{"MOD INSTALLER","УСТАНОВКА МОДА"}
@@ -153,9 +171,10 @@ const char* InstallerModel::status_text()const{
     return messages[index<sizeof(messages)/sizeof(*messages)?index:unsigned(InstallerStatus::Failed)].get(settings.language);
 }
 const char* InstallerModel::selected_help()const{
+    if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_help(selected,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);
-    if(page==InstallerPage::Home)return installer_home_items()[selected<8?selected:0].help.get(settings.language);
+    if(page==InstallerPage::Home)return installer_home_items()[selected<9?selected:0].help.get(settings.language);
     if(page==InstallerPage::Updates){
         if(update.stage==UpdateStage::Installed)return Bilingual{
             "Reopen this app to start the new version.\nThen use Install / update mod while\nResident Evil4 is closed.",
@@ -168,19 +187,21 @@ const char* InstallerModel::selected_help()const{
                      "ZL: проверка  A: гироскоп вкл./выкл.\nY: калибровать  X: сбросить прицел"}.get(settings.language);
 }
 std::string InstallerModel::item_label(unsigned index)const{
+    if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_label(index,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_label(index,settings.language);
-    if(page==InstallerPage::Home)return installer_home_items()[index<8?index:0].label.get(settings.language);
+    if(page==InstallerPage::Home)return installer_home_items()[index<9?index:0].label.get(settings.language);
     if(page==InstallerPage::Updates)return (index==0?Bilingual{"Check for updates","Проверить обновления"}
         :Bilingual{"Download / install","Скачать / установить"}).get(settings.language);
     return control_spec(static_cast<ControlId>(index)).label.get(settings.language);
 }
 std::string InstallerModel::item_value(unsigned index)const{
+    if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);
     if(page==InstallerPage::Mapping)return mapping_row_value(index,settings);
     if(page==InstallerPage::MappingTargets)return index==mapping_target_index(settings,mapping_source)?"*":"";
     if(page==InstallerPage::Controls)return control_value_text(control_spec(static_cast<ControlId>(index)),settings);
     if(page==InstallerPage::Updates)return index==1?update.version:"";
-    if(index==6)return settings.language==Language::Russian?"Русский":"English";
+    if(index==7)return settings.language==Language::Russian?"Русский":"English";
     if(index==3)return curve_name(settings.stick_curve,settings.language);
     return "";
 }

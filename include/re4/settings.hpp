@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "re4/button_map.hpp"
+#include "re4/graphics.hpp"
 
 namespace re4 {
 constexpr std::size_t kLegacySettingsBytes = 64;
@@ -36,6 +37,10 @@ struct Settings {
     ButtonMap button_map = identity_button_map();
     bool free_camera = false;
     float camera_return_speed = 1;
+    TextureFilter texture_filtering = TextureFilter::Native;
+    ShadowMode shadow_mode = ShadowMode::Native;
+    AntiAliasing anti_aliasing = AntiAliasing::Native;
+    float draw_distance_scale = 1;
 };
 bool valid_settings(const Settings& settings);
 bool encode_settings(const Settings& settings, std::uint8_t* out, std::size_t size);

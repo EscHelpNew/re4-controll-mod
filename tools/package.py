@@ -48,7 +48,8 @@ def package() -> None:
                              'additive firearm-aim gyro', 'English/Russian settings',
                              'four stick response curves', 'themed reloadable installer',
                              'separate right-stick aiming','10ms gyro average and angular deadzone','public GitHub OTA updates',
-                             '20-button mapping including menus/QTE','adjustable camera return and free 360 orbit'],
+                             '20-button mapping including menus/QTE','adjustable camera return and free 360 orbit',
+                             'native-default graphics: filtering, handheld SSAA, object culling and shadows'],
                 'verified': ['user confirmed movement/camera/aim in 0.2.0',
                              'user confirmed additive aim-only gyro, vertical range, help and speed caps in 0.2.2',
                              'overlay UI on existing Uberhand',
@@ -58,6 +59,7 @@ def package() -> None:
                              'user confirmed right-stick aim zero/variable-speed behavior in 0.4.0',
                              'diagnostic sticks/gyro on console', 'NRO changed-image reload and new PID', 'cold-launch credential'],
                 'pending': ['anonymous OTA installation on console',
+                            'graphics visual/performance hardware acceptance',
                             'free camera and button mapping hardware acceptance',
                             'special weapons and all gameplay contexts', 'controller switch in game'],
                 'files': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}}

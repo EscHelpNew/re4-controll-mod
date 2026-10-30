@@ -34,6 +34,9 @@ extern "C" Result sensor_stop(const std::uint32_t&)
     asm("_ZN2nn3hid6detail17StopSixAxisSensorERKNS0_19SixAxisSensorHandleE");
 extern "C" Result sensor_read(int*, re4::SensorState*, int, const std::uint32_t&)
     asm("_ZN2nn3hid6detail22GetSixAxisSensorStatesEPiPNS0_18SixAxisSensorStateEiRKNS0_19SixAxisSensorHandleE");
+extern "C" Result nn_mount_rom(const char*,void*,std::size_t)
+    asm("_ZN2nn2fs8MountRomEPKcPvm");
+extern "C" int get_operation_mode() asm("_ZN2nn2oe16GetOperationModeEv");
 struct SensorBackend {
     static auto handles(std::uint32_t* h, int* n, int capacity, std::uint32_t id, std::uint32_t style) {
         return sensor_handles(h, n, capacity, id, style);
@@ -54,6 +57,12 @@ bool dpad_move = false;
 void* movement_actor = nullptr;
 std::uint32_t last_sequence = 0;
 bool file_read = false;
+std::atomic<std::uint64_t> graphics_snapshot{0x3F80000000000000ull};
+std::atomic<unsigned> filter_latched{255},aa_latched{255};
+std::atomic<unsigned> sampler_calls{0},sampler_overrides{0},scene_submits{0},scene_draws{0},cull_updates{0},resolution_overrides{0};
+std::atomic<std::uint64_t> last_cull_pair{0};
+std::atomic_flag rom_settings_attempted=ATOMIC_FLAG_INIT;
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
 bool file_mounted = false;
 unsigned file_attempts = 0;
 std::uint64_t next_file_retry = 0;
@@ -154,6 +163,38 @@ void poll_sensors() {
     control.sensor_samples = control.sensor_samples + count;
 }
 
+void publish_graphics_settings(){
+    graphics_snapshot.store(re4::pack_graphics({settings.texture_filtering,settings.shadow_mode,
+        settings.anti_aliasing,settings.draw_distance_scale},file_read),std::memory_order_release);
+}
+re4::GraphicsOptions render_graphics(std::uint64_t word){
+    return re4::graphics_ready(word)?re4::unpack_graphics(word):re4::GraphicsOptions{};
+}
+unsigned latch_graphics(std::atomic<unsigned>& latch,unsigned requested,bool ready){
+    auto mode=latch.load(std::memory_order_acquire);
+    if(mode==255 && ready){
+        unsigned pending=255;latch.compare_exchange_strong(pending,requested,std::memory_order_acq_rel);
+        mode=latch.load(std::memory_order_acquire);
+    }
+    return mode==255?0:mode;
+}
+void publish_graphics_diagnostics(){
+    control.graphics_sampler_calls=sampler_calls.load(std::memory_order_relaxed);
+    control.graphics_sampler_overrides=sampler_overrides.load(std::memory_order_relaxed);
+    control.graphics_filter_latched=filter_latched.load(std::memory_order_acquire);
+    control.graphics_aa_latched=aa_latched.load(std::memory_order_acquire);
+    control.graphics_scene_submits=scene_submits.load(std::memory_order_relaxed);
+    control.graphics_scene_draws=scene_draws.load(std::memory_order_relaxed);
+    control.graphics_cull_updates=cull_updates.load(std::memory_order_relaxed);
+    control.graphics_resolution_requests=resolution_overrides.load(std::memory_order_relaxed);
+    control.graphics_ready=re4::graphics_ready(graphics_snapshot.load(std::memory_order_acquire));
+    const auto pair=last_cull_pair.load(std::memory_order_relaxed);
+    const auto native=std::uint32_t(pair>>32),effective=std::uint32_t(pair);
+    float value;std::memcpy(&value,&native,4);control.graphics_native_far=value;
+    std::memcpy(&value,&effective,4);control.graphics_effective_far=value;
+    const auto* renderer=reinterpret_cast<const volatile std::int32_t*>(main_base+0x1180D40);
+    control.graphics_display_index=renderer[0x30/4];control.graphics_back_index=renderer[0x28/4];
+}
 void publish_settings() {
     std::uint8_t bytes[re4::kSettingsBytes];
     if (!re4::encode_settings(settings, bytes, sizeof(bytes))) return;
@@ -163,6 +204,7 @@ void publish_settings() {
     std::atomic_thread_fence(std::memory_order_seq_cst);
     control.sequence = (control.sequence + 1) & ~1u;
     last_sequence = control.sequence;
+    publish_graphics_settings();
     re4::acknowledge_settings(control, settings, last_sequence);
 }
 bool read_settings(const char* path) {
@@ -200,7 +242,7 @@ void read_initial_settings() {
             file_read=true;publish_settings();return;
         }
     }
-    if(file_attempts>=8){file_read=true;control.settings_source=3;}
+    if(file_attempts>=8){file_read=true;control.settings_source=3;publish_graphics_settings();}
 }
 void poll_settings() {
     const auto before = control.sequence;
@@ -213,6 +255,7 @@ void poll_settings() {
     last_sequence = before;
     file_read = true; // A live update always wins over a delayed startup read.
     control.settings_source = 4;
+    publish_graphics_settings();
     re4::acknowledge_settings(control, settings, before);
 }
 void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
@@ -236,6 +279,71 @@ void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
     control.raw_ry = connected ? pad.ry / 32767.f : 0;
 }
 
+HOOK_DEFINE_TRAMPOLINE(RomMount) {
+    static Result Callback(const char* name,void* cache,std::size_t size){
+        const Result result=Orig(name,cache,size);
+        if(R_SUCCEEDED(result) && !file_read && !rom_settings_attempted.test_and_set(std::memory_order_acq_rel)){
+            next_file_retry=0;read_initial_settings(); // FS is ready before graphics allocations.
+        }
+        return result;
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(SamplerCreate) {
+    static void Callback(void* sampler,void* device,const std::uint8_t* descriptor){
+        sampler_calls.fetch_add(1,std::memory_order_relaxed);
+        const auto word=graphics_snapshot.load(std::memory_order_acquire);
+        const auto options=render_graphics(word);
+        const auto mode=static_cast<re4::TextureFilter>(latch_graphics(filter_latched,unsigned(options.filter),re4::graphics_ready(word)));
+        alignas(16) std::uint8_t copy[20];
+        const bool changed=re4::filter_sampler_descriptor(descriptor,copy,sizeof(copy),mode);
+        if(changed)sampler_overrides.fetch_add(1,std::memory_order_relaxed);
+        Orig(sampler,device,changed?copy:descriptor);
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(ResolutionMap) {
+    static void Callback(int width,int height,int* display,int* back){
+        Orig(width,height,display,back);
+        if(!display || !back)return;
+        const auto word=graphics_snapshot.load(std::memory_order_acquire);
+        const auto options=render_graphics(word);
+        const auto mode=static_cast<re4::AntiAliasing>(latch_graphics(aa_latched,unsigned(options.aa),re4::graphics_ready(word)));
+        const int desired=mode==re4::AntiAliasing::HandheldSsaa && get_operation_mode()==0
+            ?re4::resolution_back_index(mode,width,height,*display,*back):*back;
+        if(desired!=*back){*back=desired;resolution_overrides.fetch_add(1,std::memory_order_relaxed);}
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(FrustumUpdate) {
+    static void Callback(void* frustum){
+        if(frustum!=reinterpret_cast<void*>(main_base+0x1272FA0)){Orig(frustum);return;}
+        const auto options=render_graphics(graphics_snapshot.load(std::memory_order_acquire));
+        auto* far=reinterpret_cast<float*>(static_cast<std::uint8_t*>(frustum)+0x18);
+        const float native=*far;
+        const float effective=re4::culling_distance(native,*reinterpret_cast<const float*>(main_base+0x124ED40),
+            *reinterpret_cast<const float*>(main_base+0x124ED44),options.draw_distance);
+        const bool changed=std::isfinite(native) && effective!=native;
+        if(changed)*far=effective;
+        Orig(frustum); // Native plane regeneration/cache sees the chosen distance.
+        if(changed)*far=native;
+        cull_updates.fetch_add(1,std::memory_order_relaxed);
+        std::uint32_t a,b;std::memcpy(&a,&native,4);std::memcpy(&b,&effective,4);
+        last_cull_pair.store(std::uint64_t(a)<<32|b,std::memory_order_relaxed);
+    }
+};
+template<class F> void shadow_frame(F original){
+    const auto options=render_graphics(graphics_snapshot.load(std::memory_order_acquire));
+    auto* state=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);
+    if(options.shadows==re4::ShadowMode::Native || !state){original();return;}
+    auto* flags=reinterpret_cast<std::uint32_t*>(state+0x7C);
+    const auto saved=*flags;*flags=re4::shadow_flags(options.shadows,saved);
+    original();
+    if(state==*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08))*flags=re4::restore_shadow_flags(*flags,saved);
+}
+HOOK_DEFINE_TRAMPOLINE(SceneSubmit) {
+    static void Callback(){scene_submits.fetch_add(1,std::memory_order_relaxed);shadow_frame([]{Orig();});}
+};
+HOOK_DEFINE_TRAMPOLINE(SceneDraw) {
+    static void Callback(){scene_draws.fetch_add(1,std::memory_order_relaxed);shadow_frame([]{Orig();});}
+};
 HOOK_DEFINE_TRAMPOLINE(FullPad) {
     static void Callback(NpadState* out, const std::uint32_t& id) { Orig(out, id); capture(*out, id, 1); }
 };
@@ -250,6 +358,7 @@ HOOK_DEFINE_TRAMPOLINE(PadNormalize) {
         const int result = Orig(state);
         poll_settings(); read_initial_settings();
         poll_sensors();
+        publish_graphics_diagnostics();
         control.frames = control.frames + 1;
         return result;
     }
@@ -426,7 +535,7 @@ extern "C" void exl_main(void*, void*) {
         control.status = 2; // Unsupported executable: no game/SDK hooks installed.
         return;
     }
-    if (main.m_Total.m_Size < 0x1265A10) { control.status = 2; return; }
+    if (main.m_Total.m_Size < 0x1273300) { control.status = 2; return; }
     main_base = reinterpret_cast<std::uintptr_t>(memory);
     aiming_predicate = reinterpret_cast<int (*)(void*)>(main_base + 0x317630);
     publish_settings();
@@ -439,6 +548,12 @@ extern "C" void exl_main(void*, void*) {
     MotionAdvance::InstallAtOffset(0x2B8F10);
     CameraInput::InstallAtOffset(0x19B20);
     CameraApply::InstallAtOffset(0x18520);
+    RomMount::InstallAtFuncPtr(nn_mount_rom);
+    SamplerCreate::InstallAtOffset(0x64C3A0);
+    ResolutionMap::InstallAtOffset(0x24FAE0);
+    FrustumUpdate::InstallAtOffset(0x4F5C90);
+    SceneSubmit::InstallAtOffset(0x4EB700);
+    SceneDraw::InstallAtOffset(0x4ECFB0);
     AimSensitivity::InstallAtOffset(0x33DF80);
     AimSway::InstallAtOffset(0x33EC50);
     control.status = 1;

@@ -20,6 +20,7 @@ inline unsigned pad_attributes=1, native_aim=1;
 inline std::uint64_t pad_buttons=0;
 inline float rendered_pitch=0,rendered_camera_yaw=0;
 inline unsigned camera_gate_change=0;
+inline int operation_mode=0;
 inline float motion_speed_seen=0;
 inline float aim_step=0.08f, sway_baseline=0;
 inline bool apply_sway=false;

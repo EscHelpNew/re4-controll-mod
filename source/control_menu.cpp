@@ -39,6 +39,9 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
         {ControlId::ButtonMapping,ControlKind::Action,{"Button mapping","Назначение кнопок"},
             {"Map physical buttons in menus, QTE and play.\nOverlay controls remain physical for recovery.\nHOME/Capture are system buttons outside RE4.",
              "Кнопки в игре, меню и QTE.\nОверлей использует физические кнопки.\nHOME/Capture — системные кнопки вне RE4."}},
+        {ControlId::GraphicsMenu,ControlKind::Action,{"Graphics","Графика"},
+            {"Manual graphics settings. Native by default.\nFiltering and AA require a game restart.\nOpen with A; B returns without changes.",
+             "Ручная графика. По умолчанию штатная.\nФильтрация и AA: перезапуск игры.\nA: открыть; B: назад без изменений."}},
         slider(ControlId::AimX,{"Left-stick aim X","Прицел левым стиком X"},
             {"Horizontal aiming from the stick.\n0: disabled; 1: native maximum.\nGyro sensitivity is independent.",
              "Прицел влево и вправо от стика.\n0: выключено; 1: штатный максимум.\nЧувствительность гироскопа отдельно."},&Settings::aim_gain_x,0.1f,1),
@@ -114,6 +117,55 @@ bool change_control(Settings& s,ControlId id,int direction){
     if(id==ControlId::Curve){s.stick_curve=static_cast<StickCurve>((unsigned(s.stick_curve)+(direction>0?1:3))%4);return true;}
     if(id==ControlId::Reset){s={};return true;}
     return false;
+}
+const std::array<GraphicsSpec,unsigned(GraphicsId::Count)>& graphics_specs(){
+    static constexpr std::array<GraphicsSpec,unsigned(GraphicsId::Count)> items{{
+        {GraphicsId::TextureFiltering,ControlKind::Selector,{"Texture filtering","Фильтрация текстур"},
+            {"Normal mipmapped textures only.\nBilinear / trilinear / AF 2x-16x.\nSpecial filters stay native.\nRequires a game restart.",
+             "Обычные текстуры с mip-уровнями.\nБилинейная / трилинейная / AF 2x-16x.\nОсобые фильтры игры сохраняются.\nТребуется перезапуск игры."}},
+        {GraphicsId::AntiAliasing,ControlKind::Selector,{"Anti-aliasing","Сглаживание"},
+            {"Handheld SSAA: 900p render to 720p.\n1.25x, native buffers/downsample.\nHandheld only; dock stays native.\nHigher GPU cost. Restart required.",
+             "SSAA: рендер 900p, вывод 720p.\n1.25x, штатные буферы и уменьшение.\nТолько портативно; док без изменений.\nВыше нагрузка GPU. Перезапуск игры."}},
+        {GraphicsId::DrawDistance,ControlKind::Slider,{"Object draw distance","Дальность объектов"},
+            {"Loaded-room culling: 0.50x-2.00x.\nLimited by the room's native fog.\nNo extra rooms, streaming or LOD.\nFog stays unchanged. Native: 1.00x.",
+             "Отсечение в комнате: 0.50x-2.00x.\nПредел задаёт штатный туман комнаты.\nБез новых комнат, загрузки или LOD.\nТуман не меняется. Штатное: 1.00x."}},
+        {GraphicsId::Shadows,ControlKind::Selector,{"Shadows","Тени"},
+            {"Rendered shadows: Native or Off.\nCast, self and foot shadows.\nBaked texture lighting stays unchanged.",
+             "Отрисовываемые тени: штатные/выкл.\nТени сцены, самотени и тени под ногами.\nОсвещение в текстурах сохраняется."}},
+        {GraphicsId::Reset,ControlKind::Action,{"Reset graphics","Сбросить графику"},
+            {"A: restore native graphics only.\nFiltering, AA, shadows: Native.\nObject distance: 1.00x.\nControls and mappings are preserved.",
+             "A: вернуть только штатную графику.\nФильтрация, сглаживание, тени: штатные.\nДальность объектов: 1.00x.\nУправление и назначения сохраняются."}}
+    }};
+    return items;
+}
+const GraphicsSpec& graphics_spec(GraphicsId id){
+    return graphics_specs()[unsigned(id)<unsigned(GraphicsId::Count)?unsigned(id):0];
+}
+std::string graphics_value_text(const GraphicsSpec& item,const Settings& s){
+    const auto native=Bilingual{"Native","Штатное"}.get(s.language);
+    if(item.id==GraphicsId::TextureFiltering){
+        static constexpr Bilingual names[]={{"Native","Штатное"},{"Bilinear","Билинейная"},{"Trilinear","Трилинейная"},
+            {"AF 2x","AF 2x"},{"AF 4x","AF 4x"},{"AF 8x","AF 8x"},{"AF 16x","AF 16x"}};
+        const unsigned index=unsigned(s.texture_filtering);return names[index<7?index:0].get(s.language);
+    }
+    if(item.id==GraphicsId::AntiAliasing)return s.anti_aliasing==AntiAliasing::HandheldSsaa?"Handheld SSAA":native;
+    if(item.id==GraphicsId::Shadows)return s.shadow_mode==ShadowMode::Off?Bilingual{"Off","Выкл"}.get(s.language):native;
+    if(item.id==GraphicsId::DrawDistance){char text[24];std::snprintf(text,sizeof(text),"%.2fx",s.draw_distance_scale);return text;}
+    return "A";
+}
+bool change_graphics(Settings& s,GraphicsId id,int direction){
+    if(!direction)return false;
+    if(id==GraphicsId::TextureFiltering){s.texture_filtering=static_cast<TextureFilter>((unsigned(s.texture_filtering)+(direction>0?1:6))%7);return true;}
+    if(id==GraphicsId::AntiAliasing){s.anti_aliasing=s.anti_aliasing==AntiAliasing::Native?AntiAliasing::HandheldSsaa:AntiAliasing::Native;return true;}
+    if(id==GraphicsId::Shadows){s.shadow_mode=s.shadow_mode==ShadowMode::Native?ShadowMode::Off:ShadowMode::Native;return true;}
+    if(id==GraphicsId::DrawDistance){const auto previous=s.draw_distance_scale;s.draw_distance_scale=std::clamp(previous+(direction>0?0.25f:-0.25f),0.5f,2.f);return previous!=s.draw_distance_scale;}
+    return false;
+}
+bool reset_graphics(Settings& s){
+    const bool changed=s.texture_filtering!=TextureFilter::Native || s.anti_aliasing!=AntiAliasing::Native
+        || s.shadow_mode!=ShadowMode::Native || s.draw_distance_scale!=1.f;
+    s.texture_filtering=TextureFilter::Native;s.anti_aliasing=AntiAliasing::Native;s.shadow_mode=ShadowMode::Native;s.draw_distance_scale=1.f;
+    return changed;
 }
 const char* mapping_target_label(unsigned target,Language language){
     if(target>=kButtonCount)return Bilingual{"Unbound","Не назначено"}.get(language);

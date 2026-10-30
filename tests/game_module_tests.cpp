@@ -1,6 +1,7 @@
 // Exercise the actual game adapter callbacks against a bounded fake game image.
 // Only external engine/SDK calls are substituted; no extracted game is needed.
 #include <cstdint>
+#include <cstddef>
 namespace {
 struct NpadState;
 void test_FullPad(NpadState*, const std::uint32_t&);
@@ -13,6 +14,12 @@ void test_CameraInput(void*);
 void test_CameraApply(void*,void*);
 int test_AimSensitivity(void*, int);
 void test_AimSway(void*, unsigned, float*, float*);
+unsigned test_RomMount(const char*,void*,std::size_t);
+void test_SamplerCreate(void*,void*,const std::uint8_t*);
+void test_ResolutionMap(int,int,int*,int*);
+void test_FrustumUpdate(void*);
+void test_SceneSubmit();
+void test_SceneDraw();
 }
 #include "../source/game/module.cpp"
 #include <cassert>
@@ -21,6 +28,20 @@ void test_AimSway(void*, unsigned, float*, float*);
 #include <vector>
 namespace {
 std::vector<re4::SensorState> sensor_batch;
+std::uint8_t sampler_seen[20]{};
+std::uint32_t shadow_flags_seen=0;
+unsigned rom_result=0;
+unsigned test_RomMount(const char*,void*,std::size_t){return rom_result;}
+extern "C" Result nn_mount_rom(const char*,void*,std::size_t){return rom_result;}
+extern "C" int get_operation_mode(){return game_test::operation_mode;}
+void test_SamplerCreate(void*,void*,const std::uint8_t* descriptor){std::memcpy(sampler_seen,descriptor,20);}
+void test_ResolutionMap(int width,int height,int* display,int* back){*display=width==1280&&height==720?2:0;*back=*display==2?3:1;}
+void test_FrustumUpdate(void* frustum){auto* value=static_cast<std::uint8_t*>(frustum);std::memcpy(value+0x24,value+0x18,4);}
+void test_SceneSubmit(){
+    auto* state=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);
+    if(state){auto* flags=reinterpret_cast<std::uint32_t*>(state+0x7C);shadow_flags_seen=*flags;*flags|=0x400;}
+}
+void test_SceneDraw(){test_SceneSubmit();}
 bool consume_aim_axes=false;
 int seen_aim_x=0,seen_aim_y=0;
 float aim_full_scale=63,cached_aim_yaw=0,cached_aim_pitch=0,native_pitch_sign=1;
@@ -99,13 +120,16 @@ extern "C" Result sensor_read(int* count,re4::SensorState* out,int capacity,cons
 int test_is_aiming(void*) { return game_test::native_aim; }
 bool near(float a,float b) {return std::fabs(a-b)<0.0001f;}
 struct Fixture {
-    std::vector<std::uint8_t> image=std::vector<std::uint8_t>(0x1267000);
+    std::vector<std::uint8_t> image=std::vector<std::uint8_t>(0x1281000);
     alignas(16) std::uint8_t actor[0xA00]{};
     std::vector<std::uint8_t> input_state=std::vector<std::uint8_t>(0x5200);
     alignas(4) std::uint8_t input_type[16]{};
     Fixture() {
         sensor.stop();sensor={};gyro.reset();gyro_pending={};last_sensor_tick=0;
         free_orbit.reset();camera_context=nullptr;
+        graphics_snapshot.store(0x3F80000000000000ull);filter_latched=255;aa_latched=255;
+        sampler_calls=0;sampler_overrides=0;scene_submits=0;scene_draws=0;cull_updates=0;resolution_overrides=0;
+        last_cull_pair=0;rom_settings_attempted.clear();rom_result=0;
         consume_aim_axes=true;seen_aim_x=seen_aim_y=0;aim_full_scale=63;cached_aim_yaw=cached_aim_pitch=0;
         native_pitch_sign=1;
         sensor_pad=0;sensor_style=0;sensor_attributes=0;
@@ -117,6 +141,7 @@ struct Fixture {
         game_test::apply_sway=false;game_test::aim_step=0.08f;game_test::sway_baseline=0;
         game_test::pad_buttons=0;
         game_test::camera_gate_change=0;
+        game_test::operation_mode=0;
         game_test::program=re4::profile::title_id;
         settings={};settings.gyro_speed=1;settings.invert_x=settings.invert_y=false;
         settings.left_deadzone=settings.right_deadzone=0.15f;
@@ -150,6 +175,64 @@ struct Fixture {
 };
 }
 int main(){
+    {
+        Fixture f;rom_result=7;assert(RomMount::Callback("rom",nullptr,0)==7 && game_test::mounts==0);
+        std::uint8_t descriptor[20]{};descriptor[5]=1;descriptor[6]=0x29;
+        settings.texture_filtering=re4::TextureFilter::Aniso16;publish_graphics_settings();
+        SamplerCreate::Callback(nullptr,nullptr,descriptor);
+        assert(filter_latched.load()==255 && sampler_seen[5]==1 && sampler_seen[6]==0x29);
+        file_read=true;publish_graphics_settings();SamplerCreate::Callback(nullptr,nullptr,descriptor);
+        assert(filter_latched.load()==unsigned(re4::TextureFilter::Aniso16) && sampler_seen[5]==16);
+        int display,back;ResolutionMap::Callback(1280,720,&display,&back);assert(display==2 && back==3);
+        settings.anti_aliasing=re4::AntiAliasing::HandheldSsaa;publish_graphics_settings();
+        ResolutionMap::Callback(1280,720,&display,&back);assert(back==3); // Native AA latch also requires restart.
+    }
+    {
+        Fixture f;re4::Settings saved;saved.texture_filtering=re4::TextureFilter::Aniso8;
+        game_test::settings_primary.resize(re4::kSettingsBytes);
+        assert(re4::encode_settings(saved,game_test::settings_primary.data(),re4::kSettingsBytes));
+        game_test::mount_result=0;rom_result=0;
+        assert(RomMount::Callback("rom",nullptr,0)==0 && file_read);
+        std::uint8_t descriptor[20]{};descriptor[5]=1;descriptor[6]=0x29;
+        SamplerCreate::Callback(nullptr,nullptr,descriptor);
+        assert(sampler_seen[5]==8 && sampler_seen[6]==0x6A && descriptor[5]==1 && descriptor[6]==0x29);
+        settings.texture_filtering=re4::TextureFilter::Aniso16;publish_graphics_settings();
+        SamplerCreate::Callback(nullptr,nullptr,descriptor);assert(sampler_seen[5]==8); // Process-latched, no cache variants.
+        descriptor[6]=0xAA;SamplerCreate::Callback(nullptr,nullptr,descriptor);
+        assert(sampler_seen[6]==0xAA && sampler_seen[5]==1); // Comparison sampler untouched.
+    }
+    {
+        Fixture f;file_read=true;settings.anti_aliasing=re4::AntiAliasing::HandheldSsaa;publish_graphics_settings();
+        int display=-1,back=-1;ResolutionMap::Callback(1280,720,&display,&back);assert(display==2 && back==1);
+        game_test::operation_mode=1;ResolutionMap::Callback(1280,720,&display,&back);assert(display==2 && back==3);
+        game_test::operation_mode=0;
+        settings.anti_aliasing=re4::AntiAliasing::Native;publish_graphics_settings();
+        ResolutionMap::Callback(1280,720,&display,&back);assert(display==2 && back==1); // Restart required.
+        ResolutionMap::Callback(1920,1080,&display,&back);assert(display==0 && back==1);
+    }
+    {
+        Fixture f;f.camera_mode();file_read=true;settings.shadow_mode=re4::ShadowMode::Off;
+        settings.draw_distance_scale=1.5f;publish_graphics_settings();
+        auto* flags=reinterpret_cast<std::uint32_t*>(f.input_state.data()+0x7C);*flags=0x80;
+        SceneSubmit::Callback();assert((shadow_flags_seen&re4::kShadowDisableMask)==re4::kShadowDisableMask && *flags==0x480);
+        SceneDraw::Callback();assert(*flags==0x480);
+        auto* frustum=f.image.data()+0x1272FA0;
+        *reinterpret_cast<float*>(frustum+0x18)=1000;
+        *reinterpret_cast<float*>(f.image.data()+0x124ED40)=100;
+        *reinterpret_cast<float*>(f.image.data()+0x124ED44)=1'000'000;
+        FrustumUpdate::Callback(frustum);
+        assert(*reinterpret_cast<float*>(frustum+0x18)==1000 && *reinterpret_cast<float*>(frustum+0x24)==1500);
+        FrustumUpdate::Callback(frustum);assert(*reinterpret_cast<float*>(frustum+0x24)==1500); // No compounded scaling.
+        settings.draw_distance_scale=1;publish_graphics_settings();FrustumUpdate::Callback(frustum);
+        assert(*reinterpret_cast<float*>(frustum+0x24)==1000);
+        settings.draw_distance_scale=2;publish_graphics_settings();
+        *reinterpret_cast<float*>(frustum+0x18)=1;FrustumUpdate::Callback(frustum);
+        assert(*reinterpret_cast<float*>(frustum+0x18)==1 && *reinterpret_cast<float*>(frustum+0x24)==1);
+        alignas(16) std::uint8_t other[0x40]{};*reinterpret_cast<float*>(other+0x18)=1000;
+        FrustumUpdate::Callback(other);assert(*reinterpret_cast<float*>(other+0x24)==1000);
+        settings.shadow_mode=re4::ShadowMode::Native;publish_graphics_settings();*flags=0x02000000;
+        SceneDraw::Callback();assert(shadow_flags_seen==0x02000000 && *flags==0x02000400);
+    }
     for(unsigned style:{1u,2u,4u}){
         Fixture f;f.actor[0x114]=9;f.actor[0x115]=99; // Menus/QTE remain remapped too.
         settings.button_map[0]=1;settings.button_map[1]=0;settings.button_map[2]=re4::kUnboundButton;
@@ -293,7 +376,7 @@ int main(){
         game_test::program=re4::profile::title_id;f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
         assert(control.status==2 && game_test::installed==0);
         f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
-        assert(control.status==1 && game_test::installed==10 && game_test::initialized==1);
+        assert(control.status==1 && game_test::installed==16 && game_test::initialized==1);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }

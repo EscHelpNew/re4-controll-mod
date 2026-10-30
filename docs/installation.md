@@ -8,6 +8,12 @@ The executable profile is checked before hooks are enabled.
 
 ## Install the standalone NRO
 
+The local0.6.0 build also has **Graphics** settings. Defaults match the game.
+Filtering and handheld900p SSAA require restarting RE4; SSAA leaves docked
+rendering native. Object distance scales loaded geometry culling only, and the
+shadow switch controls rendered shadows. Graphics still needs visual/FPS checks
+on hardware. Update module and overlay together with **Install / update mod**.
+
 1. Copy `re4-controls.nro` from the release to
    `sdmc:/switch/re4-controls/re4-controls.nro`.
 2. Close RE4 and launch hbmenu in **application mode**: hold R while starting an

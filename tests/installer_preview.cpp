@@ -18,6 +18,9 @@ int main(){
     renderer.draw(model);assert(renderer.save_preview("build/installer-controls-ru.bmp"));
     for(auto language:{re4::Language::English,re4::Language::Russian}){
         model.settings.language=language;
+        model.page=re4::InstallerPage::Graphics;model.selected=0;
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-graphics-en.bmp":"build/installer-graphics-ru.bmp"));
         model.page=re4::InstallerPage::Mapping;model.selected=21;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-mapping-en.bmp":"build/installer-mapping-ru.bmp"));

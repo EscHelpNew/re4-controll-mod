@@ -24,7 +24,8 @@ std::uint32_t checksum(const std::uint8_t* p, std::size_t size) {
 }
 }
 bool valid_settings(const Settings& s) {
-    if (unsigned(s.language)>1 || unsigned(s.stick_curve)>3 || !valid_button_map(s.button_map)
+    if (!valid_graphics({s.texture_filtering,s.shadow_mode,s.anti_aliasing,s.draw_distance_scale})
+        || unsigned(s.language)>1 || unsigned(s.stick_curve)>3 || !valid_button_map(s.button_map)
         || !std::isfinite(s.camera_return_speed) || s.camera_return_speed<0 || s.camera_return_speed>1) return false;
     const float right_gains[]={s.right_aim_gain_x,s.right_aim_gain_y};
     for(float gain:right_gains)
@@ -43,7 +44,7 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
     if (!out || size != kSettingsBytes || !valid_settings(s)) return false;
     std::memset(out, 0, size);
     std::memcpy(out, "R4CT", 4);
-    put32(out + 4, 7);
+    put32(out + 4, 8);
     put32(out + 8, unsigned(s.analog_enabled) | unsigned(s.gyro_enabled) << 1
           | unsigned(s.invert_x) << 2 | unsigned(s.invert_y) << 3
           | unsigned(s.stick_curve) << 4 | unsigned(s.language) << 6
@@ -59,6 +60,11 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
     out[64] = std::uint8_t(s.free_camera);
     out[65] = std::uint8_t(s.remap_enabled);
     std::memcpy(out + 68, s.button_map.data(), kButtonCount);
+    out[88] = std::uint8_t(s.texture_filtering);
+    out[89] = std::uint8_t(s.shadow_mode);
+    out[90] = std::uint8_t(s.anti_aliasing);
+    std::uint32_t distance; std::memcpy(&distance, &s.draw_distance_scale, 4);
+    put32(out + 92, distance);
     put32(out + 124, checksum(out, 124));
     return true;
 }
@@ -66,14 +72,24 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
     if (!data || (size != kSettingsBytes && size != kLegacySettingsBytes)
         || std::memcmp(data, "R4CT", 4)) return false;
     const auto version = get32(data + 4);
-    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version != 7)
+    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version != 7 && version != 8)
         || (get32(data + 8) & (version<4 ? ~15u : version<6 ? ~127u : ~0x007f7f7fu))
         || (version == 1 && get32(data + 56))
         || checksum(data, size - 4) != get32(data + size - 4)) return false;
     Settings s;
-    if (version == 7) {
+    if (version >= 7) {
         if (data[64] > 1 || data[65] > 1 || data[66] || data[67]) return false;
-        for (unsigned i = 88; i < 124; ++i) if (data[i]) return false;
+        if (version == 7) {
+            for (unsigned i = 88; i < 124; ++i) if (data[i]) return false;
+        } else {
+            if (data[91]) return false;
+            for (unsigned i = 96; i < 124; ++i) if (data[i]) return false;
+            s.texture_filtering = static_cast<TextureFilter>(data[88]);
+            s.shadow_mode = static_cast<ShadowMode>(data[89]);
+            s.anti_aliasing = static_cast<AntiAliasing>(data[90]);
+            const auto distance = get32(data + 92);
+            std::memcpy(&s.draw_distance_scale, &distance, 4);
+        }
         std::memcpy(&s.camera_return_speed, data + 60, 4);
         s.free_camera = data[64] != 0;
         s.remap_enabled = data[65] != 0;

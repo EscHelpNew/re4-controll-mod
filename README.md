@@ -9,6 +9,9 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
+The current source/local build is **0.6.0, unreleased**. Published Releases may
+contain an earlier version while new features are being tested.
+
 ## Features
 
 - Proportional turning, walking, camera and firearm aiming.
@@ -17,6 +20,8 @@ and updates from GitHub Releases. English is the default language.
 - Remap 20 game-visible buttons, including menus and QTE, with swaps, duplicate
   targets or unbound buttons. The overlay keeps its physical controls.
 - Adjustable camera return speed and a continuous 360-degree free camera.
+- A Graphics menu with Native defaults: bilinear/trilinear/AF2x-16x filtering,
+  handheld900p SSAA, loaded-object culling distance and rendered shadows.
 - Additive gyro aiming **only while aiming a firearm**; independent X/Y gains,
   motion speed, calibration and a deadzone in degrees/second.
 - Gyro filtering averages two readings separated by 10 ms of sensor time.
@@ -35,6 +40,12 @@ target. HOME/Capture belong to the system and are outside game remapping.
 look angle). **Free camera 360** adds continuous right-stick rotation with no
 return, using Camera sensitivity and the chosen curve. Smooth sticks must be on.
 Pitch remains within the native vertical range; normal weapon aiming remains separate.
+
+Graphics are manual and default to the original game. Filtering and AA require
+restarting RE4. Handheld SSAA renders900p to720p; docked rendering stays native.
+Object distance scales the loaded room's fog-limited culling range0.50x-2.00x;
+it does not load extra rooms or alter fog/LOD. Shadows can remain Native or be
+disabled; no shadow-resolution override is included. Higher settings cost GPU time.
 
 ## Supported game
 

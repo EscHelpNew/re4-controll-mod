@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+- Add a bilingual Graphics menu with exact Native defaults and graphics-only reset.
+- Add restart-latched bilinear/trilinear/AF2x-16x texture filtering without extra sampler-cache variants.
+- Add restart-latched handheld1.25x SSAA (900p to720p) through the game's native allocation/scaler path; dock stays native.
+- Add loaded-object culling distance0.50x-2.00x with native fog, projection and streaming unchanged.
+- Add rendered-shadow Native/Off with native pass cleanup and flag restoration.
+- Preserve controls/mapping/camera when migrating settings v1-v7 into v8.
+- Publish render settings atomically, load saved settings after successful ROM mount, and expose graphics diagnostics in shared ABI12.
+
 ## 0.5.0
 
 - Add complete 20-button game mapping to installer and overlay, including menus/QTE.

@@ -5,8 +5,8 @@
 #include <atomic>
 
 namespace re4 {
-constexpr char kSharedMarker[16] = "RE4CTL_SHARED11";
-constexpr unsigned kSharedAbi = 11;
+constexpr char kSharedMarker[16] = "RE4CTL_SHARED12";
+constexpr unsigned kSharedAbi = 12;
 // Wire layout is shared by the module and overlay, with no runtime pointers.
 // The overlay publishes an odd sequence, payload, then the next even sequence.
 // The module validates both sequence reads and the payload checksum.
@@ -55,16 +55,33 @@ struct alignas(8) SharedControl {
     std::uint32_t settings_mount_result;
     std::uint32_t settings_read_result;
     std::uint32_t settings_source; // 0 pending, 1 primary, 2 backup, 3 defaults, 4 live IPC.
+    std::uint32_t graphics_sampler_calls;
+    std::uint32_t graphics_sampler_overrides;
+    std::uint32_t graphics_filter_latched;
+    std::uint32_t graphics_scene_submits;
+    std::uint32_t graphics_scene_draws;
+    std::uint32_t graphics_cull_updates;
+    float graphics_native_far;
+    float graphics_effective_far;
+    std::uint32_t graphics_resolution_requests;
+    std::int32_t graphics_display_index;
+    std::int32_t graphics_back_index;
+    std::uint32_t graphics_ready;
+    std::uint32_t graphics_aa_latched;
+    std::uint32_t graphics_reserved;
 };
 static_assert(offsetof(SharedControl, settings) == 32);
 static_assert(offsetof(SharedControl, frames) == 160);
 static_assert(offsetof(SharedControl, applied_sequence) == 184);
-static_assert(sizeof(SharedControl) == 320);
+static_assert(sizeof(SharedControl) == 376);
 constexpr unsigned kCapabilityTurning = 1;
 constexpr SharedControl initial_shared_control() {
     SharedControl result{};
     for(unsigned i=0;i<16;++i) result.marker[i]=kSharedMarker[i];
     result.abi=kSharedAbi;result.capabilities=kCapabilityTurning;
+    result.graphics_filter_latched=255;
+    result.graphics_aa_latched=255;
+    result.graphics_display_index=result.graphics_back_index=-1;
     return result;
 }
 inline bool acknowledge_settings(volatile SharedControl& control, const Settings& settings,

@@ -99,6 +99,14 @@ bool GameLink::connect() {
                         block.settings_source,block.settings_attempts,block.settings_mount_result,block.settings_read_result);
                     details += diagnostic;
                     re4::Settings applied_settings;
+                    std::snprintf(diagnostic,sizeof(diagnostic),
+                        "\ngraphics_ready=%u sampler=%u changed=%u filter=%u aa=%u submit=%u draw=%u cull=%u far=%.1f/%.1f resolution=%d/%d ssaa_maps=%u",
+                        block.graphics_ready,block.graphics_sampler_calls,block.graphics_sampler_overrides,
+                        block.graphics_filter_latched,block.graphics_aa_latched,block.graphics_scene_submits,
+                        block.graphics_scene_draws,block.graphics_cull_updates,block.graphics_native_far,
+                        block.graphics_effective_far,block.graphics_display_index,block.graphics_back_index,
+                        block.graphics_resolution_requests);
+                    details += diagnostic;
                     if(re4::decode_settings(block.settings,sizeof(block.settings),applied_settings)){
                         std::snprintf(diagnostic,sizeof(diagnostic),
                             "\ngyro_enabled=%u speed=%.2f gain=%.2f,%.2f deadzone_dps=%.2f active=%u fresh=%u restarts=%u rate=%.4f,%.4f style=%u",

@@ -21,7 +21,42 @@ int main(){
         mapping|=std::strcmp(spec.label.english,"Button mapping")==0;
     }
     assert(camera_return && free_camera && mapping);
+    bool graphics=false;
+    for(const auto& spec:control_specs())graphics|=std::strcmp(spec.label.english,"Graphics")==0;
+    assert(graphics);
     Settings s;
+    assert(!change_control(s,ControlId::GraphicsMenu,1));
+    assert(std::strstr(graphics_spec(GraphicsId::AntiAliasing).help.english,"Restart")!=nullptr);
+    assert(std::strstr(graphics_spec(GraphicsId::AntiAliasing).help.russian,"Перезапуск")!=nullptr);
+    for(const auto& spec:graphics_specs()){
+        for(auto language:{Language::English,Language::Russian}){
+            assert(std::strlen(spec.label.get(language))>0 && std::strlen(spec.help.get(language))>20);
+            assert(!graphics_value_text(spec,s).empty());
+        }
+    }
+    assert(s.texture_filtering==TextureFilter::Native && s.anti_aliasing==AntiAliasing::Native
+        && s.shadow_mode==ShadowMode::Native && s.draw_distance_scale==1);
+    for(unsigned i=0;i<7;++i)assert(change_graphics(s,GraphicsId::TextureFiltering,1));
+    assert(s.texture_filtering==TextureFilter::Native);
+    assert(change_graphics(s,GraphicsId::TextureFiltering,-1) && s.texture_filtering==TextureFilter::Aniso16);
+    for(unsigned i=0;i<7;++i)assert(change_graphics(s,GraphicsId::TextureFiltering,-1));
+    assert(s.texture_filtering==TextureFilter::Aniso16);
+    for(auto id:{GraphicsId::AntiAliasing,GraphicsId::Shadows}){
+        assert(change_graphics(s,id,-1));assert(change_graphics(s,id,-1));
+    }
+    assert(s.anti_aliasing==AntiAliasing::Native && s.shadow_mode==ShadowMode::Native);
+    for(unsigned i=0;i<12;++i)change_graphics(s,GraphicsId::DrawDistance,-1);
+    assert(s.draw_distance_scale==0.5f && !change_graphics(s,GraphicsId::DrawDistance,-1));
+    for(unsigned i=0;i<12;++i)change_graphics(s,GraphicsId::DrawDistance,1);
+    assert(s.draw_distance_scale==2 && !change_graphics(s,GraphicsId::DrawDistance,1));
+    s.language=Language::Russian;s.camera_gain=0.4f;s.gyro_speed=0.3f;s.free_camera=true;s.button_map[0]=255;
+    s.anti_aliasing=AntiAliasing::HandheldSsaa;s.shadow_mode=ShadowMode::Off;
+    assert(!change_graphics(s,GraphicsId::Reset,1) && !change_graphics(s,GraphicsId::DrawDistance,0));
+    assert(reset_graphics(s) && !reset_graphics(s));
+    assert(s.language==Language::Russian && s.camera_gain==0.4f && s.gyro_speed==0.3f && s.free_camera && s.button_map[0]==255);
+    assert(s.texture_filtering==TextureFilter::Native && s.anti_aliasing==AntiAliasing::Native
+        && s.shadow_mode==ShadowMode::Native && s.draw_distance_scale==1);
+    s={};
     assert(change_control(s,ControlId::Language,1) && s.language==Language::Russian);
     assert(control_value_text(control_spec(ControlId::Language),s)=="Русский");
     for(unsigned i=0;i<4;++i)assert(change_control(s,ControlId::Curve,1));

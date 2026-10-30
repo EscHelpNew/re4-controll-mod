@@ -5,7 +5,7 @@
 #include <string>
 
 namespace re4 {
-enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets };
+enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics };
 enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview };
 enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate };
 enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
@@ -15,13 +15,14 @@ struct DiagnosticSnapshot {
     float raw[4]{},processed[4]{},gyro_rate[3]{},gyro_preview[2]{};
 };
 struct HomeItem {Bilingual label,help;};
-const std::array<HomeItem,8>& installer_home_items();
+const std::array<HomeItem,9>& installer_home_items();
 class InstallerModel {
 public:
     Settings settings;
     InstallerPage page=InstallerPage::Home;
     unsigned selected=0,home_selected=0;
     unsigned controls_selected=0,mapping_source=0;
+    InstallerPage graphics_origin=InstallerPage::Home;
     InstallerStatus status=InstallerStatus::Ready;
     DiagnosticSnapshot diagnostic;
     UpdateSnapshot update;

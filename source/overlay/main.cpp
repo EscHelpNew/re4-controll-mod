@@ -100,6 +100,42 @@ public:
         }
     }
 };
+class GraphicsGui : public tsl::Gui {
+    DescriptionFrame* frame_=nullptr;
+    std::vector<tsl::elm::ListItem*> rows_;
+public:
+    tsl::elm::Element* createUI()override{
+        rows_.clear();frame_=new DescriptionFrame;
+        auto* list=new tsl::elm::List;
+        for(const auto& spec:re4::graphics_specs()){
+            const auto id=spec.id;
+            auto* item=new tsl::elm::ListItem(spec.label.get(settings.language),re4::graphics_value_text(spec,settings));
+            item->setClickListener([this,id](u64 keys){
+                const auto& entry=re4::graphics_spec(id);
+                if(entry.kind==re4::ControlKind::Action && !(keys&HidNpadButton_A))return false;
+                const bool arrows=keys&(HidNpadButton_Left|HidNpadButton_Right);
+                if(!arrows && !(entry.kind!=re4::ControlKind::Slider && (keys&HidNpadButton_A)))return false;
+                const bool changed=id==re4::GraphicsId::Reset?re4::reset_graphics(settings):
+                    re4::change_graphics(settings,id,(keys&HidNpadButton_Left)?-1:1);
+                if(changed){note.clear();change();}
+                update();return true;
+            });
+            list->addItem(item);rows_.push_back(item);
+        }
+        frame_->setContent(list);frame_->set_help(re4::graphics_spec(re4::GraphicsId::TextureFiltering).help.get(settings.language));
+        update();return frame_;
+    }
+    void update()override{
+        frame_->setTitle(tr("Graphics","Графика"));
+        frame_->setSubtitle(std::string(re4::kVersion)+tr(" - Manual graphics settings"," - Ручные настройки графики"));
+        for(unsigned row=0;row<rows_.size();++row){
+            const auto& spec=re4::graphics_specs()[row];
+            rows_[row]->setText(spec.label.get(settings.language));
+            rows_[row]->setValue(re4::graphics_value_text(spec,settings));
+            if(getFocusedElement()==rows_[row])frame_->set_help(spec.help.get(settings.language));
+        }
+    }
+};
 class ControlsGui : public tsl::Gui {
     struct Binding {tsl::elm::ListItem* item;const re4::ControlSpec* spec;};
     struct Header {tsl::elm::CategoryHeader* item;re4::Bilingual text;};
@@ -154,6 +190,10 @@ public:
             }else{
                 item=new tsl::elm::ListItem(spec.label.get(settings.language),re4::control_value_text(spec,settings));
                 item->setClickListener([this,entry](u64 keys){
+                    if(entry->id==re4::ControlId::GraphicsMenu){
+                        if(!(keys&HidNpadButton_A))return false;
+                        tsl::changeTo<GraphicsGui>();return true;
+                    }
                     if(entry->id==re4::ControlId::ButtonMapping){
                         if(!(keys&HidNpadButton_A))return false;
                         tsl::changeTo<MappingGui>();return true;
@@ -173,8 +213,8 @@ public:
     void update()override{
         if(description_frame_){
             if(getFocusedElement()==status_)description_frame_->set_help(tr(
-                "A: connect to the mod in running RE4.\nReconnect after restarting the game.\nSettings apply without closing the game.",
-                "A: найти мод в запущенной RE4.\nПосле перезапуска игры подключитесь снова.\nНастройки применяются без выхода из игры."));
+                "A: connect to the mod in running RE4.\nReconnect after restarting the game.\nFiltering and AA require a game restart.",
+                "A: найти мод в запущенной RE4.\nПосле перезапуска игры подключитесь снова.\nФильтрация и AA: перезапуск игры."));
             for(const auto& binding:bindings_)if(binding.item==getFocusedElement()){
                 description_frame_->set_help(binding.spec->help.get(settings.language));break;
             }

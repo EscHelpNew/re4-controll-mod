@@ -45,10 +45,55 @@ int main(){
     }
     assert(descriptions==unsigned(re4::ControlId::Count)+1 && sends==before && saves==0); // Hover must not save/send.
     assert(frame->title=="RE4 Controls");
+    for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e))if(item->label=="Graphics"){
+        const auto before_open_saves=saves,before_open_sends=sends;
+        assert(!item->click(HidNpadButton_Left) && !item->click(HidNpadButton_Right));
+        assert(item->click(HidNpadButton_A) && tsl::navigation.size()==1);
+        auto* graphics_gui=tsl::navigation.back().get();
+        auto* graphics_frame=static_cast<tsl::elm::OverlayFrame*>(graphics_gui->root);
+        graphics_frame->layout(0,0,448,720);
+        auto* graphics_list=static_cast<tsl::elm::List*>(graphics_frame->content());
+        assert(graphics_frame->title=="Graphics" && graphics_list->children.size()==5);
+        for(auto* child:graphics_list->children){
+            graphics_gui->focused=child;graphics_gui->update();
+            tsl::gfx::Renderer help;graphics_frame->draw(&help);
+            assert(help.text.back().value.size()>20);
+        }
+        assert(saves==before_open_saves && sends==before_open_sends);
+        tsl::goBack();assert(saves==before_open_saves && sends==before_open_sends);
+        assert(item->click(HidNpadButton_A));graphics_gui=tsl::navigation.back().get();
+        graphics_frame=static_cast<tsl::elm::OverlayFrame*>(graphics_gui->root);
+        graphics_list=static_cast<tsl::elm::List*>(graphics_frame->content());
+        auto* filter=static_cast<tsl::elm::ListItem*>(graphics_list->children[0]);
+        assert(filter->click(HidNpadButton_Right) && settings.texture_filtering==re4::TextureFilter::Bilinear);
+        assert(saves==before_open_saves+1 && sends==before_open_sends+1);
+        auto* aa=static_cast<tsl::elm::ListItem*>(graphics_list->children[1]);
+        assert(aa->click(HidNpadButton_A) && settings.anti_aliasing==re4::AntiAliasing::HandheldSsaa && aa->value=="Handheld SSAA");
+        auto* shadow=static_cast<tsl::elm::ListItem*>(graphics_list->children[3]);
+        assert(shadow->click(HidNpadButton_Left) && settings.shadow_mode==re4::ShadowMode::Off && shadow->value=="Off");
+        auto* distance=static_cast<tsl::elm::ListItem*>(graphics_list->children[2]);
+        assert(!distance->click(HidNpadButton_A));
+        assert(distance->click(HidNpadButton_Left) && settings.draw_distance_scale==0.75f);
+        assert(distance->click(HidNpadButton_Left) && settings.draw_distance_scale==0.5f);
+        const auto at_limit=saves;assert(distance->click(HidNpadButton_Left) && saves==at_limit);
+        settings.language=re4::Language::Russian;graphics_gui->focused=filter;graphics_gui->update();
+        assert(graphics_frame->title=="Графика" && filter->label=="Фильтрация текстур");
+        tsl::gfx::Renderer ru;graphics_frame->draw(&ru);assert(ru.text.back().value.find("перезапуск")!=std::string::npos);
+        settings.free_camera=true;settings.button_map[0]=255;settings.gyro_speed=0.3f;
+        auto* reset=static_cast<tsl::elm::ListItem*>(graphics_list->children[4]);
+        assert(!reset->click(HidNpadButton_Left) && !reset->click(HidNpadButton_Right) && saves==at_limit);
+        assert(reset->click(HidNpadButton_A) && saves==at_limit+1);
+        assert(reset->click(HidNpadButton_A) && saves==at_limit+1);
+        assert(settings.texture_filtering==re4::TextureFilter::Native && settings.draw_distance_scale==1
+            && settings.anti_aliasing==re4::AntiAliasing::Native && settings.shadow_mode==re4::ShadowMode::Native);
+        assert(settings.language==re4::Language::Russian && settings.free_camera && settings.button_map[0]==255 && settings.gyro_speed==0.3f);
+        tsl::goBack();settings={};
+    }
+    const auto after_graphics_saves=saves;
     for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e))if(item->label=="Button mapping"){
         assert(!item->click(HidNpadButton_Left) && !item->click(HidNpadButton_Right));
         assert(item->click(HidNpadButton_A));
-        assert(tsl::navigation.size()==1 && sends==before && saves==0);
+        assert(tsl::navigation.size()==1 && sends>before && saves==after_graphics_saves);
     }
     auto* mapping_gui=tsl::navigation.back().get();
     auto* mapping_frame=static_cast<tsl::elm::OverlayFrame*>(mapping_gui->root);
@@ -113,9 +158,9 @@ int main(){
     tsl::goBack();tsl::goBack();settings.language=re4::Language::English;
     for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e)){
         if(item->label=="Connect to game"){
-            const auto before_connect=sends;
+            const auto before_connect=sends,before_connect_saves=saves;
             assert(item->click(HidNpadButton_A));
-            assert(sends==before_connect+1 && saves==0); // Saved gyro settings must reach a restarted module.
+            assert(sends==before_connect+1 && saves==before_connect_saves); // Saved gyro settings must reach a restarted module.
         }
     }
     tsl::elm::ListItem* language=nullptr;
