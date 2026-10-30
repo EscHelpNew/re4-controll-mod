@@ -13,6 +13,31 @@ int main(){
     auto d=filter.update({3,5'000'000,3,4},true,2,-1,0);
     assert(near(d.yaw,0.04f) && near(d.pitch,-0.03f)); // Mean of endpoints10ms apart.
     assert(filter.update({3,5'000'000,3,4},true,2,-1,0).yaw==0); // No replay.
+    // A constant rate must produce movement on every fresh sample after the
+    // 10ms measurement window, rather than alternating zero / 10ms bursts.
+    filter.reset();
+    for(unsigned n=1;n<=3;++n)filter.update({n,5'000'000,1,2},true,1,1,0);
+    for(unsigned n=4;n<=40;++n){
+        const auto step=filter.update({n,5'000'000,1,2},true,1,1,0);
+        assert(near(step.yaw,0.005f) && near(step.pitch,0.01f));
+    }
+    // Variable cadence brackets t-10ms by interpolation. At t=16ms a linear
+    // rate ramp r=t has endpoints6 and16, mean11 for this4ms displacement.
+    filter.reset();
+    filter.update({1,4'000'000,0,0},true,1,1,0);
+    filter.update({2,4'000'000,4,0},true,1,1,0);
+    filter.update({3,4'000'000,8,0},true,1,1,0);
+    filter.update({4,4'000'000,12,0},true,1,1,0);
+    assert(near(filter.update({5,4'000'000,16,0},true,1,1,0).yaw,0.044f));
+    // Frame batches must carry the exact elapsed time, not rounded10ms pulses.
+    filter.reset();
+    for(unsigned n=1;n<=8;++n)filter.update({n,5'000'000,1,0},true,1,1,0);
+    unsigned next_sample=9;
+    for(unsigned count : {7,6,7,7,6,7}){
+        float frame=0;
+        for(unsigned i=0;i<count;++i)frame+=filter.update({next_sample++,5'000'000,1,0},true,1,1,0).yaw;
+        assert(near(frame,count==6?0.030f:0.035f));
+    }
     filter.reset();
     constexpr float rad=3.141592653589793f/180;
     filter.update({1,10'000'000,0.4f*rad,-2*rad},true,1,1,0.5f);

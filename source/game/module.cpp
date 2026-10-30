@@ -166,6 +166,38 @@ void* player_weapon(void* actor){
     auto* context=*reinterpret_cast<std::uint8_t**>(static_cast<std::uint8_t*>(actor)+0x938);
     return context?*reinterpret_cast<void**>(context+0x38):nullptr;
 }
+struct GyroAimSession {
+    void* actor=nullptr;
+    void* weapon=nullptr;
+    std::uintptr_t handler=0;
+    unsigned item=0;
+    bool ready=false,drain=true;
+} gyro_session;
+bool gyro_aim_ready(void* actor,bool allow_arm=false){
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    if(!settings.gyro_enabled || !firearm_aim(actor) || !state
+        || (state[0x5092]&4) || (state[0x509E]&0x80) || (state[0x1AB]&0x40) || state[0x86FF]){
+        gyro_session={};return false;
+    }
+    const auto* b=static_cast<const std::uint8_t*>(actor);
+    const auto handler=b[0x115]==6?*reinterpret_cast<const std::uintptr_t*>(main_base+0x1265A28):0;
+    auto* weapon=player_weapon(actor);
+    if(gyro_session.actor!=actor || gyro_session.weapon!=weapon || gyro_session.item!=state[0x5034]
+        || gyro_session.handler!=handler)gyro_session={actor,weapon,handler,state[0x5034],false};
+    const bool before=gyro_session.ready;
+    // These native handlers finish raising by selecting their steady aim loop
+    // (1/1). Initial 1/4 is still raising, but the same state after a shot is
+    // recovery: retain an already armed session through it and through fire.
+    bool native_raise=false;
+    for(const auto offset : {0x31CC60u,0x31B9F0u,0x3212E0u,0x3270F0u,0x332CC0u,0x333DF0u,0x3351A0u,0x342F90u})
+        native_raise|=handler==main_base+offset;
+    if(native_raise){
+        if(b[0x116]!=1 && b[0x116]!=2)gyro_session.ready=false;
+        else if(allow_arm && b[0x116]==1 && b[0x117]==1)gyro_session.ready=true;
+    }else if(allow_arm)gyro_session.ready=true; // Other tables keep their own semantics.
+    if(!before && gyro_session.ready)gyro_session.drain=true;
+    return gyro_session.ready;
+}
 bool view_completed(void* actor){
     const auto now=svcGetSystemTick(),stamp=view_camera_tick.load(std::memory_order_acquire);
     return view_camera_frame.load(std::memory_order_acquire)==view_frame.load(std::memory_order_acquire)
@@ -229,7 +261,7 @@ void poll_sensors() {
     gyro_pending = {};
     const auto now = svcGetSystemTick();
     if (sensor.select(sensor_pad, sensor_style, sensor_attributes, settings.gyro_enabled)) {
-        gyro.reset(); last_sensor_tick = 0;
+        gyro.reset(); gyro_session={}; last_sensor_tick = 0;
         next_sensor_retry=now+19'200'000;last_fresh_tick=now;last_sensor_number=0;
     }
     void* actor = *reinterpret_cast<void**>(main_base + re4::profile::player_slot);
@@ -237,7 +269,7 @@ void poll_sensors() {
     if (settings.gyro_enabled && (sensor_attributes&1) && now>=next_sensor_retry
         && (!sensor.running() || (aiming && now-last_fresh_tick>9'600'000))) {
         if (sensor.restart()) {
-            gyro.reset();last_sensor_tick=0;last_sensor_number=0;last_fresh_tick=now;
+            gyro.reset();gyro_session={};last_sensor_tick=0;last_sensor_number=0;last_fresh_tick=now;
             control.sensor_restarts=control.sensor_restarts+1;
         }
         next_sensor_retry=now+19'200'000;
@@ -245,16 +277,21 @@ void poll_sensors() {
     control.sensor_result = sensor.result;
     control.sensor_running = sensor.running();
     control.gyro_active=0;control.pad_style=sensor_style;
-    if (!sensor.running()) return;
+    if (!sensor.running()){gyro_session={};return;}
     // Tegra's system counter runs at 19.2 MHz. Ignore the first batch and any
     // batch following a >100 ms gap (HOME, overlay pause, controller switch).
     const bool continuous = last_sensor_tick && now >= last_sensor_tick && now - last_sensor_tick <= 1'920'000;
     last_sensor_tick = now;
-    const bool active = continuous && aiming;
+    if(!continuous)gyro_session={};
+    const bool ready=gyro_aim_ready(actor,true);
+    // On the readiness edge the FIFO can still contain raising-animation
+    // samples. Drain this entire batch before anchoring fresh measurements.
+    const bool active = continuous && ready && !gyro_session.drain;
     control.gyro_active=active;
     if(!active)gyro.reset();
     re4::SensorState samples[16]{};
     const int count = sensor.read(samples, 16);
+    if(ready && count>0)gyro_session.drain=false;
     control.sensor_result = sensor.result;
     control.sensor_running = sensor.running();
     constexpr float tau = 6.28318530718f;
@@ -732,14 +769,17 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
         const bool modern=ours && modern_move_aim_active(actor);
         const bool active = ours && (settings.analog_enabled || settings.gyro_enabled || modern) && bytes[0x114] == 0
             && (bytes[0x115] == 6 || bytes[0x115] == 11 || bytes[0x115] == 15) && held;
-        if (!active) return Orig(actor, mode);
+        if (!active){
+            if(ours){gyro_session={};gyro_pending={};gyro.reset();}
+            return Orig(actor, mode);
+        }
         auto* pitch = reinterpret_cast<float*>(main_base + 0x1265A08);
         auto* yaw = reinterpret_cast<float*>(bytes + 0xB4);
         void* previous_input_actor = gyro_input_actor;
         gyro_input_actor = nullptr;
         // Apply once before native stick/weapon processing, retaining both
         // inputs and letting the caller update aim matrices normally.
-        if (settings.gyro_enabled && firearm_aim(actor)) {
+        if (settings.gyro_enabled && gyro_aim_ready(actor)) {
             const auto d = gyro_pending;
             gyro_pending = {};
             const float old_yaw = *yaw, old_pitch = pitch[1];
@@ -748,7 +788,7 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
             pitch[1] = re4::gyro_pitch(old_pitch, d.pitch);
             if (*yaw != old_yaw || pitch[1] != old_pitch) gyro_input_actor = actor;
             control.gyro_yaw = d.yaw; control.gyro_pitch = d.pitch;
-        }
+        }else {gyro_pending={};gyro.reset();}
         auto* axes=reinterpret_cast<std::int32_t*>(main_base+0x124E9C8);
         const std::int32_t old_x=axes[0],old_y=axes[1];
         if(settings.analog_enabled || modern){

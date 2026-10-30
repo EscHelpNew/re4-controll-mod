@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2 (unreleased)
+
+- Discard gyro motion during native weapon raising, including the first ready FIFO batch.
+- Keep gyro active through firing/recovery; invalidate old input on reload, weapon changes and paused contexts.
+- Recheck readiness at aim consumption without arming from a mid-frame transition.
+- Average readings10ms apart continuously at sensor cadence, avoiding alternating zero/10ms bursts.
+- Preserve additive sticks, gyro direction, soft deadzone and the native manual-input sway baseline.
+
 ## 0.7.1 (unreleased)
 
 - Group control settings into seven submenus in installer and overlay.

@@ -183,7 +183,7 @@ struct Fixture {
     alignas(4) std::uint8_t input_type[16]{};
     alignas(16) std::uint8_t weapon_context[0x60]{},weapon[0x500]{},other_model[0x500]{};
     Fixture() {
-        sensor.stop();sensor={};gyro.reset();gyro_pending={};last_sensor_tick=0;sensor_batch.clear();
+        sensor.stop();sensor={};gyro.reset();gyro_session={};gyro_pending={};last_sensor_tick=0;sensor_batch.clear();
         free_orbit.reset();camera_context=nullptr;
         native_view_test=submit_models=short_laser_ray=false;laser_endpoint={0,0,-1000};camera_native_calls=basis_native_calls=laser_native_calls=hud_native_calls=ortho_native_calls=0;
         submitted_models.clear();hud_rects.clear();test_weapon=test_other_model=nullptr;
@@ -230,7 +230,10 @@ struct Fixture {
     std::uint64_t& flags(){return *reinterpret_cast<std::uint64_t*>(image.data()+re4::profile::input_flags);}
     float& yaw(){return *reinterpret_cast<float*>(actor+0xB4);}
     float* pitch(){return reinterpret_cast<float*>(image.data()+0x1265A08);}
-    void aim(){game_test::native_aim=1;actor[0x115]=6;actor[0x116]=1;flags()=0x10;aiming_predicate=test_is_aiming;}
+    void aim(){game_test::native_aim=1;actor[0x115]=6;actor[0x116]=1;actor[0x117]=1;
+        *reinterpret_cast<std::uintptr_t*>(image.data()+0x1265A28)=main_base+0x31CC60;
+        if(!*reinterpret_cast<void**>(image.data()+0xB1AE08))*reinterpret_cast<void**>(image.data()+0xB1AE08)=input_state.data();
+        flags()=0x10;aiming_predicate=test_is_aiming;}
     std::uint8_t* camera(){return image.data()+0x11319C0;}
     float* look(){return reinterpret_cast<float*>(camera()+0x270);}
     void camera_mode(){
@@ -259,6 +262,81 @@ struct Fixture {
 };
 }
 int main(){
+    {
+        Fixture f;f.aim();settings.gyro_enabled=true;game_test::aim_step=0;
+        NpadState pad{};pad.attributes=1;capture(pad,0,1);
+        f.actor[0x116]=0;f.sample(1);poll_sensors();
+        f.actor[0x116]=1;sensor_batch.clear();game_test::tick+=96'000;poll_sensors();
+        // An empty readiness-edge read does not flush the hardware FIFO.
+        f.sample(2);const auto s=sensor_batch[0];sensor_batch={s,s,s};
+        sensor_batch[0].number=4;sensor_batch[1].number=3;
+        game_test::tick+=96'000;poll_sensors();AimSensitivity::Callback(f.actor,0);
+        assert(f.pitch()[1]==0 && f.yaw()==0);
+        game_test::tick+=96'000;poll_sensors();AimSensitivity::Callback(f.actor,0);
+        assert(f.pitch()[1]==0 && f.yaw()==0); // Repeated FIFO must not replay the drained samples.
+        for(unsigned n=5;n<=8;++n){game_test::tick+=96'000;f.sample(n);poll_sensors();AimSensitivity::Callback(f.actor,0);}
+        assert(f.pitch()[1]>0);
+    }
+    {
+        Fixture f;f.aim();settings.gyro_enabled=true;game_test::aim_step=0;
+        assert(gyro_aim_ready(f.actor,true));gyro_pending={0.2f,0.2f};
+        f.flags()=0;AimSensitivity::Callback(f.actor,0); // Release after the poll.
+        f.flags()=0x10;AimSensitivity::Callback(f.actor,0);
+        assert(f.pitch()[1]==0 && f.yaw()==0); // Old session cannot be revived by re-holding.
+    }
+    {
+        Fixture f;f.aim();settings.gyro_enabled=true;game_test::aim_step=0;
+        NpadState pad{};pad.attributes=1;capture(pad,0,1);
+        // Broad native camera-aim predicate is already true while the weapon
+        // is rising. Neither this motion nor its queued FIFO may move aim.
+        for(auto phase : {0,1}){
+            f.actor[0x116]=std::uint8_t(phase);f.actor[0x117]=phase?4:1;
+            for(unsigned n=1;n<=8;++n){
+                game_test::tick+=96'000;f.sample(unsigned(phase)*8+n);poll_sensors();
+                AimSensitivity::Callback(f.actor,0);
+                assert(f.pitch()[0]==0 && f.pitch()[1]==0 && f.yaw()==0);
+            }
+        }
+        f.actor[0x117]=1;
+        // Native state can become ready after polling, within actor update.
+        // Consumption must not arm early and replay a pre-transition sample.
+        gyro_pending={0.2f,0.2f};AimSensitivity::Callback(f.actor,0);
+        assert(f.pitch()[1]==0 && f.yaw()==0);
+        game_test::tick+=96'000;f.sample(17);poll_sensors();
+        AimSensitivity::Callback(f.actor,0);assert(f.pitch()[1]==0); // Drain readiness-edge batch.
+        for(unsigned n=18;n<=22;++n){game_test::tick+=96'000;f.sample(n);poll_sensors();AimSensitivity::Callback(f.actor,0);}
+        assert(f.pitch()[1]>0);
+        const float ready_pitch=f.pitch()[1];
+        f.actor[0x116]=2;f.actor[0x117]=1;
+        for(unsigned n=23;n<=25;++n){game_test::tick+=96'000;f.sample(n);poll_sensors();AimSensitivity::Callback(f.actor,0);}
+        assert(f.pitch()[1]>ready_pitch); // Fire must not restart the entry gate.
+        f.flags()=0;game_test::tick+=96'000;f.sample(26);poll_sensors();
+        f.flags()=0x10;f.actor[0x116]=1;f.actor[0x117]=4;
+        const float before=f.pitch()[1];
+        for(unsigned n=27;n<=31;++n){game_test::tick+=96'000;f.sample(n);poll_sensors();AimSensitivity::Callback(f.actor,0);}
+        assert(f.pitch()[1]==before); // A new raise cannot reuse the previous latch.
+    }
+    for(const auto handler : {0x31CC60u,0x31B9F0u,0x3212E0u,0x3270F0u,0x332CC0u,0x333DF0u,0x3351A0u,0x342F90u}){
+        Fixture f;f.aim();settings.gyro_enabled=true;game_test::aim_step=0;
+        *reinterpret_cast<std::uintptr_t*>(f.image.data()+0x1265A28)=main_base+handler;
+        f.actor[0x117]=4;assert(!gyro_aim_ready(f.actor,true));
+        f.actor[0x117]=0;assert(!gyro_aim_ready(f.actor,true));
+        f.actor[0x117]=1;assert(gyro_aim_ready(f.actor,true));
+        for(unsigned sub : {2,3,4,5}){f.actor[0x117]=std::uint8_t(sub);assert(gyro_aim_ready(f.actor));}
+        f.actor[0x116]=2;assert(gyro_aim_ready(f.actor));
+        f.actor[0x116]=4;gyro_pending={0.1f,0.1f};AimSensitivity::Callback(f.actor,0);
+        assert(f.yaw()==0 && f.pitch()[1]==0); // Reload began after sample collection.
+        f.actor[0x116]=1;f.actor[0x117]=4;assert(!gyro_aim_ready(f.actor,true));
+        f.actor[0x117]=1;assert(gyro_aim_ready(f.actor,true));
+        f.input_state[0x5034]++;gyro_pending={0.1f,0.1f};AimSensitivity::Callback(f.actor,0);
+        assert(f.yaw()==0 && f.pitch()[1]==0); // Late weapon switch cannot consume the old delta.
+        assert(gyro_aim_ready(f.actor,true));
+        f.input_state[0x86FF]=1;assert(!gyro_aim_ready(f.actor));
+        f.input_state[0x86FF]=0;f.actor[0x117]=4;assert(!gyro_aim_ready(f.actor,true));
+        f.actor[0x117]=1;assert(gyro_aim_ready(f.actor,true));
+        settings.gyro_enabled=false;assert(!gyro_aim_ready(f.actor));
+        settings.gyro_enabled=true;f.actor[0x117]=4;assert(!gyro_aim_ready(f.actor,true));
+    }
     for(unsigned style=0;style<3;++style)for(unsigned size=0;size<3;++size){
         Fixture f;f.view_mode();f.aim();f.camera()[0x26C]=0;
         settings.reticle=static_cast<re4::ReticleStyle>(style);settings.reticle_size=static_cast<re4::ReticleSize>(size);publish_view_settings();
@@ -591,7 +669,7 @@ int main(){
         PadNormalize::Callback(nullptr);
         assert(settings.gyro_enabled && sensor.running() && control.settings_source==2);
         assert(game_test::fs_closes==2 && control.settings_read_result==0);
-        for(unsigned n=1;n<=3;++n){game_test::tick+=320'000;f.sample(n);PadNormalize::Callback(nullptr);}
+        for(unsigned n=1;n<=5;++n){game_test::tick+=320'000;f.sample(n);PadNormalize::Callback(nullptr);}
         AimSensitivity::Callback(f.actor,0);
         assert(std::fabs(f.yaw())>0 && std::fabs(f.pitch()[0])>0); // No overlay or toggle required.
     }
@@ -668,7 +746,7 @@ int main(){
     }
     {
         Fixture f;f.aim();consume_aim_axes=true;aim_full_scale=127;
-        std::vector<std::uint8_t> global(0x5200);std::uint8_t type[16]{};type[11]=2;
+        std::vector<std::uint8_t> global(0x8700);std::uint8_t type[16]{};type[11]=2;
         *reinterpret_cast<void**>(f.image.data()+0xB1AE08)=global.data();
         *reinterpret_cast<void**>(f.image.data()+0xB1AE10)=type;
         *reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
@@ -676,7 +754,8 @@ int main(){
         control.raw_lx=1;control.raw_ly=1;control.raw_rx=0.25f;control.raw_ry=-0.5f;
         settings.left_deadzone=settings.right_deadzone=0;
         settings.right_aim_gain_x=0.5f;settings.right_aim_gain_y=0.25f;
-        settings.gyro_enabled=true;gyro_pending.yaw=0.01f;gyro_pending.pitch=0.02f;
+        settings.gyro_enabled=true;assert(gyro_aim_ready(f.actor,true));
+        gyro_pending.yaw=0.01f;gyro_pending.pitch=0.02f;
         AimSensitivity::Callback(f.actor,0);
         assert(seen_aim_x==16 && seen_aim_y==-16);
         assert(near(f.yaw(),0.01f+0.04f*16/127) && near(f.pitch()[0],0.02f-0.08f*16/127));
@@ -705,6 +784,7 @@ int main(){
     {
         Fixture f;f.aim();settings.gyro_enabled=true;
         game_test::apply_sway=true;game_test::aim_step=0;
+        assert(gyro_aim_ready(f.actor,true));
         for(unsigned i=0;i<40;++i){gyro_pending.pitch=0.01f;AimSensitivity::Callback(f.actor,0);}
         assert(near(f.pitch()[0],0.4f)); // Gyro must update native baseline, beyond its small sway window.
         assert(near(game_test::sway_baseline,0.4f));
@@ -740,5 +820,5 @@ int main(){
         game_test::pad_attributes=0;HandheldPad::Callback(&pad,id);poll_sensors();
         assert(!sensor.running() && game_test::sensor_stops==1);
     }
-    std::puts("actual game callbacks: identity, flags, motion, camera, additive aim/gyro and pause PASS");
+    std::puts("actual game callbacks: identity, flags, motion, camera, additive aim/gyro, native raise, FIFO and pause PASS");
 }

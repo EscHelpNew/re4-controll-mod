@@ -75,3 +75,5 @@ assert в Windows не оставляет автоматический запу�
 сейчас пользователь попросил оставить релиз приватным.
 Фактические кадры: `build/installer-home-en.png`,
 `build/installer-controls-ru.png`, `build/installer-diagnostics-en.png`.
+
+Gyro0.7.2: actual-module tests cover native raise/readiness, the first ready FIFO, mid-frame transitions, all eight proven handlers, firing/recovery, reload, weapon changes and frozen scenes. Filter tests verify every fresh sample after10ms warmup, variable-interval interpolation, frame cadence, deadzones and replay rejection. See [hardware acceptance](gyro-transition.md).

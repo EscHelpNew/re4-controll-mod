@@ -14,9 +14,10 @@ struct GyroSample {
 };
 struct AimDelta { float yaw = 0; float pitch = 0; };
 class GyroFilter {
-    std::uint64_t last_ = 0, elapsed_ns_ = 0;
-    bool seen_ = false, anchored_ = false;
-    float yaw_ = 0, pitch_ = 0;
+    struct Point { std::uint64_t time; float yaw, pitch; } history_[16]{};
+    std::uint64_t last_ = 0, time_ = 0;
+    unsigned count_ = 0;
+    bool seen_ = false, flowing_ = false;
 public:
     void reset();
     AimDelta update(GyroSample sample, bool active, float gain_x, float gain_y, float deadzone_dps);

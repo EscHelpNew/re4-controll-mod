@@ -30,9 +30,9 @@ float shape_axis(float raw, float deadzone, float gain, StickCurve curve) {
     return std::copysign(shaped, raw);
 }
 void GyroIntegrator::reset() { last_ = 0; seen_ = false; }
-void GyroFilter::reset() { last_=elapsed_ns_=0; seen_=anchored_=false; yaw_=pitch_=0; }
+void GyroFilter::reset() { last_=time_=0; count_=0; seen_=flowing_=false; }
 AimDelta GyroFilter::update(GyroSample s,bool active,float gx,float gy,float deadzone_dps) {
-    if (!active) { anchored_=false;elapsed_ns_=0; }
+    if (!active) { count_=0;time_=0;flowing_=false; }
     if (seen_ && s.number<=last_) return {};
     const auto skipped=seen_ ? s.number-last_ : 1;
     last_=s.number;seen_=true;
@@ -41,22 +41,36 @@ AimDelta GyroFilter::update(GyroSample s,bool active,float gx,float gy,float dea
         || !std::isfinite(s.yaw_radians_per_second) || !std::isfinite(s.pitch_radians_per_second)
         || !std::isfinite(gx) || !std::isfinite(gy) || !std::isfinite(deadzone_dps)
         || deadzone_dps<0 || deadzone_dps>20) {
-        anchored_=false;elapsed_ns_=0;return {};
+        count_=0;time_=0;flowing_=false;return {};
     }
-    if (!anchored_) {
-        yaw_=s.yaw_radians_per_second;pitch_=s.pitch_radians_per_second;
-        anchored_=true;elapsed_ns_=0;return {};
+    if (!count_) {
+        history_[0]={0,s.yaw_radians_per_second,s.pitch_radians_per_second};
+        count_=1;time_=0;return {};
     }
-    elapsed_ns_+=s.interval_ns*skipped;
-    if (elapsed_ns_<10'000'000) return {};
-    const float seconds=float(elapsed_ns_)*1e-9f;
+    const auto dt=s.interval_ns*skipped;
+    time_+=dt;
+    const auto boundary=time_>10'000'000?time_-10'000'000:0;
+    // Keep the two points bracketing t-10ms. Interpolate the older endpoint
+    // when sensor timing varies; integrate every fresh sample, not 10ms bursts.
+    while(count_>1 && history_[1].time<=boundary){
+        for(unsigned i=1;i<count_;++i)history_[i-1]=history_[i];
+        --count_;
+    }
+    if(count_==16){count_=0;time_=0;flowing_=false;return {};}
+    history_[count_++]={time_,s.yaw_radians_per_second,s.pitch_radians_per_second};
+    if(time_<10'000'000)return {};
+    const auto& a=history_[0];const auto& b=history_[1];
+    const float fraction=float(boundary-a.time)/float(b.time-a.time);
+    const float old_yaw=a.yaw+(b.yaw-a.yaw)*fraction;
+    const float old_pitch=a.pitch+(b.pitch-a.pitch)*fraction;
+    const float seconds=float(flowing_?dt:time_)*1e-9f;
     const float threshold=deadzone_dps*0.01745329252f;
     const auto soften=[threshold](float rate) {
         return std::copysign(std::fmax(0.f,std::fabs(rate)-threshold),rate);
     };
-    const AimDelta result{soften((yaw_+s.yaw_radians_per_second)*0.5f)*seconds*gx,
-                          soften((pitch_+s.pitch_radians_per_second)*0.5f)*seconds*gy};
-    yaw_=s.yaw_radians_per_second;pitch_=s.pitch_radians_per_second;elapsed_ns_=0;
+    const AimDelta result{soften((old_yaw+s.yaw_radians_per_second)*0.5f)*seconds*gx,
+                          soften((old_pitch+s.pitch_radians_per_second)*0.5f)*seconds*gy};
+    flowing_=true;
     return result;
 }
 AimDelta GyroIntegrator::update(GyroSample sample, bool active, float gain_x, float gain_y) {

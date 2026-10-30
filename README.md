@@ -9,7 +9,7 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.7.1, unreleased**. Published Releases may
+The current source/local build is **0.7.2, unreleased**. Published Releases may
 contain an earlier version while new features are being tested.
 
 ## Features
@@ -30,7 +30,8 @@ contain an earlier version while new features are being tested.
   stick aims, with native walking motion and leg animation for supported Leon states.
 - Additive gyro aiming **only while aiming a firearm**; independent X/Y gains,
   motion speed, calibration and a deadzone in degrees/second.
-- Gyro filtering averages two readings separated by 10 ms of sensor time.
+- Gyro filtering averages two readings separated by 10 ms of sensor time, with continuous output on every fresh sample.
+- Motion during ordinary weapon raising is discarded; aiming starts after native readiness without replaying that motion.
 - Live settings, help for every control, English/Russian language selection.
 - Separate settings groups and a main-menu language selector.
 - Live reticle preview while editing its shape or size, with a labelled enlarged sample.
