@@ -2,6 +2,9 @@
 
 ## 0.7.0 (unreleased)
 
+- Fix startup abort at hook22: enlarge the staged trampoline pool to40 slots,
+  correct its last-slot bound and assert the actual install count at build time.
+
 - Add independent Default/Custom profiles for controls and graphics, with automatic
   Custom snapshots, migration and recovery through the existing settings codec.
 - Preserve the other domain, language and gyro calibration when switching profiles.

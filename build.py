@@ -16,6 +16,7 @@ from sdk import SDK, tool, sdk_tool
 from project import load, header, prepare
 from tools.prepare_icon import prepare as prepare_app_icon, prepare_bitmap
 from tools.payload import stage_payload
+from tools.hook_pool import stage_hook_pool
 
 OUT = ROOT / 'build'
 VERSION = re.search(r'kVersion="([^"]+)"',(ROOT/'include/re4/version.hpp').read_text()).group(1)
@@ -197,6 +198,8 @@ def module():
         shutil.copytree(vendor / name, stage / name, dirs_exist_ok=True)
     for name in ('Makefile', 'config.mk'):
         shutil.copy2(vendor / name, stage / name)
+    budget=stage_hook_pool(stage,ROOT)
+    print('Trampoline budget:',budget)
     profile = ROOT / 'profiles/010099A00BC1E000/npdm.json'
     (stage / 'config.json').write_text(profile.read_text(encoding='utf-8'), encoding='utf-8')
     shutil.copy2(ROOT / 'source/game/module.cpp', stage / 'source/program/main.cpp')
