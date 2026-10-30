@@ -348,7 +348,7 @@ int main(){
     }
     for(bool knife:{false,true}){
         Fixture f;f.view_mode();f.aim();f.actor[0x117]=1;
-        if(knife){f.actor[0x115]=11;f.flags()=1ull<<48;}
+        if(knife){f.actor[0x115]=11;f.flags()=0x800ull;}
         *reinterpret_cast<std::uint16_t*>(f.actor+0x352)=0x300;
         *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
         *reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
@@ -518,10 +518,10 @@ int main(){
         Fixture f;f.view_mode();f.aim();settings.first_person=true;
         for(unsigned routine:{6u,11u,15u})for(unsigned phase:{1u,2u}){
             f.actor[0x115]=routine;f.actor[0x116]=phase;f.actor[0x117]=1;f.camera()[0x26C]=0;
-            f.flags()=routine==11?(1ull<<48):0x10;
+            f.flags()=routine==11?(0x800ull):0x10;
             CameraInput::Callback(f.camera());assert(first_person_frame.load()==view_frame.load());
         }
-        f.actor[0x115]=11;f.actor[0x116]=1;f.flags()=1ull<<48;settings.gyro_enabled=true;
+        f.actor[0x115]=11;f.actor[0x116]=1;f.flags()=0x800ull;settings.gyro_enabled=true;
         settings.left_deadzone=0;control.raw_lx=0.5f;control.raw_ly=0.5f;
         gyro_pending={0.3f,0.4f};f.yaw()=0;
         AimSensitivity::Callback(f.actor,0);
@@ -558,7 +558,7 @@ int main(){
     }
     {
         Fixture f;f.view_mode();settings.first_person=true;f.aim();
-        f.actor[0x115]=11;f.actor[0x116]=2;f.flags()=1ull<<48;f.camera()[0x26C]=0;
+        f.actor[0x115]=11;f.actor[0x116]=2;f.flags()=0x800ull;f.camera()[0x26C]=0;
         for(unsigned recovery=0;recovery<5;++recovery){f.actor[0x117]=recovery;CameraInput::Callback(f.camera());assert(first_person_frame.load()==view_frame.load());}
         f.actor[0x115]=6;f.actor[0x116]=4;f.flags()=0;game_test::native_aim=0;f.camera()[0x26C]=2;
         CameraInput::Callback(f.camera());assert(first_person_frame.load()==view_frame.load()); // Native generic reload remains FPS.

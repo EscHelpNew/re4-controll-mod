@@ -765,7 +765,7 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
         auto* bytes = static_cast<std::uint8_t*>(actor);
         const bool ours = actor && actor == *reinterpret_cast<void**>(main_base + re4::profile::player_slot);
         const auto flags=*reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags);
-        const bool held=ours&&(bytes[0x115]==11?(flags&(1ull<<48)):(flags&0x10));
+        const bool held=ours&&(bytes[0x115]==11?(flags&re4::kKnifeHeldMask):(flags&0x10));
         const bool modern=ours && modern_move_aim_active(actor);
         const bool active = ours && (settings.analog_enabled || settings.gyro_enabled || modern) && bytes[0x114] == 0
             && (bytes[0x115] == 6 || bytes[0x115] == 11 || bytes[0x115] == 15) && held;

@@ -9,7 +9,7 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.7.2, unreleased**. Published Releases may
+The current source/local build is **0.7.3, unreleased**. Published Releases may
 contain an earlier version while new features are being tested.
 
 ## Features

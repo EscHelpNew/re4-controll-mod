@@ -8,6 +8,9 @@
 #include <limits>
 
 namespace re4 {
+// Native338330 tests input(base124EC38)+19 bit3. The held word begins
+// at +18 (profile::input_flags), so knife stance is bit11, not bit48.
+inline constexpr std::uint64_t kKnifeHeldMask=0x800;
 struct ModernMoveVec3 { float x=0,y=0,z=0; };
 inline bool modern_move_finite(ModernMoveVec3 p){return std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);}
 
@@ -158,7 +161,7 @@ inline bool modern_move_allowed(const ModernMoveFrame& f){
        ||!std::isfinite(f.x)||!std::isfinite(f.y))return false;
     if(f.routine==6)return f.aim_enabled&&f.generic_firearm&&f.native_aim&&(f.held&0x10)
         &&((f.phase==1&&f.subphase==1)||(f.phase==2&&f.subphase<=1));
-    return f.routine==11&&f.knife_enabled&&(f.held&(1ull<<48))&&f.subphase==1&&(f.phase==1||f.phase==2);
+    return f.routine==11&&f.knife_enabled&&(f.held&kKnifeHeldMask)&&f.subphase==1&&(f.phase==1||f.phase==2);
 }
 inline ModernMoveVec3 modern_move_disk(float x,float y){
     if(!std::isfinite(x)||!std::isfinite(y))return {};

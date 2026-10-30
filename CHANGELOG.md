@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.3 (unreleased)
+
+- Fix the native knife-held input mask used by movement and analog knife aiming.
+- Test real held input0x800 in stance and strike, including gait/translation before hit processing and native collision.
+- Reject unrelated high input bits and preserve knife-off, release and firearm behavior.
+
 ## 0.7.2 (unreleased)
 
 - Discard gyro motion during native weapon raising, including the first ready FIFO batch.

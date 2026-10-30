@@ -64,7 +64,10 @@ void cycle_and_gates(){
     ModernMoveFrame frame;frame.active_player=true;frame.character=0;frame.mode=0;frame.routine=6;frame.phase=1;frame.subphase=1;frame.generic_firearm=true;frame.native_aim=true;frame.input_live=true;frame.held=0x11;frame.frame_factor=1;frame.x=0;frame.y=1;
     assert(!modern_move_allowed(frame));frame.aim_enabled=true;assert(modern_move_allowed(frame));
     frame.frozen=true;assert(!modern_move_allowed(frame));frame.frozen=false;frame.phase=4;assert(!modern_move_allowed(frame));frame.phase=1;
-    frame.routine=11;assert(!modern_move_allowed(frame));frame.knife_enabled=true;frame.phase=2;frame.held=1ull<<48;assert(modern_move_allowed(frame));
+    frame.routine=11;assert(!modern_move_allowed(frame));frame.knife_enabled=true;frame.phase=2;frame.held=0x800ull;assert(modern_move_allowed(frame));
+    frame.held=1ull<<48;assert(!modern_move_allowed(frame)); // Unrelated edge input is not knife hold.
+    frame.held=0x10;assert(!modern_move_allowed(frame)); // Gun aim cannot activate knife movement.
+    frame.held=0x800;
     frame.character=2;assert(!modern_move_allowed(frame));frame.character=0;frame.scripted=true;assert(!modern_move_allowed(frame));frame.scripted=false;
     auto disk=modern_move_disk(1,1);assert(std::fabs(std::hypot(disk.x,disk.z)-1)<1e-5f);
     assert(!modern_move_disk(std::numeric_limits<float>::quiet_NaN(),1).z);
@@ -181,6 +184,22 @@ void run(){
     // are checked against the verified image by module profile tests.
     assert(!modern_move_matches(nullptr,0));auto installer=&modern_move_install;(void)installer;
     {
+        Fixture f;settings.move_while_aiming=false;settings.move_while_knife=true;
+        f.actor[0x115]=11;f.store(f.image,re4::profile::input_flags,std::uint64_t(0x800));
+        for(unsigned phase : {1,2}){
+            f.actor[0x116]=std::uint8_t(phase);f.actor[0x117]=1;order.clear();
+            const float before=scalar(f.actor.data(),0xAC);f.update();
+            assert(scalar(f.actor.data(),0xAC)==before+10);
+            assert(hit_z==before+10 && collision_z==before+10);
+            assert((order==std::vector<unsigned>{1,2,3,7,4,4,5,6}));
+        }
+        assert(control.modern_move_steps==2 && control.modern_pose_steps==2);
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(1ull<<48));f.update();
+        assert(control.modern_move_steps==2 && !modern_pose.pending());
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(0x800));settings.move_while_knife=false;f.update();
+        assert(control.modern_move_steps==2 && control.modern_move_status==0);
+    }
+    {
         Fixture f;assert(modern_move_aim_active(f.actor.data()));f.update();
         assert(control.modern_move_steps==1&&control.modern_pose_steps==1&&evaluation_count==1);
         assert(hit_z==10&&collision_z==10&&scalar(f.actor.data(),0x12C)==10);
@@ -198,7 +217,7 @@ void run(){
         control.raw_ly=1;f.update();assert(modern_bound_asset==f.injured_forward.base());
         healthy_value=1;f.update();assert(modern_bound_asset==f.forward.base());
         settings.move_while_aiming=false;settings.move_while_knife=true;f.actor[0x115]=11;f.actor[0x116]=2;
-        f.store(f.image,re4::profile::input_flags,std::uint64_t(1ull<<48));f.update();assert(control.modern_move_steps==5);
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(0x800ull));f.update();assert(control.modern_move_steps==5);
         f.actor[0x115]=6;f.actor[0x116]=4;f.update();assert(control.modern_move_steps==5&&!modern_pose.pending());
     }
     {

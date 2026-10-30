@@ -77,3 +77,5 @@ assert в Windows не оставляет автоматический запу�
 `build/installer-controls-ru.png`, `build/installer-diagnostics-en.png`.
 
 Gyro0.7.2: actual-module tests cover native raise/readiness, the first ready FIFO, mid-frame transitions, all eight proven handlers, firing/recovery, reload, weapon changes and frozen scenes. Filter tests verify every fresh sample after10ms warmup, variable-interval interpolation, frame cadence, deadzones and replay rejection. See [hardware acceptance](gyro-transition.md).
+
+Knife0.7.3: fixtures use the native controller held mask0x800, derived from338330 and the held-word offset. Actual adapter tests exercise stance/strike movement and gait before hit/collision processing, reject unrelated bit48/firearm input, and preserve release and option-off restoration. Actual-module tests also verify right-stick routing and firearm-only gyro.
