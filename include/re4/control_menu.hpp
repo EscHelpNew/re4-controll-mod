@@ -12,7 +12,7 @@ struct Bilingual {
 };
 enum class ControlId : unsigned {
     Language, Curve, Analog, Turn, Camera, CameraReturn, FreeCamera, ButtonMapping, Profile, AimX, AimY, RightAimX, RightAimY, LeftDeadzone, RightDeadzone,
-    Gyro, GyroSpeed, GyroDeadzone, GyroX, GyroY, InvertX, InvertY, FirstPerson, Reticle, ReticleSize, MoveAiming, MoveKnife, ThirdPersonDistance, Reset, Count
+    Gyro, GyroSpeed, GyroDeadzone, GyroX, GyroY, InvertX, InvertY, FirstPerson, Reticle, ReticleSize, MoveAiming, MoveKnife, ThirdPersonDistance, UnifiedControls, Reset, Count
 };
 enum class ControlGroup : unsigned { Sticks, Aiming, Gyro, Camera, Reticle, Mapping, Profiles, Count };
 struct ControlGroupSpec {

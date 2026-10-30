@@ -20,7 +20,8 @@ int main(){
             unsigned markers=0;
             for(const auto& r:draws){
                 assert(r.w>0 && r.h>0 && r.x>=10 && r.y>=20 && r.x+r.w<=354 && r.y+r.h<=180);
-                if(r.color==kReticlePreviewWhite)++markers;
+                if(r.color==kReticlePreviewWhite){++markers;assert((r.color>>24)==128);}
+                else assert((r.color>>24)==255);
             }
             assert(markers==(style==ReticleStyle::Off?0u:style==ReticleStyle::Dot?1u:4u));
         }

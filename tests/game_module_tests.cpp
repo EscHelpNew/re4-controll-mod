@@ -2,6 +2,7 @@
 // Only external engine/SDK calls are substituted; no extracted game is needed.
 #include <cstdint>
 #include <cstddef>
+namespace re4 {struct ViewVec3;}
 namespace {
 struct NpadState;
 void test_FullPad(NpadState*, const std::uint32_t&);
@@ -11,6 +12,8 @@ int test_PadNormalize(void*);
 void test_MovementTurn(void*);
 unsigned test_MotionAdvance(void*);
 void test_CameraInput(void*);
+void test_CameraCalculate();
+void test_FinalLookAt(void*,const re4::ViewVec3*,const re4::ViewVec3*,const re4::ViewVec3*);
 void test_CameraApply(void*,void*);
 void test_CameraBasis(void*,void*);
 void test_ModelSubmit(void*);
@@ -19,6 +22,7 @@ void test_HudDraw(void*);
 void test_ModernPlayerUpdate(void*);
 unsigned test_ModernRoot(void*,void*);
 void test_ModernPose(void*,int);
+void test_RootDisplacement(void*,void*,unsigned,re4::ViewVec3*,re4::ViewVec3*);
 int test_AimSensitivity(void*, int);
 void test_AimSway(void*, unsigned, float*, float*);
 unsigned test_RomMount(const char*,void*,std::size_t);
@@ -37,14 +41,32 @@ void test_SceneDraw();
 #undef assert
 #define assert(c) do { if(!(c)){std::fprintf(stderr,"line %d: %s\n",__LINE__,#c);std::exit(1);} } while(0)
 namespace {
-bool modern_probe=false;
+bool modern_probe=false,unified_probe=false;
+unsigned unified_flags_seen=0,update_state_change=0;
 unsigned modern_original_updates=0,modern_original_roots=0,modern_original_poses=0;
+bool native_root_probe=false;
+re4::ViewVec3 native_primary{0,3,10},native_secondary{0,5,6},root_result{};
+void test_RootDisplacement(void* actor,void* motion,unsigned flags,re4::ViewVec3* out,re4::ViewVec3* rotation){
+ assert(flags==0);*out=motion==static_cast<std::uint8_t*>(actor)+0x228?native_primary:native_secondary;*rotation={1,2,3};
+}
 void test_ModernPlayerUpdate(void* actor){
     ++modern_original_updates;
+    if(update_state_change)static_cast<std::uint8_t*>(actor)[0x114]=1;
+    if(unified_probe){unified_flags_seen=unsigned(*reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags)&15);MovementTurn::Callback(actor);}
+    else if(settings.unified_controls&&static_cast<std::uint8_t*>(actor)[0x115]<=4)MovementTurn::Callback(actor);
     if(modern_probe)AimSensitivity::Callback(actor,0);
     assert(ModernRoot::Callback(actor,nullptr)==17);
 }
-unsigned test_ModernRoot(void* actor,void*){++modern_original_roots;ModernPose::Callback(actor,0);return 17;}
+unsigned test_ModernRoot(void* actor,void*){
+ ++modern_original_roots;
+ if(native_root_probe){
+  auto* bytes=static_cast<std::uint8_t*>(actor);re4::ViewVec3 a,b,r;
+  RootDisplacement::Callback(actor,bytes+0x228,0,&a,&r);assert(r.x==1&&r.y==2&&r.z==3);
+  RootDisplacement::Callback(actor,*reinterpret_cast<void**>(bytes+0x320),0,&b,&r);
+  root_result={.25f*a.x+.75f*b.x,.25f*a.y+.75f*b.y,.25f*a.z+.75f*b.z};
+ }
+ ModernPose::Callback(actor,0);return 17;
+}
 void test_ModernPose(void*,int){++modern_original_poses;}
 std::vector<re4::SensorState> sensor_batch;
 std::uint8_t sampler_seen[20]{};
@@ -55,6 +77,7 @@ unsigned camera_native_calls=0,basis_native_calls=0,laser_native_calls=0,hud_nat
 unsigned laser_draw_seen=0,laser_reuse_seen=0;
 std::vector<void*> submitted_models;
 std::vector<std::vector<std::uint8_t>> hud_rects;
+unsigned gx_vertices=0,gx_last_alpha=0;
 void* test_weapon=nullptr;void* test_other_model=nullptr;
 re4::ViewMatrix3x4 native_basis{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
 re4::ViewQfpsOutput native_profile{{-500,1765,-1190},{-180,1700,-110},{0,1340,1480},0.2f,50},camera_collision_input{};
@@ -69,6 +92,25 @@ void test_WeaponLaser(void* weapon,unsigned draw,unsigned reuse,unsigned){
     }
 }
 void test_HudDraw(void*){++hud_native_calls;}
+bool calculate_probe=false;unsigned look_calls=0;re4::ViewVec3 look_seen{};
+void test_FinalLookAt(void* out,const re4::ViewVec3* eye,const re4::ViewVec3* up,const re4::ViewVec3* target){
+ ++look_calls;look_seen=*target;
+ re4::ViewVec3 back{eye->x-target->x,eye->y-target->y,eye->z-target->z};
+ auto normalize=[](re4::ViewVec3& v){const float l=std::hypot(v.x,v.y,v.z);v.x/=l;v.y/=l;v.z/=l;};normalize(back);
+ re4::ViewVec3 right{up->y*back.z-up->z*back.y,up->z*back.x-up->x*back.z,up->x*back.y-up->y*back.x};normalize(right);
+ re4::ViewVec3 actual_up{back.y*right.z-back.z*right.y,back.z*right.x-back.x*right.z,back.x*right.y-back.y*right.x};
+ re4::ViewMatrix3x4 view{};const re4::ViewVec3 rows[]={right,actual_up,back};
+ for(unsigned i=0;i<3;++i){view.m[i][0]=rows[i].x;view.m[i][1]=rows[i].y;view.m[i][2]=rows[i].z;view.m[i][3]=-(rows[i].x*eye->x+rows[i].y*eye->y+rows[i].z*eye->z);}
+ std::memcpy(out,&view,sizeof(view));
+}
+void test_CameraCalculate(){
+ if(!calculate_probe)return;
+ CameraInput::Callback(reinterpret_cast<void*>(main_base+0x11319C0));
+ auto* s=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);
+ FinalLookAt::Callback(s+0xD8,reinterpret_cast<re4::ViewVec3*>(s+0x14C),reinterpret_cast<re4::ViewVec3*>(s+0x16C),reinterpret_cast<re4::ViewVec3*>(s+0x158));
+ // FDB0's native frustum construction occurs only after this view is built.
+ assert(look_calls>0);
+}
 void test_native_ortho(void* out,float top,float bottom,float left,float right,float near_plane,float far_plane){
     ++ortho_native_calls;assert(top==0&&bottom==448&&left==0&&right==512&&near_plane==0&&far_plane==-100);
     std::memset(out,0,sizeof(re4::ViewMatrix4x4));
@@ -76,7 +118,18 @@ void test_native_ortho(void* out,float top,float bottom,float left,float right,f
 void test_native_projection(const void*,unsigned mode){assert(mode==1);}
 void test_native_pose(const void*,unsigned index){assert(index==0);}
 void test_native_matrix(unsigned index){assert(index==0);}
-void test_native_rect(const void* packet){const auto* p=static_cast<const std::uint8_t*>(packet);hud_rects.emplace_back(p,p+0x18);}
+void test_native_rect(const void* packet){const auto* p=static_cast<const std::uint8_t*>(packet);re4::ViewReticleRect r;std::memcpy(&r,p+0xC,sizeof(r));if(r.width&&r.height)hud_rects.emplace_back(p,p+0x18);}
+std::vector<re4::ViewVec3> gx_quad;unsigned gx_blend_last=0,gx_format_last=0;
+void test_gx_blend(unsigned a,unsigned b,unsigned c,unsigned d){assert(a==1&&d==0);assert((b==4&&c==5)||(b==1&&c==0));gx_blend_last=b;}
+void test_gx_format(unsigned a,unsigned b,unsigned c,unsigned d,unsigned e){assert(a==0&&b==9&&c==1&&e==0);gx_format_last=d;}
+void test_gx_begin(unsigned a,unsigned b,unsigned n){assert(a==0x98&&b==0&&n==4);gx_quad.clear();}
+void test_gx_position(float x,float y,float z){++gx_vertices;gx_quad.push_back({x,y,z});}
+void test_gx_color(unsigned r,unsigned g,unsigned b,unsigned a){assert(r==255&&g==255&&b==255&&a==128);gx_last_alpha=a;}
+void test_gx_end(unsigned token){
+ assert(token==0x34&&gx_quad.size()==4);const auto a=gx_quad[0],b=gx_quad[3];
+ re4::ViewReticleRect rect{std::uint16_t(std::lround(a.x)),std::uint16_t(std::lround(a.y)),std::uint16_t(std::lround(b.x-a.x)),std::uint16_t(std::lround(b.y-a.y))};
+ std::vector<std::uint8_t> packet(0x18);packet[8]=packet[9]=packet[10]=255;packet[11]=128;std::memcpy(packet.data()+0xC,&rect,sizeof(rect));hud_rects.push_back(packet);
+}
 
 unsigned test_RomMount(const char*,void*,std::size_t){return rom_result;}
 extern "C" Result nn_mount_rom(const char*,void*,std::size_t){return rom_result;}
@@ -109,7 +162,7 @@ void test_MovementTurn(void* actor) {
     auto* flags=reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags);
     game_test::directions_seen=*flags&15;
     *flags=(*flags&~64u)|128u; // The native routine consumes other input bits.
-    *reinterpret_cast<float*>(b+0xB4)+=b[0x115]==5 ? 3.14159265f : 0.04f;
+    *reinterpret_cast<float*>(b+0xB4)+=b[0x115]==5 ? 3.14159265f : (settings.unified_controls?0.f:0.04f);
     MotionAdvance::Callback(b+0x228);
 }
 void test_CameraInput(void* camera) {
@@ -185,6 +238,9 @@ struct Fixture {
     Fixture() {
         sensor.stop();sensor={};gyro.reset();gyro_session={};gyro_pending={};last_sensor_tick=0;sensor_batch.clear();
         free_orbit.reset();camera_context=nullptr;
+        unified_look.reset();unified_update=nullptr;unified_pitch=0;unified_pitch_actor=0;unified_pitch_route=0;
+        unified_aim_session={};unified_new_aim=false;unified_command_frame=0;unified_command_tick=0;
+        unified_root_actor=nullptr;unified_camera_calculation=false;aligned_aim_frame=0;pending_aligned_frame=0;displayed_aligned_frame=0;
         native_view_test=submit_models=short_laser_ray=false;laser_endpoint={0,0,-1000};camera_native_calls=basis_native_calls=laser_native_calls=hud_native_calls=ortho_native_calls=0;
         submitted_models.clear();hud_rects.clear();test_weapon=test_other_model=nullptr;
         native_basis={{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
@@ -200,6 +256,9 @@ struct Fixture {
         modern_epoch=0;modern_root_done=modern_stepped=modern_pose_done=false;
         native_ortho=test_native_ortho;native_projection=test_native_projection;
         native_pose=test_native_pose;native_matrix=test_native_matrix;native_rect=test_native_rect;
+        native_gx_blend=test_gx_blend;native_gx_format=test_gx_format;native_gx_begin=test_gx_begin;
+        native_gx_position=test_gx_position;native_gx_color=test_gx_color;native_gx_end=test_gx_end;
+        gx_vertices=gx_last_alpha=0;gx_blend_last=gx_format_last=0;gx_quad.clear();
         graphics_snapshot.store(0x3F80000000000000ull);filter_latched=255;aa_latched=255;
         sampler_calls=0;sampler_overrides=0;scene_submits=0;scene_draws=0;cull_updates=0;resolution_overrides=0;
         last_cull_pair=0;rom_settings_attempted.clear();rom_result=0;
@@ -263,6 +322,103 @@ struct Fixture {
 };
 }
 int main(){
+    {
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        control.raw_lx=1;control.raw_ly=0;control.raw_rx=1;control.raw_ry=1;f.flags()=15;unified_probe=true;
+        ModernPlayerUpdate::Callback(f.actor);assert(unified_flags_seen==1);assert((f.flags()&15)==15);
+        game_test::tick+=960000;const float before=f.yaw();ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw()-before,-2.09439510239f*.05f));assert(near(game_test::motion_speed_seen,1.25f));
+        unified_probe=false;
+    }
+
+    {
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        control.raw_rx=1;control.raw_ry=1;control.raw_lx=-1;control.raw_ly=-1;modern_probe=true;
+        auto* axes=reinterpret_cast<int*>(f.image.data()+0x124E9C8);axes[0]=63;axes[1]=-63;
+        ModernPlayerUpdate::Callback(f.actor);assert(seen_aim_x==0&&seen_aim_y==0);
+        game_test::tick+=960000;const auto before=f.yaw();ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw()-before,-2.09439510239f*.05f));assert(near(f.pitch()[1],.05f));
+        assert(axes[0]==63&&axes[1]==-63);assert(near(f.pitch()[0],f.pitch()[1]));
+        const auto yaw=f.yaw();AimSensitivity::Callback(f.actor,0);assert(near(f.yaw(),yaw));
+        for(unsigned phase:{2u,1u}){
+            f.actor[0x116]=phase;f.actor[0x117]=phase==1?4:1;
+            game_test::tick+=960000;const float value=f.yaw();ModernPlayerUpdate::Callback(f.actor);
+            assert(near(f.yaw()-value,-2.09439510239f*.05f));
+        }
+        settings.unified_controls=false;publish_view_settings();settings.unified_controls=true;publish_view_settings();
+        game_test::tick+=960000;const float toggled=f.yaw();ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),toggled));
+        NpadState switched{};switched.attributes=1;switched.rx=switched.ry=32767;
+        capture(switched,0,4);game_test::tick+=960000;const float stopped=f.yaw();ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),stopped));
+        f.actor[0x117]=1;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        f.flags()=0;AimSensitivity::Callback(f.actor,0);f.flags()=0x10;f.actor[0x117]=4;
+        game_test::tick+=960000;const float released=f.yaw();ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),released));
+        modern_probe=false;
+    }
+    {
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        const re4::ViewMatrix3x4 basis{{{2,0,0,0},{0,3,0,0},{0,0,4,0}}};std::memcpy(f.actor+0x18,&basis,sizeof(basis));
+        void* secondary=f.other_model;*reinterpret_cast<void**>(f.actor+0x320)=secondary;
+        control.raw_lx=1;control.raw_ly=0;native_root_probe=true;
+        ModernPlayerUpdate::Callback(f.actor);
+        re4::ViewVec3 world;assert(re4::view_transform_point(basis,root_result,world));
+        assert(near(world.x,-28)&&near(world.y,13.5f)&&std::fabs(world.z)<.0001f);
+        assert(control.modern_move_steps==0);native_root_probe=false;
+    }
+    {
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.reticle=re4::ReticleStyle::Crosshair;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        f.camera()[0x26C]=0;publish_view_settings();laser_endpoint={500,300,1000};
+        const re4::ViewVec3 eye{10,20,30},up{0,1,0},target{0,0,100};
+        std::memcpy(f.input_state.data()+0x14C,&eye,sizeof(eye));std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));std::memcpy(f.input_state.data()+0x16C,&up,sizeof(up));
+        WeaponLaser::Callback(f.weapon,1,0,0);calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
+        assert(near(look_seen.x,500)&&near(look_seen.y,300)&&near(look_seen.z,1000));
+        re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;std::memcpy(&view,f.input_state.data()+0xD8,sizeof(view));std::memcpy(&projection,f.input_state.data()+0x10C,sizeof(projection));
+        re4::ViewHudPoint point;assert(re4::project_view_point(view,projection,laser_endpoint,point));assert(near(point.x,256)&&near(point.y,224));
+        assert(aligned_aim_frame==view_frame);
+        SceneSubmit::Callback();view_frame.fetch_add(1);SceneDraw::Callback();assert(displayed_aligned_frame==view_frame);
+        CameraInput::Callback(f.camera());HudDraw::Callback(nullptr);assert(hud_rects.size()==4);
+        displayed_aligned_frame=0;HudDraw::Callback(nullptr);assert(hud_rects.size()==4);
+        view_frame.fetch_add(1);std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
+        assert(look_seen.x==target.x&&look_seen.y==target.y&&look_seen.z==target.z&&aligned_aim_frame==0);
+    }
+    {
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        control.raw_ry=1;ModernPlayerUpdate::Callback(f.actor);game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        control.raw_ry=0;f.aim();modern_probe=true;
+        f.actor[0x116]=0;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        f.actor[0x116]=1;f.actor[0x117]=4;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        f.actor[0x117]=1;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.pitch()[1],.05f));modern_probe=false;
+        f.actor[0x115]=1;game_test::native_aim=0;dpad_move=true;f.flags()=1;unified_probe=true;
+        ModernPlayerUpdate::Callback(f.actor);assert(unified_flags_seen==1);unified_probe=false;
+    }
+    for(bool fps:{false,true}){
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.first_person=fps;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        control.raw_rx=1;control.raw_ry=1;ModernPlayerUpdate::Callback(f.actor);game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        const re4::ViewVec3 eye{},up{0,1,0},target{0,0,1000};std::memcpy(f.input_state.data()+0x14C,&eye,sizeof(eye));std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));std::memcpy(f.input_state.data()+0x16C,&up,sizeof(up));
+        calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
+        assert(near(look_seen.x/1000,std::sin(-2.09439510239f*.05f)*std::cos(1.57079632679f*.05f)));
+        assert(near(look_seen.y/1000,std::sin(1.57079632679f*.05f)));assert(f.look()[0]==0&&f.look()[1]==0);
+    }
+    {
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.analog_enabled=false;settings.gyro_enabled=true;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        game_test::apply_sway=true;assert(gyro_aim_ready(f.actor,true));gyro_pending={.02f,.03f};AimSensitivity::Callback(f.actor,0);
+        assert(near(f.yaw(),.02f)&&near(f.pitch()[1],.03f*.636619772368f));assert(near(game_test::sway_baseline,f.pitch()[1]));
+    }
+    {
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        control.raw_rx=1;control.raw_ry=1;unified_probe=true;ModernPlayerUpdate::Callback(f.actor);
+        game_test::tick+=960000;const float before=f.yaw();update_state_change=1;ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw(),before)&&unified_pitch==0);update_state_change=0;unified_probe=false;
+    }
     {
         Fixture f;f.aim();settings.gyro_enabled=true;game_test::aim_step=0;
         NpadState pad{};pad.attributes=1;capture(pad,0,1);
@@ -592,6 +748,7 @@ int main(){
         // Current simulation camera differs: late HUD must use the displayed camera captured above.
         *reinterpret_cast<float*>(f.input_state.data()+0xD8+0xC)=9000;
         HudDraw::Callback(nullptr);assert(ortho_native_calls==1&&!hud_rects.empty());
+        assert(gx_vertices>0&&gx_last_alpha==128&&gx_blend_last==1&&gx_format_last==3);
         publish_graphics_diagnostics();assert(control.reticle_draws==1);
         const auto size=hud_rects.size();
         f.input_state[0x5034]=1;HudDraw::Callback(nullptr);assert(hud_rects.size()==size); // Same model, changed weapon ID.
@@ -806,7 +963,7 @@ int main(){
         game_test::program=re4::profile::title_id;f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
         assert(control.status==2 && game_test::installed==0);
         f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
-        assert(control.status==1 && game_test::installed==23 && game_test::initialized==1);
+        assert(control.status==1 && game_test::installed==26 && game_test::initialized==1);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }

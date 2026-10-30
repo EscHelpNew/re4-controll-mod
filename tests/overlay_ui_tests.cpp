@@ -13,7 +13,7 @@ tsl::elm::ListItem* find(tsl::elm::OverlayFrame* f,const std::string& label){
     for(auto* e:list(f)->children)if(auto* row=dynamic_cast<tsl::elm::ListItem*>(e))if(row->label==label)return row;
     return nullptr;
 }
-unsigned markers(const tsl::gfx::Renderer& r){unsigned n=0;for(const auto& rect:r.rects)if(rect.color==0xffff)++n;return n;}
+unsigned markers(const tsl::gfx::Renderer& r){unsigned n=0;for(const auto& rect:r.rects)if(rect.color==0x8fff)++n;return n;}
 }
 namespace overlay_storage {bool ready(){return storage_available;}bool mount(){return storage_available;}void close(){}}
 namespace re4 {

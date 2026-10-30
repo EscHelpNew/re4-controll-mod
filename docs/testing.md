@@ -7,7 +7,7 @@
 .venv\Scripts\python.exe build.py --module --overlay --nro
 ```
 
-Первая команда запускает Python unittest и тридцать собственных C++ программ
+Первая команда запускает Python unittest и тридцать две собственные C++ программы
 проверки. Для native-проверок действует тайм-аут20секунд: окно аварийного
 assert в Windows не оставляет автоматический запуск зависшим.
 
@@ -50,7 +50,7 @@ assert в Windows не оставляет автоматический запу�
 Обработчики игрового модуля и движения в CI компилируются с C++20, как настоящий
 модуль, с `-Wall -Wextra -Werror`. Качество нового вида от первого лица, движения
 ног и столкновений0.7 на консоли пока не подтверждено; хост-тесты не заменяют
-эту проверку. Версия совместной структуры —13, размер400байт.
+эту проверку. Версия совместной структуры —15, размер400байт.
 
 На консоли подтверждены пользователем: повороты, ходьба, камера, прицел,
 совместный гироскоп только при наведении из оружия, полный вертикальный
@@ -81,3 +81,5 @@ Gyro0.7.2: actual-module tests cover native raise/readiness, the first ready FIF
 Knife0.7.3: fixtures use the native controller held mask0x800, derived from338330 and the held-word offset. Actual adapter tests exercise stance/strike movement and gait before hit/collision processing, reject unrelated bit48/firearm input, and preserve release and option-off restoration. Actual-module tests also verify right-stick routing and firearm-only gyro.
 
 RE9 / camera0.8: canonical factory/mapping, built-in-to-Custom recovery, restart identity, both actual profile pickers, empty Custom/back/save failures, camera-slider bounds, wirev1-v9 native framing migration and v10 strict float validation. Native callback/math tests cover distance1 bit preservation, 1.35/2 framing before collision, retained anchor/FOV/roll, FPS precedence and 17 isolation/reset/scope/basis gates. SDL renders RE9 EN/RU profile and camera pages. Hardware framing/layout/wall acceptance remains required.
+
+Unified sticks0.9: shared look-command timing, movement-root redirection, controller/state transitions, native aiming handoff, final camera targeting, original face/menu mappings and wirev11 migration are covered by native/helper tests. Half-opacity reticle commands and state restoration are checked independently; SDL/Tesla previews verify alpha. Hook-pool checks require26 installed hooks. New movement and camera behavior still require console acceptance.

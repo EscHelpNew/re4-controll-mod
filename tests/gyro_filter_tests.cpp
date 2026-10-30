@@ -63,7 +63,7 @@ int main(){
     Settings settings; settings.gyro_speed=2.5f;settings.gyro_deadzone_dps=0.75f;
     settings.gyro_enabled=true;settings.language=Language::Russian;settings.stick_curve=StickCurve::Hybrid;
     std::uint8_t bytes[kSettingsBytes];
-    assert(encode_settings(settings,bytes,sizeof(bytes)) && bytes[4]==10);
+    assert(encode_settings(settings,bytes,sizeof(bytes)) && bytes[4]==11);
     Settings decoded;assert(decode_settings(bytes,sizeof(bytes),decoded));
     assert(decoded.gyro_speed==2.5f && decoded.gyro_deadzone_dps==0.75f && decoded.gyro_enabled);
     assert(decoded.language==Language::Russian && decoded.stick_curve==StickCurve::Hybrid);

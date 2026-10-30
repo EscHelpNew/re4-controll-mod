@@ -13,6 +13,8 @@
 #include "re4/camera.hpp"
 #include "re4/view.hpp"
 #include "re4/modern_move.hpp"
+#include "re4/unified.hpp"
+#include "re4/reticle_draw.hpp"
 #include <atomic>
 
 namespace {
@@ -134,9 +136,36 @@ void (*native_projection)(const void*,unsigned)=nullptr;
 void (*native_pose)(const void*,unsigned)=nullptr;
 void (*native_matrix)(unsigned)=nullptr;
 void (*native_rect)(const void*)=nullptr;
+void (*native_gx_blend)(unsigned,unsigned,unsigned,unsigned)=nullptr;
+void (*native_gx_format)(unsigned,unsigned,unsigned,unsigned,unsigned)=nullptr;
+void (*native_gx_begin)(unsigned,unsigned,unsigned)=nullptr;
+void (*native_gx_position)(float,float,float)=nullptr;
+void (*native_gx_color)(unsigned,unsigned,unsigned,unsigned)=nullptr;
+void (*native_gx_end)(unsigned)=nullptr;
+re4::UnifiedLook unified_look;
+struct UnifiedUpdate {
+    void* actor=nullptr;
+    re4::UnifiedDelta delta{};
+    bool walking=false,consumed=false,handoff=false;
+};
+UnifiedUpdate* unified_update=nullptr;
+struct UnifiedAimSession {void* actor=nullptr;void* weapon=nullptr;std::uintptr_t handler=0;unsigned item=0;bool ready=false;};
+UnifiedAimSession unified_aim_session;
+bool unified_new_aim=false;
+void* unified_root_actor=nullptr;
+float unified_root_yaw=0,unified_pitch=0;
+std::uintptr_t unified_pitch_actor=0;
+unsigned unified_pitch_route=0;
+std::uint64_t unified_command_frame=0,unified_command_tick=0;
+bool unified_camera_calculation=false;
+std::atomic<std::uint64_t> aligned_aim_frame{0},pending_aligned_frame{0},displayed_aligned_frame{0};
 void publish_view_settings(){
-    const unsigned word=unsigned(settings.first_person)|(unsigned(settings.reticle)<<1)|(unsigned(settings.reticle_size)<<3);
+    const unsigned word=unsigned(settings.first_person)|(unsigned(settings.reticle)<<1)|(unsigned(settings.reticle_size)<<3)|(unsigned(settings.unified_controls)<<5);
     const auto before=view_settings_snapshot.exchange(word,std::memory_order_acq_rel);
+    if((before^word)&32){
+        unified_look.reset();unified_aim_session={};unified_pitch_actor=0;unified_pitch_route=0;unified_command_frame=0;
+        aligned_aim_frame.store(0,std::memory_order_release);pending_aligned_frame.store(0,std::memory_order_release);displayed_aligned_frame.store(0,std::memory_order_release);
+    }
     if(!(word&1) || ((before^word)&1))first_person_frame.store(0,std::memory_order_release);
     if(((before^word)&6) || !(word&6))aim_point.frame.store(0,std::memory_order_release);
 }
@@ -249,13 +278,109 @@ bool read_aim_point(const AimPoint& source,void* actor,std::uint64_t required_fr
         && who==reinterpret_cast<std::uintptr_t>(actor)&&weapon_id==state[0x5034]
         && weapon==reinterpret_cast<std::uintptr_t>(player_weapon(actor))&&re4::view_finite(value);
 }
-bool draw_reticle_rect(re4::ViewHudPoint center,unsigned width,unsigned height){
-    re4::ViewReticleRect rect;
-    if(!re4::view_reticle_rect(center,width,height,rect))return false;
-    alignas(8) std::uint8_t packet[0x18]{};
-    packet[8]=packet[9]=packet[10]=packet[11]=255;
-    std::memcpy(packet+0xC,&rect,sizeof(rect)); // Native rect packet uses x,y,w,h then z=0.
-    native_rect(packet);return true;
+bool unified_scene(void* actor){
+    if(!settings.unified_controls||!view_scene(actor)||(sensor_attributes&1)==0
+        ||*reinterpret_cast<const std::uint8_t*>(main_base+0x11C7D55)
+        ||*reinterpret_cast<const int*>(main_base+0xAFF39C)!=2)return false;
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    const float factor=*reinterpret_cast<const float*>(state+0xA4);
+    return !state[0x86FF]&&std::isfinite(factor)&&factor>0&&factor<=2;
+}
+bool unified_aim_allowed(void* actor,bool allow_arm=false){
+    unified_new_aim=false;
+    if(!unified_scene(actor)){unified_aim_session={};return false;}
+    const auto* b=static_cast<const std::uint8_t*>(actor);
+    const auto held=*reinterpret_cast<const std::uint64_t*>(main_base+re4::profile::input_flags);
+    if(b[0x115]==6&&firearm_aim(actor)){
+        const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+        auto* weapon=player_weapon(actor);const auto handler=*reinterpret_cast<const std::uintptr_t*>(main_base+0x1265A28);
+        if(unified_aim_session.actor!=actor||unified_aim_session.weapon!=weapon
+            ||unified_aim_session.handler!=handler||unified_aim_session.item!=state[0x5034]){
+            unified_aim_session={actor,weapon,handler,state[0x5034],false};unified_look.reset();
+        }
+        const bool before=unified_aim_session.ready;
+        if(b[0x116]!=1&&b[0x116]!=2)unified_aim_session.ready=false;
+        else if(allow_arm&&b[0x116]==1&&b[0x117]==1)unified_aim_session.ready=true;
+        unified_new_aim=!before&&unified_aim_session.ready;
+        return unified_aim_session.ready;
+    }
+    unified_aim_session={};
+    return b[0x115]==11&&(held&re4::kKnifeHeldMask)
+        &&(b[0x116]==1||b[0x116]==2)&&b[0x117]==1;
+}
+void unified_player_update(void* actor,void (*original)(void*)){
+    publish_view_settings();
+    const bool scene=unified_scene(actor);
+    const auto* b=static_cast<const std::uint8_t*>(actor);
+    const bool walking=scene&&b[0x115]<=4;
+    const bool aiming=unified_aim_allowed(actor,true);
+    const bool handoff=aiming&&(unified_new_aim||unified_pitch_route!=2)&&unified_pitch_actor==reinterpret_cast<std::uintptr_t>(actor);
+    const unsigned route=walking?1:aiming?2:0;
+    float x=re4::shape_axis(control.raw_rx,settings.right_deadzone,settings.camera_gain,settings.stick_curve);
+    float y=re4::shape_axis(control.raw_ry,settings.right_deadzone,settings.camera_gain,settings.stick_curve);
+    const auto* type=*reinterpret_cast<const int**>(main_base+0xB1AE10);
+    if(type&&*type<0)y=-y;
+    UnifiedUpdate context{actor,unified_look.update(reinterpret_cast<std::uintptr_t>(actor),route,svcGetSystemTick(),route!=0,x,y),walking,false,handoff};
+    auto* prior=unified_update;unified_update=&context;
+    auto* directions=reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags);
+    const auto old_direction=*directions&15u;
+    void* prior_movement=movement_actor;
+    if(route){
+        unified_command_frame=view_frame.load(std::memory_order_relaxed);unified_command_tick=svcGetSystemTick();
+        const auto who=reinterpret_cast<std::uintptr_t>(actor);
+        if(who!=unified_pitch_actor||route!=unified_pitch_route){
+            // Native aim-entry clears/consumes offsets; seed from its current
+            // manual target, never replay an old free-orbit state.
+            if(who!=unified_pitch_actor){
+                unified_pitch=0;
+                if(aiming){const float value=*reinterpret_cast<const float*>(main_base+0x1265A0C);if(std::isfinite(value)&&std::fabs(value)<=1)unified_pitch=value*1.57079632679f;}
+            }
+            unified_pitch_actor=who;unified_pitch_route=route;
+        }
+        if(walking){
+            const auto left=re4::modern_move_disk(re4::shape_axis(control.raw_lx,settings.left_deadzone,1,settings.stick_curve),re4::shape_axis(control.raw_ly,settings.left_deadzone,1,settings.stick_curve));
+            if(!dpad_move&&!dpad_turn)*directions=re4::unified_direction_flags(*directions,left.x,left.z);
+            movement_actor=actor;
+        }
+    }else{unified_command_frame=0;if(!settings.unified_controls){unified_pitch_actor=0;unified_pitch_route=0;}}
+    original(actor);
+    if(walking)*directions=(*directions&~std::uint64_t(15))|old_direction;
+    movement_actor=prior_movement;unified_update=prior;
+}
+bool unified_walk_root(void* actor,float& rotation){
+    if(!unified_update||unified_update->actor!=actor||!unified_update->walking||!unified_scene(actor)||dpad_move||dpad_turn)return false;
+    const auto* b=static_cast<const std::uint8_t*>(actor);
+    if(b[0x115]<1||b[0x115]>3)return false;
+    const auto left=re4::modern_move_disk(re4::shape_axis(control.raw_lx,settings.left_deadzone,1,settings.stick_curve),re4::shape_axis(control.raw_ly,settings.left_deadzone,1,settings.stick_curve));
+    if(std::hypot(left.x,left.z)<=0)return false;
+    const auto* basis=reinterpret_cast<const float*>(b+0x18);
+    const float native_yaw=std::atan2(basis[2],basis[10])+(b[0x115]==2?3.14159265359f:0);
+    const float desired=*reinterpret_cast<const float*>(b+0xB4)+std::atan2(-left.x,left.z);
+    rotation=std::remainder(desired-native_yaw,6.28318530718f);
+    return std::isfinite(rotation);
+}
+bool draw_native_reticle(re4::ViewHudPoint point,unsigned style,unsigned size){
+    if(!native_ortho||!native_projection||!native_pose||!native_matrix||!native_rect
+        ||!native_gx_blend||!native_gx_format||!native_gx_begin||!native_gx_position||!native_gx_color||!native_gx_end)return false;
+    const re4::ReticleDrawBackend backend{
+        nullptr,
+        +[](void*){
+            re4::ViewMatrix4x4 ortho{};
+            const re4::ViewMatrix3x4 identity{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
+            native_ortho(&ortho,0,448,0,512,0,-100);native_projection(&ortho,1);native_pose(&identity,0);native_matrix(0);
+            // A degenerate native rect establishes the complete29D140 HUD state
+            // without visible fragments. Its untextured vertex-color pipeline
+            // passes RGBA unchanged and has no alpha-discard shader operation.
+            alignas(8) const std::uint8_t packet[0x18]{};native_rect(packet);
+        },
+        +[](void*,unsigned a,unsigned b,unsigned c,unsigned d){native_gx_blend(a,b,c,d);},
+        +[](void*,unsigned a,unsigned b,unsigned c,unsigned d,unsigned e){native_gx_format(a,b,c,d,e);},
+        +[](void*,unsigned a,unsigned b,unsigned c){native_gx_begin(a,b,c);},
+        +[](void*,float x,float y,float z){native_gx_position(x,y,z);},
+        +[](void*,unsigned r,unsigned g,unsigned b,unsigned a){native_gx_color(r,g,b,a);},
+        +[](void*,unsigned token){native_gx_end(token);}
+    };
+    return re4::draw_reticle(backend,point,style,size);
 }
 void poll_sensors() {
     gyro_pending = {};
@@ -420,6 +545,9 @@ void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
     control.last_pad_id = id;
     if (id != 0 && id != 0x20) return;
     const bool connected = pad.attributes & 1;
+    const bool changed=connected?(sensor_pad!=id||sensor_style!=style||sensor_attributes!=(pad.attributes&21u))
+        :(id==sensor_pad&&style==sensor_style&&sensor_attributes!=0);
+    if(changed){unified_look.reset();unified_aim_session={};gyro_session={};gyro_pending={};gyro.reset();}
     if (connected) {
         sensor_pad = id; sensor_style = style; sensor_attributes = pad.attributes & 21u;
     } else if (id == sensor_pad && style == sensor_style) sensor_attributes = 0;
@@ -511,28 +639,33 @@ HOOK_DEFINE_TRAMPOLINE(SceneSubmit) {
         shadow_frame([]{Orig();});
         main_view_actor=previous;
         pending_aim_point.frame.store(0,std::memory_order_release);
+        pending_aligned_frame.store(0,std::memory_order_release);
         re4::ViewVec3 point;
         const auto frame=view_frame.load(std::memory_order_acquire);
-        if((view_settings_snapshot.load(std::memory_order_acquire)&6)&&view_completed(actor)
-            &&read_aim_point(aim_point,actor,frame,point))
+        if((view_settings_snapshot.load(std::memory_order_acquire)&38)&&view_completed(actor)
+            &&read_aim_point(aim_point,actor,frame,point)){
             publish_aim_point(pending_aim_point,actor,player_weapon(actor),point,frame);
+            if(aligned_aim_frame.load(std::memory_order_acquire)==frame)pending_aligned_frame.store(frame,std::memory_order_release);
+        }
     }
 };
 HOOK_DEFINE_TRAMPOLINE(SceneDraw) {
     static void Callback(){
         scene_draws.fetch_add(1,std::memory_order_relaxed);
         displayed_aim_point.frame.store(0,std::memory_order_release);
+        displayed_aligned_frame.store(0,std::memory_order_release);
         auto* actor=*reinterpret_cast<void**>(main_base+re4::profile::player_slot);
         const auto frame=view_frame.load(std::memory_order_acquire);
         const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
         re4::ViewVec3 point;
         // Queued scene belongs to the previous simulation. Capture its main
         // camera before native group23 temporarily swaps in a special camera.
-        if(frame>1&&(view_settings_snapshot.load(std::memory_order_acquire)&6)&&view_actor_state(actor)&&state
+        if(frame>1&&(view_settings_snapshot.load(std::memory_order_acquire)&38)&&view_actor_state(actor)&&state
             &&read_aim_point(pending_aim_point,actor,frame-1,point)){
             re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;
             std::memcpy(&view,state+0xD8,sizeof(view));std::memcpy(&projection,state+0x10C,sizeof(projection));
             publish_aim_point(displayed_aim_point,actor,player_weapon(actor),point,frame,&view,&projection);
+            if(pending_aligned_frame.load(std::memory_order_acquire)==frame-1)displayed_aligned_frame.store(frame,std::memory_order_release);
         }
         pending_aim_point.frame.store(0,std::memory_order_release);
         shadow_frame([]{Orig();});
@@ -563,9 +696,16 @@ HOOK_DEFINE_TRAMPOLINE(MovementTurn) {
         auto* bytes = static_cast<std::uint8_t*>(actor);
         const bool ours = actor && actor == *reinterpret_cast<void**>(main_base + re4::profile::player_slot);
         const bool normal = ours && bytes[0x114] == 0 && bytes[0x115] <= 4;
+        if(normal&&unified_update&&unified_update->actor==actor&&unified_update->walking
+            &&!unified_update->consumed&&unified_scene(actor)){
+            auto* yaw=reinterpret_cast<float*>(bytes+0xB4);
+            *yaw=re4::gyro_yaw(*yaw,unified_update->delta.yaw);
+            unified_pitch=std::clamp(unified_pitch+unified_update->delta.pitch,-1.553343034f,1.553343034f);
+            unified_update->consumed=true;
+        }
         auto* flags = reinterpret_cast<volatile std::uint64_t*>(main_base + re4::profile::input_flags);
         const std::uint64_t old_direction = normal ? *flags & 15u : 0;
-        const bool remap = normal && settings.analog_enabled;
+        const bool remap = normal && settings.analog_enabled && !(unified_update&&unified_update->actor==actor&&unified_update->walking);
         const float before = normal ? *reinterpret_cast<float*>(bytes + 0xB4) : 0;
         if (remap) {
             *flags = (*flags & ~std::uint64_t(12)) | (re4::turn_flags(0, raw_left_x,
@@ -579,7 +719,7 @@ HOOK_DEFINE_TRAMPOLINE(MovementTurn) {
         }
         const bool manual = remap && (*flags & 12u);
         void* previous_actor = movement_actor;
-        movement_actor = remap ? actor : nullptr;
+        movement_actor = remap ? actor : (unified_update&&unified_update->walking?actor:nullptr);
         Orig(actor);
         movement_actor = previous_actor;
         if (remap) *flags = (*flags & ~std::uint64_t(15)) | old_direction;
@@ -608,7 +748,10 @@ HOOK_DEFINE_TRAMPOLINE(MotionAdvance) {
         if (!ours || dpad_move) return Orig(motion);
         auto* speed = reinterpret_cast<float*>(static_cast<std::uint8_t*>(motion) + 0xDC);
         const float original = *speed;
-        const float factor = std::fabs(re4::shape_axis(control.raw_ly, settings.left_deadzone, 1, settings.stick_curve));
+        const float factor = settings.unified_controls
+            ?std::hypot(re4::modern_move_disk(re4::shape_axis(control.raw_lx,settings.left_deadzone,1,settings.stick_curve),re4::shape_axis(control.raw_ly,settings.left_deadzone,1,settings.stick_curve)).x,
+                re4::modern_move_disk(re4::shape_axis(control.raw_lx,settings.left_deadzone,1,settings.stick_curve),re4::shape_axis(control.raw_ly,settings.left_deadzone,1,settings.stick_curve)).z)
+            :std::fabs(re4::shape_axis(control.raw_ly, settings.left_deadzone, 1, settings.stick_curve));
         if (!std::isfinite(original) || std::fabs(original) > 16) return Orig(motion);
         *speed = original * factor;
         control.movement_calls = control.movement_calls + 1;
@@ -634,7 +777,7 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
         const auto* context=camera_context;
         const auto* bytes=static_cast<const std::uint8_t*>(camera);
         const bool fps=settings.first_person && context && context->view_allowed;
-        if(context && context->camera==camera && ordinary_camera(camera,context->actor) && (settings.analog_enabled||fps)
+        if(!settings.unified_controls && context && context->camera==camera && ordinary_camera(camera,context->actor) && (settings.analog_enabled||fps)
             && !context->reset && !bytes[0x222] && bytes[0x26C]==2){
             if(settings.free_camera||fps){
                 auto* offsets=reinterpret_cast<float*>(static_cast<std::uint8_t*>(camera)+0x270);
@@ -688,14 +831,19 @@ HOOK_DEFINE_TRAMPOLINE(CameraInput) {
         auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
         const bool normal=actor&&actor[0x114]==0&&actor[0x115]<=4;
         const bool framing=settings.third_person_distance>1&&settings.third_person_distance<=2;
-        const bool wanted=settings.first_person||framing||settings.reticle!=re4::ReticleStyle::Off;
+        const bool wanted=settings.unified_controls||settings.first_person||framing||settings.reticle!=re4::ReticleStyle::Off;
         const bool view_allowed=wanted&&view_camera_allowed(camera,actor);
-        const bool shape=normal&&(settings.analog_enabled||(settings.first_person&&view_allowed));
+        const bool unified=settings.unified_controls&&unified_scene(actor);
+        const bool shape=!unified&&normal&&(settings.analog_enabled||(settings.first_person&&view_allowed));
         const bool ordinary=normal&&settings.analog_enabled&&ordinary_camera(camera,actor);
         if(!shape&&!view_allowed){free_orbit.reset();Orig(camera);return;}
         const bool alternate=*reinterpret_cast<int*>(main_base+0x11C7D68)==1;
         auto* input=reinterpret_cast<std::int8_t*>(main_base+0x124EC38+(alternate?0xC0:8));
         const auto x=input[0],y=input[1];
+        if(unified){
+            input[0]=input[1]=0;free_orbit.reset();
+            if(normal){auto* offsets=reinterpret_cast<float*>(static_cast<std::uint8_t*>(camera)+0x270);offsets[0]=offsets[1]=0;}
+        }
         if(shape){
             control.camera_calls=control.camera_calls+1;
             input[0]=re4::camera_axis(control.raw_rx,settings.right_deadzone,settings.camera_gain,settings.stick_curve);
@@ -715,8 +863,51 @@ HOOK_DEFINE_TRAMPOLINE(CameraInput) {
         }else{camera_context=nullptr;free_orbit.reset();}
         Orig(camera);
         camera_context=previous;
-        if(shape){input[0]=x;input[1]=y;}
+        if(shape||unified){input[0]=x;input[1]=y;}
         if(view_allowed&&!view_camera_allowed(camera,actor))clear_view_frame();
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(CameraCalculate) {
+    static void Callback(){
+        const bool previous=unified_camera_calculation;unified_camera_calculation=true;
+        aligned_aim_frame.store(0,std::memory_order_release);
+        Orig();unified_camera_calculation=previous;
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(FinalLookAt) {
+    static void Callback(void* output,const re4::ViewVec3* eye,const re4::ViewVec3* up,const re4::ViewVec3* target){
+        auto* state=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);
+        auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
+        const auto frame=view_frame.load(std::memory_order_acquire);
+        bool aligned=false;re4::ViewVec3 actual_point{};
+        if(unified_camera_calculation&&state&&output==state+0xD8&&eye==reinterpret_cast<void*>(state+0x14C)
+            &&up==reinterpret_cast<void*>(state+0x16C)&&target==reinterpret_cast<void*>(state+0x158)
+            &&unified_scene(actor)&&view_completed(actor)){
+            re4::ViewVec3 endpoint;bool candidate=false;
+            if(firearm_aim(actor)){
+                candidate=read_aim_point(aim_point,actor,frame,endpoint);
+                actual_point=endpoint;aligned=candidate;
+            }else if(actor[0x115]<=4&&unified_pitch_actor==reinterpret_cast<std::uintptr_t>(actor)
+                &&unified_command_frame==frame&&svcGetSystemTick()>=unified_command_tick
+                &&svcGetSystemTick()-unified_command_tick<=1920000){
+                const float heading=*reinterpret_cast<const float*>(actor+0xB4),pitch=unified_pitch;
+                const double length=std::hypot(double(target->x)-eye->x,double(target->y)-eye->y,double(target->z)-eye->z);
+                candidate=std::isfinite(heading)&&std::isfinite(pitch)&&length>1e-4
+                    &&re4::view_store_point(eye->x+std::sin(double(heading))*std::cos(double(pitch))*length,
+                        eye->y+std::sin(double(pitch))*length,eye->z+std::cos(double(heading))*std::cos(double(pitch))*length,endpoint);
+            }
+            re4::ViewVec3 value;float distance;
+            if(candidate&&re4::unified_target(*eye,endpoint,*up,value,distance)){
+                std::memcpy(state+0x158,&value,sizeof(value));std::memcpy(state+0x19C,&distance,sizeof(distance));
+            }else aligned=false;
+        }
+        Orig(output,eye,up,target); // Native FDB0 regenerates frustum after this returns.
+        if(aligned){
+            re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;re4::ViewHudPoint point;
+            std::memcpy(&view,state+0xD8,sizeof(view));std::memcpy(&projection,state+0x10C,sizeof(projection));
+            if(re4::project_view_point(view,projection,actual_point,point)&&std::fabs(point.x-256)<=.01f&&std::fabs(point.y-224)<=.01f)
+                aligned_aim_frame.store(frame,std::memory_order_release);
+        }
     }
 };
 HOOK_DEFINE_TRAMPOLINE(WeaponLaser) {
@@ -724,7 +915,7 @@ HOOK_DEFINE_TRAMPOLINE(WeaponLaser) {
         Orig(weapon,draw,reuse,style); // Keep native laser, collision and effects unchanged.
         if(reuse&1)return;
         auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
-        if(!(view_settings_snapshot.load(std::memory_order_acquire)&6)||!view_scene(actor)
+        if(!(view_settings_snapshot.load(std::memory_order_acquire)&38)||!view_scene(actor)
             ||!actor||(actor[0x115]!=6&&actor[0x115]!=15)||!firearm_aim(actor)||weapon!=player_weapon(actor))return;
         // Native skips model+40C copy when the clipped ray is shorter than500.
         // The shared endpoint is already rebuilt/clipped on every reuse==0 call.
@@ -748,24 +939,28 @@ HOOK_DEFINE_TRAMPOLINE(HudDraw) {
         re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;
         if(!read_aim_point(displayed_aim_point,actor,view_frame.load(std::memory_order_acquire),endpoint,&view,&projection)
             ||!re4::project_view_point(view,projection,endpoint,point))return;
-        re4::ViewMatrix4x4 ortho{};
-        const re4::ViewMatrix3x4 identity{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
-        native_ortho(&ortho,0,448,0,512,0,-100);native_projection(&ortho,1);
-        native_pose(&identity,0);native_matrix(0);
-        bool drawn=false;
-        if(style==1){const unsigned extent=2+size;drawn=draw_reticle_rect(point,extent,extent);}
-        else{
-            const unsigned length=6+size*2,thickness=size?2:1,gap=2+size;
-            const float offset=float(gap)+float(length)*0.5f;
-            drawn|=draw_reticle_rect({point.x-offset,point.y},length,thickness);
-            drawn|=draw_reticle_rect({point.x+offset,point.y},length,thickness);
-            drawn|=draw_reticle_rect({point.x,point.y-offset},thickness,length);
-            drawn|=draw_reticle_rect({point.x,point.y+offset},thickness,length);
+        if(options&32){
+            if(displayed_aligned_frame.load(std::memory_order_acquire)!=view_frame.load(std::memory_order_acquire)
+                ||std::fabs(point.x-256)>.01f||std::fabs(point.y-224)>.01f)return;
+            point={256,224}; // Qualified against the actual displayed view and native ray above.
         }
+        const bool drawn=draw_native_reticle(point,style,size);
         if(drawn)reticle_draw_count.fetch_add(1,std::memory_order_relaxed);
     }
 };
 #include "modern_move.inc"
+HOOK_DEFINE_TRAMPOLINE(RootDisplacement) {
+    static void Callback(void* actor,void* motion,unsigned flags,re4::ViewVec3* translation,re4::ViewVec3* rotation){
+        Orig(actor,motion,flags,translation,rotation);
+        if(!actor||actor!=unified_root_actor||!translation||!unified_scene(actor))return;
+        const auto* b=static_cast<const std::uint8_t*>(actor);
+        if(motion!=b+0x228&&motion!=*reinterpret_cast<void* const*>(b+0x320))return;
+        re4::ViewMatrix3x4 basis;std::memcpy(&basis,b+0x18,sizeof(basis));
+        re4::ViewVec3 redirected;
+        if(re4::unified_redirect_root(basis,*translation,unified_root_yaw,redirected))*translation=redirected;
+    }
+};
+
 
 HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
     static int Callback(void* actor, int mode) {
@@ -774,16 +969,31 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
         const auto flags=*reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags);
         const bool held=ours&&(bytes[0x115]==11?(flags&re4::kKnifeHeldMask):(flags&0x10));
         const bool modern=ours && modern_move_aim_active(actor);
-        const bool active = ours && (settings.analog_enabled || settings.gyro_enabled || modern) && bytes[0x114] == 0
+        const bool unified=ours&&settings.unified_controls&&held&&(bytes[0x115]==6||bytes[0x115]==11)&&unified_scene(actor);
+        const bool active = ours && (settings.analog_enabled || settings.gyro_enabled || modern || unified) && bytes[0x114] == 0
             && (bytes[0x115] == 6 || bytes[0x115] == 11 || bytes[0x115] == 15) && held;
         if (!active){
-            if(ours){gyro_session={};gyro_pending={};gyro.reset();}
+            if(ours){
+                gyro_session={};gyro_pending={};gyro.reset();
+                if(settings.unified_controls){
+                    unified_aim_session={};unified_look.reset();
+                    if(unified_update&&unified_update->actor==actor)unified_update->consumed=true;
+                }
+            }
             return Orig(actor, mode);
         }
         auto* pitch = reinterpret_cast<float*>(main_base + 0x1265A08);
         auto* yaw = reinterpret_cast<float*>(bytes + 0xB4);
         void* previous_input_actor = gyro_input_actor;
         gyro_input_actor = nullptr;
+        if(unified&&unified_update&&unified_update->actor==actor&&!unified_update->consumed&&unified_aim_allowed(actor)){
+            const auto d=unified_update->delta;unified_update->consumed=true;
+            if(unified_update->handoff){const float value=std::clamp(re4::unified_pitch_weight(unified_pitch),-1.f,1.f);pitch[0]=pitch[1]=value;gyro_input_actor=actor;}
+            *yaw=re4::gyro_yaw(*yaw,d.yaw);
+            const float delta=re4::unified_pitch_weight(d.pitch);
+            pitch[0]=re4::gyro_pitch(pitch[0],delta);pitch[1]=re4::gyro_pitch(pitch[1],delta);
+            if(d.yaw!=0||d.pitch!=0)gyro_input_actor=actor;
+        }
         // Apply once before native stick/weapon processing, retaining both
         // inputs and letting the caller update aim matrices normally.
         if (settings.gyro_enabled && gyro_aim_ready(actor)) {
@@ -791,14 +1001,18 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
             gyro_pending = {};
             const float old_yaw = *yaw, old_pitch = pitch[1];
             *yaw = re4::gyro_yaw(old_yaw, d.yaw);
-            pitch[0] = re4::gyro_pitch(pitch[0], d.pitch);
-            pitch[1] = re4::gyro_pitch(old_pitch, d.pitch);
+            const float gyro_pitch_delta=unified?re4::unified_pitch_weight(d.pitch):d.pitch;
+            pitch[0] = re4::gyro_pitch(pitch[0], gyro_pitch_delta);
+            pitch[1] = re4::gyro_pitch(old_pitch, gyro_pitch_delta);
             if (*yaw != old_yaw || pitch[1] != old_pitch) gyro_input_actor = actor;
             control.gyro_yaw = d.yaw; control.gyro_pitch = d.pitch;
         }else {gyro_pending={};gyro.reset();}
         auto* axes=reinterpret_cast<std::int32_t*>(main_base+0x124E9C8);
         const std::int32_t old_x=axes[0],old_y=axes[1];
-        if(settings.analog_enabled || modern){
+        auto* aim_directions=reinterpret_cast<std::uint32_t*>(main_base+0x124E9C8+0x14);
+        const auto old_aim_directions=*aim_directions;
+        if(unified){axes[0]=axes[1]=0;*aim_directions&=~15u;}
+        else if(settings.analog_enabled || modern){
             auto route=aim_route();
             if(modern)route.right=true;
             const auto shaped=re4::shape_aim_input(control.raw_lx,control.raw_ly,control.raw_rx,control.raw_ry,settings,route);
@@ -810,6 +1024,11 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
         // and cached aim matrices. Shape once before any of those consumers.
         const int result=Orig(actor,mode);
         axes[0]=old_x;axes[1]=old_y;
+        if(unified){
+            *aim_directions=(*aim_directions&~15u)|(old_aim_directions&15u);
+            if(unified_update&&unified_update->actor==actor&&unified_update->consumed&&!unified_update->walking
+                &&std::isfinite(pitch[1])&&std::fabs(pitch[1])<=1)unified_pitch=pitch[1]*1.57079632679f;
+        }
         gyro_input_actor=previous_input_actor;
         control.aim_calls=control.aim_calls+1;
         return result;
@@ -843,9 +1062,18 @@ extern "C" void exl_main(void*, void*) {
     native_pose=reinterpret_cast<decltype(native_pose)>(main_base+0x2507D0);
     native_matrix=reinterpret_cast<decltype(native_matrix)>(main_base+0x2511A0);
     native_rect=reinterpret_cast<decltype(native_rect)>(main_base+0x29D460);
+    native_gx_blend=reinterpret_cast<decltype(native_gx_blend)>(main_base+0x250EA0);
+    native_gx_format=reinterpret_cast<decltype(native_gx_format)>(main_base+0x251E90);
+    native_gx_begin=reinterpret_cast<decltype(native_gx_begin)>(main_base+0x24FB30);
+    native_gx_position=reinterpret_cast<decltype(native_gx_position)>(main_base+0x250BC0);
+    native_gx_color=reinterpret_cast<decltype(native_gx_color)>(main_base+0x24FD80);
+    native_gx_end=reinterpret_cast<decltype(native_gx_end)>(main_base+0x250060);
     publish_settings();
     exl::hook::Initialize();
     modern_move_install();
+    RootDisplacement::InstallAtOffset(0x2B8370);
+    CameraCalculate::InstallAtOffset(0xFDB0);
+    FinalLookAt::InstallAtOffset(0x279F70);
     FullPad::InstallAtFuncPtr(get_full);
     HandheldPad::InstallAtFuncPtr(get_handheld);
     DualPad::InstallAtFuncPtr(get_dual);

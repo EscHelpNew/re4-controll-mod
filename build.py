@@ -68,6 +68,10 @@ def tests():
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/modern_move_tests.cpp','source/input.cpp','-o',OUT/'modern_move_tests.exe'])
     native('modern_move_tests.exe')
+    for name in ('unified_tests','reticle_draw_tests'):
+        run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
+             'tests/'+name+'.cpp','source/input.cpp','-o',OUT/(name+'.exe')])
+        native(name+'.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
          'tests/overlay_ui_tests.cpp', 'source/settings.cpp', 'source/control_menu.cpp','source/profiles.cpp', '-o', OUT / 'overlay_ui_tests.exe'])

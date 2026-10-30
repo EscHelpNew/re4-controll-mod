@@ -16,7 +16,7 @@ int main(){
     assert(ids.size()==unsigned(ControlId::Count));
     // Missing, duplicated or misplaced entries would hide settings in both interfaces.
     const std::array<std::initializer_list<ControlId>,7> expected{{
-        {ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone},
+        {ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone,ControlId::UnifiedControls},
         {ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife},
         {ControlId::Gyro,ControlId::GyroSpeed,ControlId::GyroDeadzone,ControlId::GyroX,ControlId::GyroY,ControlId::InvertX,ControlId::InvertY},
         {ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson,ControlId::ThirdPersonDistance},
@@ -55,6 +55,9 @@ int main(){
         mapping|=std::strcmp(spec.label.english,"Button mapping")==0;
     }
     assert(camera_return && free_camera && mapping);
+    Settings unified;
+    assert(change_control(unified,ControlId::UnifiedControls,1) && unified.unified_controls);
+    assert(change_control(unified,ControlId::UnifiedControls,-1) && !unified.unified_controls);
     Settings framing;
     assert(!change_control(framing,ControlId::ThirdPersonDistance,-1));
     for(unsigned n=0;n<40;++n)change_control(framing,ControlId::ThirdPersonDistance,1);

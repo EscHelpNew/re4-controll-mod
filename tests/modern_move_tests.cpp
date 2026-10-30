@@ -98,6 +98,9 @@ int (*aiming_predicate)(void*)=native_aim;
 void test_ModernPlayerUpdate(void*);
 std::uint32_t test_ModernRoot(void*,void*);
 void test_ModernPose(void*,int);
+void* unified_root_actor=nullptr;float unified_root_yaw=0;bool test_unified_walk=false;
+void unified_player_update(void* actor,void(*original)(void*)){original(actor);}
+bool unified_walk_root(void*,float& yaw){yaw=-1.57079632679f;return test_unified_walk;}
 #include "../source/game/modern_move.inc"
 
 std::vector<unsigned> order;
@@ -183,6 +186,13 @@ void run(){
     // These installation helpers are compile-checked here; actual hook offsets
     // are checked against the verified image by module profile tests.
     assert(!modern_move_matches(nullptr,0));auto installer=&modern_move_install;(void)installer;
+    {
+        Fixture f;settings.unified_controls=true;f.actor[0x115]=1;control.raw_lx=1;control.raw_ly=0;
+        test_unified_walk=true;f.update();
+        assert(evaluation_count==0&&control.modern_move_steps==0&&control.modern_pose_steps==1);
+        assert(std::fabs(scalar(f.bones[17].data(),0xB4)+1.57079632679f)<1e-5f);
+        test_unified_walk=false;expected_local=0;f.update();assert(!modern_pose.pending());
+    }
     {
         Fixture f;settings.move_while_aiming=false;settings.move_while_knife=true;
         f.actor[0x115]=11;f.store(f.image,re4::profile::input_flags,std::uint64_t(0x800));

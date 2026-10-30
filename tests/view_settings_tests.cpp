@@ -16,6 +16,10 @@ void seal(Bytes& bytes){
 }
 int main(){
     using namespace re4;Settings s;Bytes bytes{};
+    s.unified_controls=true;
+    CHECK(encode_settings(s,bytes.data(),bytes.size()));
+    Settings unified;CHECK(decode_settings(bytes.data(),bytes.size(),unified) && unified.unified_controls);
+    s={};
     CHECK(s.third_person_distance==1);
     s.third_person_distance=1.35f;
     CHECK(encode_settings(s,bytes.data(),bytes.size()));
@@ -27,15 +31,17 @@ int main(){
     s.third_person_distance=2;CHECK(valid_settings(s));s={};
     CHECK(!s.first_person && !s.move_while_aiming && !s.move_while_knife
         && s.reticle==ReticleStyle::Off && s.reticle_size==ReticleSize::Small);
-    CHECK(encode_settings(s,bytes.data(),bytes.size()) && bytes[4]==10);
-    for(unsigned flags=0;flags<8;++flags)for(unsigned style=0;style<3;++style)for(unsigned size=0;size<3;++size){
+    CHECK(encode_settings(s,bytes.data(),bytes.size()) && bytes[4]==11);
+    for(unsigned flags=0;flags<16;++flags)for(unsigned style=0;style<3;++style)for(unsigned size=0;size<3;++size){
         s.first_person=flags&1;s.move_while_aiming=flags&2;s.move_while_knife=flags&4;
+        s.unified_controls=flags&8;
         s.reticle=static_cast<ReticleStyle>(style);s.reticle_size=static_cast<ReticleSize>(size);
         CHECK(encode_settings(s,bytes.data(),bytes.size()));
         CHECK(bytes[96]==style && bytes[97]==flags && bytes[98]==size);
         Settings decoded;CHECK(decode_settings(bytes.data(),bytes.size(),decoded));
         CHECK(decoded.first_person==s.first_person && decoded.move_while_aiming==s.move_while_aiming
-            && decoded.move_while_knife==s.move_while_knife && decoded.reticle==s.reticle && decoded.reticle_size==s.reticle_size);
+            && decoded.move_while_knife==s.move_while_knife && decoded.reticle==s.reticle && decoded.reticle_size==s.reticle_size
+            && decoded.unified_controls==s.unified_controls);
         CHECK(same_profile(s,decoded,ProfileDomain::Controls));
     }
     for(unsigned offset:{96,97,98,99,104,123}){
@@ -62,8 +68,14 @@ int main(){
     CHECK(decode_settings(bytes.data(),bytes.size(),migrated));
     CHECK(migrated.third_person_distance==1 && migrated.first_person && migrated.move_while_knife
         && migrated.reticle==ReticleStyle::Crosshair && migrated.camera_gain==0.4f);
+    CHECK(!migrated.unified_controls);
     for(unsigned offset=99;offset<124;++offset){auto bad=bytes;bad[offset]=1;seal(bad);CHECK(!decode_settings(bad.data(),bad.size(),migrated));}
+    // v10 retains distance but cannot opt into the new input behavior.
     s={};s.third_person_distance=1.35f;CHECK(encode_settings(s,bytes.data(),bytes.size()));
+    bytes[4]=10;seal(bytes);CHECK(decode_settings(bytes.data(),bytes.size(),migrated));
+    CHECK(migrated.third_person_distance==1.35f && !migrated.unified_controls);
+    bytes[97]|=8;seal(bytes);CHECK(!decode_settings(bytes.data(),bytes.size(),migrated));
+    CHECK(encode_settings(s,bytes.data(),bytes.size()));
     for(float invalid : {0.f,0.99f,2.01f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}){
         auto bad=bytes;std::memcpy(bad.data()+100,&invalid,4);seal(bad);
         Settings unchanged;unchanged.third_person_distance=1.5f;
@@ -73,5 +85,5 @@ int main(){
     CHECK(profile_kind(s,ProfileDomain::Graphics)==ProfileKind::Default);
     copy_profile(s,Settings{},ProfileDomain::Graphics);CHECK(s.first_person);
     copy_profile(s,Settings{},ProfileDomain::Controls);CHECK(!s.first_person);
-    std::puts("view settings: v10 distance, strict fields, native defaults, v8/v9 migration and profile domains PASS");
+    std::puts("view settings: v11 unified controls, distance, strict fields and legacy migration PASS");
 }

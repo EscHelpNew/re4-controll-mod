@@ -13,7 +13,7 @@ constexpr ControlSpec slider(ControlId id,Bilingual label,Bilingual help,float S
     return {id,ControlKind::Slider,label,help,field,nullptr,step,0,maximum};
 }
 constexpr std::array<ControlId,unsigned(ControlId::Count)-1> grouped_controls{{
-    ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone,
+    ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone,ControlId::UnifiedControls,
     ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife,
     ControlId::Gyro,ControlId::GyroSpeed,ControlId::GyroDeadzone,ControlId::GyroX,ControlId::GyroY,ControlId::InvertX,ControlId::InvertY,
     ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson,ControlId::ThirdPersonDistance,
@@ -21,7 +21,7 @@ constexpr std::array<ControlId,unsigned(ControlId::Count)-1> grouped_controls{{
     ControlId::ButtonMapping,
     ControlId::Profile,ControlId::Reset
 }};
-constexpr std::array<unsigned,unsigned(ControlGroup::Count)+1> group_offsets{{0,5,11,18,23,25,26,28}};
+constexpr std::array<unsigned,unsigned(ControlGroup::Count)+1> group_offsets{{0,6,12,19,24,26,27,29}};
 }
 const std::array<ControlGroupSpec,unsigned(ControlGroup::Count)>& control_groups(){
     static constexpr std::array<ControlGroupSpec,unsigned(ControlGroup::Count)> groups{{
@@ -72,11 +72,11 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
             {"Turn, walk, look and aim proportionally\nto stick deflection. Native speed is the\nmaximum. Gyro has its own switch.",
              "Плавные повороты, ходьба, камера и прицел\nпо величине отклонения стика. Максимум —\nштатная скорость. Гироскоп отдельно."},&Settings::analog_enabled),
         slider(ControlId::Turn,{"Turn speed","Скорость поворота"},
-            {"Character turning with the left stick.\n0: no turning; 1: native maximum.\nThe selected curve shapes the response.",
-             "Поворот персонажа левым стиком.\n0: без поворота; 1: штатный максимум.\nОтклик зависит от выбранной кривой."},&Settings::turn_gain,0.1f,1),
-        slider(ControlId::Camera,{"Camera sensitivity","Чувствительность камеры"},
-            {"Right-stick look outside firearm aiming.\nA lower value gives a gentler response.\n1 keeps the native full look range.",
-             "Обзор правым стиком вне прицеливания.\nМеньше значение — мягче отклик камеры.\n1: полный штатный диапазон обзора."},&Settings::camera_gain,0.1f,1),
+            {"Classic controls: left-stick turn speed.\nUnified sticks use Right-stick sensitivity.\n0: no classic turning; 1: native maximum.",
+             "Классический поворот левым стиком.\nЕдиные стики: чувствительность правого стика.\n0: без классических поворотов; 1: максимум."},&Settings::turn_gain,0.1f,1),
+        slider(ControlId::Camera,{"Right-stick sensitivity","Чувствительность правого стика"},
+            {"Unified sticks: one look/aim sensitivity.\nClassic controls: look-around sensitivity.\nA lower value gives a gentler response.",
+             "Единые стики: общий обзор и прицел.\nКлассическое управление: скорость обзора.\nУменьшите значение для мягкого отклика."},&Settings::camera_gain,0.1f,1),
         slider(ControlId::CameraReturn,{"Camera return speed","Скорость возврата камеры"},
             {"Return to centre after releasing the stick.\n1: native return; 0: hold the look angle.\nFree camera has no automatic return.",
              "Возврат камеры при отпускании стика.\n1: штатный; 0: удерживать угол обзора.\nСвободная камера не возвращается сама."},&Settings::camera_return_speed,0.1f,1),
@@ -90,17 +90,17 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
             {"Choose Default, RE9 or last Custom controls.\nA: open the profile list. Edits save Custom.\nGraphics and calibration are preserved.",
              "По умолчанию / пользовательский.\nИзменения сохраняются в пользовательский.\nГрафика и калибровка сохраняются."}),
         slider(ControlId::AimX,{"Left-stick aim X","Прицел левым стиком X"},
-            {"Horizontal aiming from the stick.\n0: disabled; 1: native maximum.\nGyro sensitivity is independent.",
-             "Прицел влево и вправо от стика.\n0: выключено; 1: штатный максимум.\nЧувствительность гироскопа отдельно."},&Settings::aim_gain_x,0.1f,1),
+            {"Classic controls: left-stick aim X.\nUnified sticks use the left stick to move.\nGyro sensitivity is independent.",
+             "Классическое управление: прицел по X.\nПри единых стиках левый стик двигает.\nЧувствительность гироскопа отдельно."},&Settings::aim_gain_x,0.1f,1),
         slider(ControlId::AimY,{"Left-stick aim Y","Прицел левым стиком Y"},
-            {"Vertical aiming from the stick.\n0: disabled; 1: native maximum.\nDoes not limit vertical gyro aiming.",
-             "Прицел вверх и вниз от стика.\n0: выключено; 1: штатный максимум.\nНе ограничивает вертикальный гироскоп."},&Settings::aim_gain_y,0.1f,1),
+            {"Classic controls: left-stick aim Y.\nUnified sticks use the left stick to move.\nDoes not limit vertical gyro aiming.",
+             "Классическое управление: прицел по Y.\nПри единых стиках левый стик двигает.\nВертикальный гироскоп не ограничивается."},&Settings::aim_gain_y,0.1f,1),
         slider(ControlId::RightAimX,{"Right-stick aim X","Прицел правым стиком X"},
-            {"Horizontal right-stick aiming speed.\nIndependent from normal camera sensitivity.\nUses the right deadzone and chosen curve.",
-             "Горизонтальный прицел правым стиком.\nОтдельно от чувствительности камеры.\nУчитывает правую мёртвую зону и кривую."},&Settings::right_aim_gain_x,0.05f,1),
+            {"Classic controls: horizontal aiming speed.\nUnified sticks use Right-stick sensitivity\nfor both looking and aiming instead.",
+             "Классическое управление: прицел по X.\nЕдиные стики используют чувствительность\nправого стика для обзора и прицела."},&Settings::right_aim_gain_x,0.05f,1),
         slider(ControlId::RightAimY,{"Right-stick aim Y","Прицел правым стиком Y"},
-            {"Vertical right-stick aiming speed.\n0: disabled; 1: native maximum.\nGyro still adds motion independently.",
-             "Вертикальный прицел правым стиком.\n0: выключено; 1: штатный максимум.\nГироскоп дополняет движение независимо."},&Settings::right_aim_gain_y,0.05f,1),
+            {"Classic controls: vertical aiming speed.\nUnified sticks use Right-stick sensitivity.\nGyro still adds motion independently.",
+             "Классическое управление: прицел по Y.\nЕдиные стики используют чувствительность\nправого стика. Гироскоп отдельно."},&Settings::right_aim_gain_y,0.05f,1),
         slider(ControlId::LeftDeadzone,{"Left deadzone","Мёртвая зона левого стика"},
             {"An idle area around the stick centre.\nIncrease it if the left stick drifts.\nDefault: 0.05.",
              "Область около центра без реакции.\nУвеличьте при дрейфе левого стика.\nПо умолчанию: 0.05."},&Settings::left_deadzone,0.01f,0.95f),
@@ -147,6 +147,9 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
             {"1.00: original shoulder view. Larger values\nshow more space around Leon. Wall collision\nstays active. Not used in first person/scopes.",
              "1.00: штатный вид из-за плеча. Увеличьте,\nчтобы Леон меньше закрывал обзор. Стены\nучитываются. Не влияет на вид от глаз/оптику."},
              &Settings::third_person_distance,nullptr,0.05f,1,2},
+        toggle(ControlId::UnifiedControls,{"Unified sticks","Единое управление стиками"},
+            {"Left stick moves; right stick turns and looks.\nOne right-stick sensitivity for walking/aiming.\nEnabled in RE9. Classic aim gains apply when off.",
+             "Левый стик двигает, правый поворачивает.\nОбщая чувствительность обзора и прицела.\nВ RE9 включено. Выкл.: раздельные настройки."},&Settings::unified_controls),
         {ControlId::Reset,ControlKind::Action,{"Reset settings","Сбросить настройки"},
             {"Restore defaults: English, linear curve,\n0.05 deadzones, native stick speeds,\ngyro off and both gyro inversions on.",
              "Вернуть настройки: английский, линейная\nкривая, мёртвые зоны 0.05, гироскоп выкл.,\nобе инверсии вкл., штатные скорости."}}
@@ -255,8 +258,8 @@ const char* profile_name(ProfileKind kind,Language language){
 }
 const char* control_profile_help(ProfileKind kind,Language language){
     if(kind==ProfileKind::RE9)return Bilingual{
-        "RE9-inspired view, moving aim/knife, crosshair.\nUse RE4 default controls. Hold L3 to run;\nY reloads while aiming. No crouch/parry/heal.",
-        "Камера RE9, движение с прицелом/ножом, прицел.\nНужна штатная раскладка RE4. Бег: держать L3.\nY: зарядить с ZL. Без приседания/парирования."}.get(language);
+        "Shared right-stick look/aim, moving left stick.\nOriginal A/B/X/Y and PLUS/MINUS.\nHold L3 to run; native RE4 mechanics remain.",
+        "Правый стик: обзор и прицел. Левый: движение.\nA/B/X/Y и PLUS/MINUS как в исходной игре.\nБег: держать L3. Механики исходной RE4."}.get(language);
     if(kind==ProfileKind::Custom)return Bilingual{
         "Restore your last edited controls.\nChoosing a built-in profile keeps this copy.\nEdit any control setting to create Custom.",
         "Вернуть последние пользовательские настройки.\nГотовые профили сохраняют эту копию.\nДля создания измените любой параметр."}.get(language);

@@ -144,7 +144,7 @@ HOOK_DEFINE_TRAMPOLINE(ModernPlayerUpdate) {
         ++modern_epoch;modern_root_done=modern_stepped=modern_pose_done=false;
         control.modern_move_status=(settings.move_while_aiming||settings.move_while_knife)?1:0;
         control.modern_move_distance=0;
-        Orig(actor);modern_update_actor=previous;
+        unified_player_update(actor,+[](void* value){Orig(value);});modern_update_actor=previous;
     }
 };
 HOOK_DEFINE_TRAMPOLINE(ModernRoot) {
@@ -153,22 +153,34 @@ HOOK_DEFINE_TRAMPOLINE(ModernRoot) {
             modern_root_done=true;
             if(settings.move_while_aiming||settings.move_while_knife)modern_stepped=modern_move_prepare(actor);
         }
-        return Orig(actor,flag);
+        const auto previous_root=unified_root_actor;const auto previous_yaw=unified_root_yaw;
+        float rotation=0;
+        unified_root_actor=unified_walk_root(actor,rotation)?actor:nullptr;unified_root_yaw=rotation;
+        const auto result=Orig(actor,flag);
+        unified_root_actor=previous_root;unified_root_yaw=previous_yaw;
+        return result;
     }
 };
 HOOK_DEFINE_TRAMPOLINE(ModernPose) {
     static void Callback(void* actor,int flag){
-        if(actor&&actor==modern_update_actor&&flag==0&&modern_stepped&&!modern_pose_done){
+        const bool native_walk=actor&&actor==unified_root_actor&&settings.unified_controls;
+        if(actor&&actor==modern_update_actor&&flag==0&&(modern_stepped||native_walk)&&!modern_pose_done){
             modern_pose_done=true;
             re4::ModernMoveIdentity owner;std::array<re4::ModernMoveBone,9> bones;
-            if(modern_native.evaluate&&modern_native.rotation&&modern_native.position&&modern_native.scale&&modern_native.copy_matrix
-               &&modern_move_collect(actor,owner,bones)&&owner==modern_bound_owner&&modern_pose.begin(owner,bones)){
+            if((native_walk||modern_native.evaluate)&&modern_native.rotation&&modern_native.position&&modern_native.scale&&modern_native.copy_matrix
+               &&modern_move_collect(actor,owner,bones)&&(native_walk||owner==modern_bound_owner)&&modern_pose.begin(owner,bones)){
                 re4::ModernMoveCursorScope cursors(bones);
                 if(!cursors.valid()){modern_pose.rollback();Orig(actor,flag);return;}
-                modern_cycle.motion().set<std::uint32_t>(0x58,modern_cycle.motion().get<std::uint32_t>(0x58)&~(1u<<27));
-                modern_native.evaluate(actor,modern_cycle.motion().data());
+                float lower_yaw=modern_lower_yaw;
+                if(native_walk){
+                    const auto left=re4::modern_move_disk(re4::shape_axis(control.raw_lx,settings.left_deadzone,1,settings.stick_curve),re4::shape_axis(control.raw_ly,settings.left_deadzone,1,settings.stick_curve));
+                    lower_yaw=std::remainder(std::atan2(-left.x,left.z)-(static_cast<const std::uint8_t*>(actor)[0x115]==2?3.14159265359f:0),6.28318530718f);
+                }else{
+                    modern_cycle.motion().set<std::uint32_t>(0x58,modern_cycle.motion().get<std::uint32_t>(0x58)&~(1u<<27));
+                    modern_native.evaluate(actor,modern_cycle.motion().data());
+                }
                 cursors.restore(); // Before matrix helpers, native world/IK and every rollback path.
-                bones[0].local[4]+=modern_lower_yaw;
+                bones[0].local[4]+=lower_yaw;
                 bool finite=true;for(const auto& bone:bones)for(unsigned i=0;i<9;++i)finite=finite&&std::isfinite(bone.local[i]);
                 if(finite){
                     for(const auto& bone:bones){

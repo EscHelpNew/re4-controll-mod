@@ -20,7 +20,8 @@ inline ReticleMarks reticle_marks(ReticleStyle style,ReticleSize extent){
     add(256,224-offset,thickness,length);add(256,224+offset,thickness,length);
     return result;
 }
-constexpr unsigned kReticlePreviewWhite=0xFFFFFF;
+// Packed ARGB, matching the game's alpha128 marker over an opaque target.
+constexpr unsigned kReticlePreviewWhite=0x80FFFFFF;
 // A small target scene, using the same logical rectangles as the native HUD.
 // Magnification is 2x at the standard720p display scale, preserving HUD aspect.
 template<class Draw> bool draw_reticle_preview(const Settings& settings,int x,int y,int width,int height,Draw draw){
@@ -28,7 +29,7 @@ template<class Draw> bool draw_reticle_preview(const Settings& settings,int x,in
     auto fill=[&](int left,int top,int w,int h,unsigned color){
         const int right=std::min(x+width,left+w),bottom=std::min(y+height,top+h);
         left=std::max(x,left);top=std::max(y,top);
-        if(right>left && bottom>top)draw(left,top,right-left,bottom-top,color);
+        if(right>left && bottom>top)draw(left,top,right-left,bottom-top,color>0xFFFFFF?color:color|0xFF000000u);
     };
     fill(x,y,width,height,0x252A25);
     fill(x,y,width/5,height,0x30362D);

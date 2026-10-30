@@ -26,17 +26,12 @@ Settings re9_profile() {
     settings.third_person_distance = 1.35f;
     settings.move_while_aiming = true;
     settings.move_while_knife = true;
+    settings.unified_controls = true;
     settings.reticle = ReticleStyle::Crosshair;
     settings.aim_gain_x = 0;
     settings.aim_gain_y = 0;
     // Physical Switch sources -> actions in RE4's native default layout.
-    settings.button_map[0] = 1;   // A -> B: cancel / quick turn.
-    settings.button_map[1] = 3;   // B -> Y: interact / confirm.
-    settings.button_map[2] = 10;  // X -> PLUS: inventory.
-    settings.button_map[3] = 1;   // Y -> B: reload while aiming.
     settings.button_map[4] = 1;   // L3 -> B: hold run.
-    settings.button_map[10] = 11; // PLUS -> MINUS: pause.
-    settings.button_map[11] = 2;  // MINUS -> X: map.
     return settings;
 }
 void copy_profile(Settings& destination, const Settings& source, ProfileDomain domain) {

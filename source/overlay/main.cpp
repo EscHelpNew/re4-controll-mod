@@ -58,7 +58,7 @@ public:
             renderer->drawString(tr("Reticle preview (x2)","Образец прицела (x2)"),false,20,help_y_+78,16,a(tsl::style::color::ColorDescription));
             re4::draw_reticle_preview(settings,20,help_y_+105,tsl::cfg::FramebufferWidth-40,130,
                 [&](int x,int y,int w,int h,unsigned rgb){
-                    const u16 color=u16((rgb>>20)&15)|u16((rgb>>12)&15)<<4|u16((rgb>>4)&15)<<8|0xf000;
+                    const u16 color=u16((rgb>>20)&15)|u16((rgb>>12)&15)<<4|u16((rgb>>4)&15)<<8|u16((rgb>>28)&15)<<12;
                     renderer->drawRect(x,y,w,h,a(color));
                 });
             if(settings.reticle==re4::ReticleStyle::Off)renderer->drawString(tr("Off","Выключен"),false,32,help_y_+130,16,a(tsl::style::color::ColorDescription));

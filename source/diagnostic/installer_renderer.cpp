@@ -257,7 +257,7 @@ void InstallerRenderer::draw(const InstallerModel& m){
         p.text(tr(m,"RETICLE PREVIEW","ОБРАЗЕЦ ПРИЦЕЛА"),862,360,16,muted);
         p.text(tr(m,"Enlarged x2","Увеличено x2"),862,386,18,cream);
         draw_reticle_preview(m.settings,862,412,344,164,[&](int x,int y,int w,int h,unsigned rgb){
-            p.fill({x,y,w,h},{Uint8(rgb>>16),Uint8(rgb>>8),Uint8(rgb),255});
+            p.fill({x,y,w,h},{Uint8(rgb>>16),Uint8(rgb>>8),Uint8(rgb),Uint8(rgb>>24)});
         });
         p.border({862,412,344,164},line);
         if(m.settings.reticle==ReticleStyle::Off)p.text(tr(m,"Reticle is off","Прицел выключен"),876,433,18,cream,312);

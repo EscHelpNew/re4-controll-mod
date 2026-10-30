@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 (unreleased)
+
+- Add opt-in unified sticks, enabled by the RE9 profile: left-stick movement and right-stick turn/look with one sensitivity during walking and aiming.
+- Restore original A/B/X/Y and PLUS/MINUS actions in the RE9 preset; retain the existing D-pad mapping.
+- Keep native motion and collision budgets while redirecting movement, and drain look input across inactive contexts.
+- Center supported firearm aiming on the fresh native weapon ray before generating the camera frustum.
+- Draw the custom reticle at half opacity, including both live previews.
+- Migrate settings to wirev11/shared ABI15; older saved profiles retain classic controls until explicitly changed.
+
 ## 0.8.0 (unreleased)
 
 - Add a separate RE9-inspired controls profile and explicit Default / RE9 / Custom selection in both interfaces.

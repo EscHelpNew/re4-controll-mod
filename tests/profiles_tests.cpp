@@ -176,6 +176,7 @@ void re9_recipe_switch_and_restart() {
     CHECK(active.camera_return_speed == 0 && !active.first_person);
     CHECK(active.third_person_distance == 1.35f);
     CHECK(active.move_while_aiming && active.move_while_knife);
+    CHECK(active.unified_controls);
     CHECK(active.reticle == ReticleStyle::Crosshair && active.reticle_size == ReticleSize::Small);
     CHECK(active.aim_gain_x == 0 && active.aim_gain_y == 0);
     CHECK(active.right_aim_gain_x == 1 && active.right_aim_gain_y == 1);
@@ -183,8 +184,9 @@ void re9_recipe_switch_and_restart() {
     CHECK(active.turn_gain == 1 && active.camera_gain == 1 && active.movement_gain == 1);
     CHECK(active.left_deadzone == 0.05f && active.right_deadzone == 0.05f && active.gyro_deadzone_dps == 0.5f);
     CHECK(active.invert_x && active.invert_y && active.remap_enabled && active.stick_curve == StickCurve::Linear);
-    const ButtonMap expected{1,3,10,1,1,5,6,7,8,9,11,2,12,13,14,15,16,17,18,19};
+    const ButtonMap expected{0,1,2,3,1,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
     CHECK(active.button_map == expected);
+    for(unsigned button : {0u,1u,2u,3u,10u,11u,12u,13u,14u,15u})CHECK(active.button_map[button]==button);
     CHECK(active.texture_filtering == TextureFilter::Aniso4 && active.draw_distance_scale == 1.5f);
     CHECK(active.language == Language::Russian && active.calibration_request == 17);
     CHECK(active.gyro_bias_x == 1.2f && active.gyro_bias_y == -2.1f);

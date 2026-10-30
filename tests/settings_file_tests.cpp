@@ -49,7 +49,7 @@ int main() {
     FILE* current=std::fopen(path,"rb");assert(current);
     assert(std::fread(bytes,1,sizeof(bytes),current)==re4::kSettingsBytes);
     assert(std::fgetc(current)==EOF && std::fclose(current)==0);
-    assert(bytes[4]==10);
+    assert(bytes[4]==11);
     re4::Settings migrated;
     assert(re4::load_settings_file(path,migrated) && migrated.free_camera && migrated.button_map[0]==re4::kUnboundButton);
     current=std::fopen(path,"wb");assert(current);

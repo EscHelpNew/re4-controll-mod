@@ -7,11 +7,12 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <cstring>
-unsigned white_pixels(const char* path){
+unsigned white_pixels(const char* path,bool translucent=false){
     auto* image=SDL_LoadBMP(path);assert(image);unsigned count=0;
     for(int y=412;y<576;++y)for(int x=862;x<1206;++x){
         Uint32 pixel=0;std::memcpy(&pixel,static_cast<const unsigned char*>(image->pixels)+y*image->pitch+x*image->format->BytesPerPixel,image->format->BytesPerPixel);
-        Uint8 r,g,b;SDL_GetRGB(pixel,image->format,&r,&g,&b);if(r==255&&g==255&&b==255)++count;
+        Uint8 r,g,b;SDL_GetRGB(pixel,image->format,&r,&g,&b);
+        if(translucent?(r>=120&&r<=190&&g>=120&&g<=190&&b>=120&&b<=190):(r==255&&g==255&&b==255))++count;
     }
     SDL_FreeSurface(image);return count;
 }
@@ -63,7 +64,8 @@ int main(){
                 model.settings.reticle=static_cast<re4::ReticleStyle>(style);model.settings.reticle_size=static_cast<re4::ReticleSize>(size);
                 model.selected=size%2;renderer.draw(model);
                 const auto file="build/installer-reticle-"+std::string(language==re4::Language::English?"en":"ru")+"-"+std::to_string(style)+"-"+std::to_string(size)+".bmp";
-                assert(renderer.save_preview(file.c_str()));const unsigned pixels=white_pixels(file.c_str());
+                assert(renderer.save_preview(file.c_str()));const unsigned pixels=white_pixels(file.c_str(),style!=0);
+                if(style!=0)assert(white_pixels(file.c_str())==0);
                 assert(style==0?pixels==0:pixels>last);last=pixels;
             }
         }

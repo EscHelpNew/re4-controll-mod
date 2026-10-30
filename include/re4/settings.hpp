@@ -47,6 +47,7 @@ struct Settings {
     bool first_person = false;
     bool move_while_aiming = false;
     bool move_while_knife = false;
+    bool unified_controls = false;
     ReticleStyle reticle = ReticleStyle::Off;
     ReticleSize reticle_size = ReticleSize::Small;
 };
