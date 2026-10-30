@@ -3,6 +3,7 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
 #include "re4/installer_ui.hpp"
+#include "re4/reticle_preview.hpp"
 #include "re4/version.hpp"
 #include "re4/input.hpp"
 #include <algorithm>
@@ -252,6 +253,15 @@ void InstallerRenderer::draw(const InstallerModel& m){
         p.text(tr(m,"NATIVE BY DEFAULT","ШТАТНАЯ ПО УМОЛЧАНИЮ"),862,386,16,muted,344);
         p.text(tr(m,"Change settings manually.\nReset restores graphics alone.\n\nFiltering and AA take effect\nafter restarting Resident Evil 4.",
                     "Изменяйте параметры вручную.\nСброс затрагивает только графику.\n\nФильтрация и AA применяются после\nперезапуска Resident Evil 4."),862,420,19,cream,344,true,6);
+    }else if(m.page==InstallerPage::ControlGroup && (m.selected_control()==ControlId::Reticle || m.selected_control()==ControlId::ReticleSize)){
+        p.text(tr(m,"RETICLE PREVIEW","ОБРАЗЕЦ ПРИЦЕЛА"),862,360,16,muted);
+        p.text(tr(m,"Enlarged x2","Увеличено x2"),862,386,18,cream);
+        draw_reticle_preview(m.settings,862,412,344,164,[&](int x,int y,int w,int h,unsigned rgb){
+            p.fill({x,y,w,h},{Uint8(rgb>>16),Uint8(rgb>>8),Uint8(rgb),255});
+        });
+        p.border({862,412,344,164},line);
+        if(m.settings.reticle==ReticleStyle::Off)p.text(tr(m,"Reticle is off","Прицел выключен"),876,433,18,cream,312);
+        p.text(tr(m,"Changes with shape and size","Меняется вместе с видом и размером"),862,585,15,muted,344);
     }else if(m.page==InstallerPage::Mapping || m.page==InstallerPage::MappingTargets){
         p.text(tr(m,"PHYSICAL OVERLAY CONTROLS","ФИЗИЧЕСКИЕ КНОПКИ ОВЕРЛЕЯ"),862,386,16,muted,344);
         p.text(tr(m,"Overlay buttons stay unchanged.\nOpen it to recover any mapping.\n\nHOME/Capture are system buttons\nand cannot be mapped in RE4.",

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1 (unreleased)
+
+- Group control settings into seven submenus in installer and overlay.
+- Keep language selection on the main menu only.
+- Show a live target-picture reticle preview for shape and size, including Off.
+- Verify every preview shape against actual native HUD rectangles and rendered pixels.
+- Include the startup hook-pool capacity and boundary fix confirmed on hardware.
+
 ## 0.7.0 (unreleased)
 
 - Fix startup abort at hook22: enlarge the staged trampoline pool to40 slots,

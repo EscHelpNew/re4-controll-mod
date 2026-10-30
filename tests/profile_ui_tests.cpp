@@ -57,6 +57,8 @@ int main(){
     assert(settings.texture_filtering==TextureFilter::Bilinear && profile->value=="Пользовательский");
     tsl::goBack();settings.language=Language::English;
     assert(row(root,"Controls")->click(HidNpadButton_A));
+    auto* groups=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+    assert(row(groups,"Profiles and reset")->click(HidNpadButton_A));
     auto* controls=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
     for(auto* e:static_cast<tsl::elm::List*>(controls->content())->children)
         if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e))assert(item->label!="Graphics");
@@ -72,26 +74,36 @@ int main(){
     auto* controls_gui=tsl::navigation.back().get();
     const auto profile_text_sets=profile->text_sets;
     for(unsigned frame=0;frame<31;++frame){
-        controls_gui->update();assert(row(controls,note)->label==note);
+        controls_gui->update();assert(controls->subtitle==note);
         assert(profile->text_sets==profile_text_sets); // Tesla resets marquee text on setText.
     }
     writable=true;
+    tsl::goBack();
+    assert(row(groups,"Camera")->click(HidNpadButton_A));
+    controls=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
     auto* first_person_toggle=dynamic_cast<tsl::elm::ToggleListItem*>(row(controls,"First-person view"));
+    assert(first_person_toggle);first_person_toggle->changed(true);tsl::goBack();
+    assert(row(groups,"Aiming")->click(HidNpadButton_A));
+    controls=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
     auto* aim_move_toggle=dynamic_cast<tsl::elm::ToggleListItem*>(row(controls,"Move while aiming"));
     auto* knife_move_toggle=dynamic_cast<tsl::elm::ToggleListItem*>(row(controls,"Move with knife"));
-    assert(first_person_toggle && aim_move_toggle && knife_move_toggle);
-    first_person_toggle->changed(true);aim_move_toggle->changed(true);knife_move_toggle->changed(true);
+    assert(aim_move_toggle && knife_move_toggle);
+    aim_move_toggle->changed(true);knife_move_toggle->changed(true);tsl::goBack();
+    assert(row(groups,"Reticle")->click(HidNpadButton_A));
+    controls=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
     assert(row(controls,"Reticle")->click(HidNpadButton_Right));
     assert(settings.first_person && settings.move_while_aiming && settings.move_while_knife && settings.reticle==ReticleStyle::Dot);
     assert(files.at(overlay_storage::settings_path).reticle==ReticleStyle::Dot);
+    tsl::goBack();assert(row(groups,"Profiles and reset")->click(HidNpadButton_A));
+    controls=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);profile=row(controls,"Controls profile");
     assert(profile->click(HidNpadButton_A));
     assert(!settings.first_person && !settings.move_while_aiming && !settings.move_while_knife && settings.reticle==ReticleStyle::Off);
     assert(profile->click(HidNpadButton_A));
     assert(settings.first_person && settings.move_while_aiming && settings.move_while_knife && settings.reticle==ReticleStyle::Dot);
-    tsl::goBack();delete root;
+    tsl::goBack();tsl::goBack();delete root;
 
-    InstallerModel model;model.page=InstallerPage::Controls;
-    model.selected=unsigned(ControlId::Profile);
+    InstallerModel model;model.page=InstallerPage::ControlGroup;model.control_group=ControlGroup::Profiles;
+    model.selected=0;
     assert(model.item_value(model.selected)=="Default");
     assert(model.handle(UiEvent::Confirm)==InstallerAction::CustomControls);
     model.settings.camera_gain=0.3f;

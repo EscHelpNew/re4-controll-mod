@@ -35,9 +35,13 @@ const std::array<HomeItem,9>& installer_home_items(){
 }
 unsigned InstallerModel::item_count()const{
     if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
+    if(page==InstallerPage::ControlGroup)return control_group_count(control_group);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
     if(page==InstallerPage::MappingTargets)return kButtonCount+1;
-    return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlId::Count):page==InstallerPage::Updates?2:0;
+    return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlGroup::Count):page==InstallerPage::Updates?2:0;
+}
+ControlId InstallerModel::selected_control()const{
+    return page==InstallerPage::ControlGroup?control_group_item(control_group,selected):ControlId::Count;
 }
 InstallerAction InstallerModel::handle(UiEvent event){
     profile_note.clear();
@@ -45,7 +49,12 @@ InstallerAction InstallerModel::handle(UiEvent event){
     if(event==UiEvent::Back){
         if(page==InstallerPage::Graphics){page=graphics_origin;selected=page==InstallerPage::Home?home_selected:controls_selected;return InstallerAction::None;}
         if(page==InstallerPage::MappingTargets){page=InstallerPage::Mapping;selected=mapping_source+1;return InstallerAction::None;}
-        if(page==InstallerPage::Mapping){page=InstallerPage::Controls;selected=controls_selected;return InstallerAction::None;}
+        if(page==InstallerPage::Mapping || page==InstallerPage::ControlGroup){
+            page=InstallerPage::Controls;
+            selected=unsigned(control_group)<unsigned(ControlGroup::Count)?unsigned(control_group):0;
+            controls_selected=selected;return InstallerAction::None;
+        }
+        if(page==InstallerPage::Controls){page=InstallerPage::Home;selected=3;return InstallerAction::None;}
         if(page==InstallerPage::Home)return InstallerAction::Exit;
         const bool cancel=page==InstallerPage::Updates && (update.stage==UpdateStage::Checking
             || update.stage==UpdateStage::Downloading || update.stage==UpdateStage::Installing);
@@ -105,23 +114,32 @@ InstallerAction InstallerModel::handle(UiEvent event){
         return change_graphics(settings,spec.id,event==UiEvent::Left?-1:1)?InstallerAction::SaveSettings:InstallerAction::None;
     }
     if(page==InstallerPage::Controls){
-        if(selected>=count)selected=0;
-        const auto& spec=control_specs()[selected];
+        if(event==UiEvent::Confirm && selected<count){
+            controls_selected=selected;control_group=static_cast<ControlGroup>(selected);
+            page=control_group==ControlGroup::Mapping?InstallerPage::Mapping:InstallerPage::ControlGroup;
+            selected=0;
+        }
+        return InstallerAction::None;
+    }
+    if(page==InstallerPage::ControlGroup){
+        const auto id=selected_control();
+        if(id==ControlId::Count)return InstallerAction::None;
+        const auto& spec=control_spec(id);
         if(spec.id==ControlId::Profile){
             if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
             return profile_kind(settings,ProfileDomain::Controls)==ProfileKind::Default?
                 InstallerAction::CustomControls:InstallerAction::DefaultControls;
         }
         if(spec.id==ControlId::ButtonMapping){
-            if(event==UiEvent::Confirm){controls_selected=selected;page=InstallerPage::Mapping;selected=0;}
+            if(event==UiEvent::Confirm){page=InstallerPage::Mapping;selected=0;}
             return InstallerAction::None;
         }
         if(spec.kind==ControlKind::Action && event!=UiEvent::Confirm)return InstallerAction::None;
         const bool arrows=event==UiEvent::Left||event==UiEvent::Right;
         if(!arrows && !(event==UiEvent::Confirm && spec.kind!=ControlKind::Slider))return InstallerAction::None;
-        if(change_control(settings,spec.id,event==UiEvent::Left?-1:1))return InstallerAction::SaveSettings;
-        return InstallerAction::None;
+        return change_control(settings,spec.id,event==UiEvent::Left?-1:1)?InstallerAction::SaveSettings:InstallerAction::None;
     }
+    if(page!=InstallerPage::Home || selected>=count)return InstallerAction::None;
     if(selected==7 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
         change_control(settings,ControlId::Language,1);return InstallerAction::SaveSettings;
     }
@@ -136,6 +154,7 @@ InstallerAction InstallerModel::handle(UiEvent event){
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
+    if(page==InstallerPage::ControlGroup)return control_group_spec(control_group).label.get(settings.language);
     if(page==InstallerPage::Graphics)return Bilingual{"GRAPHICS","ГРАФИКА"}.get(settings.language);
     if(page==InstallerPage::Mapping)return Bilingual{"BUTTON MAPPING","НАЗНАЧЕНИЕ КНОПОК"}.get(settings.language);
     if(page==InstallerPage::MappingTargets)return Bilingual{"CHOOSE GAME BUTTON","ВЫБОР КНОПКИ ИГРЫ"}.get(settings.language);
@@ -179,7 +198,7 @@ const char* InstallerModel::status_text()const{
 }
 const char* InstallerModel::selected_help()const{
     if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
-        || (page==InstallerPage::Controls && selected==unsigned(ControlId::Profile))))return profile_note.c_str();
+        || selected_control()==ControlId::Profile))return profile_note.c_str();
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_help(selected,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);
@@ -191,11 +210,18 @@ const char* InstallerModel::selected_help()const{
         return Bilingual{"Check the latest public GitHub release,\nthen choose Download / install.\nSettings are kept. No token is needed.",
             "Проверьте последний публичный релиз,\nзатем выберите «Скачать / установить».\nНастройки сохраняются. Токен не нужен."}.get(settings.language);
     }
-    if(page==InstallerPage::Controls)return control_spec(static_cast<ControlId>(selected)).help.get(settings.language);
+    if(page==InstallerPage::Controls)return control_group_spec(static_cast<ControlGroup>(selected)).help.get(settings.language);
+    if(page==InstallerPage::ControlGroup){
+        const auto id=selected_control();
+        return id==ControlId::Count?"":control_spec(id).help.get(settings.language);
+    }
     return Bilingual{"ZL: gyro preview  A: gyro on/off\nY: calibrate  X: reset preview",
                      "ZL: проверка  A: гироскоп вкл./выкл.\nY: калибровать  X: сбросить прицел"}.get(settings.language);
 }
 std::string InstallerModel::item_label(unsigned index)const{
+    if(index>=item_count())return "";
+    if(page==InstallerPage::Controls)return control_group_spec(static_cast<ControlGroup>(index)).label.get(settings.language);
+    if(page==InstallerPage::ControlGroup)return control_spec(control_group_item(control_group,index)).label.get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_label(index,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_label(index,settings.language);
@@ -205,13 +231,15 @@ std::string InstallerModel::item_label(unsigned index)const{
     return control_spec(static_cast<ControlId>(index)).label.get(settings.language);
 }
 std::string InstallerModel::item_value(unsigned index)const{
+    if(index>=item_count())return "";
+    if(page==InstallerPage::Controls)return "";
+    if(page==InstallerPage::ControlGroup)return control_value_text(control_spec(control_group_item(control_group,index)),settings);
     if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);
     if(page==InstallerPage::Mapping)return mapping_row_value(index,settings);
     if(page==InstallerPage::MappingTargets)return index==mapping_target_index(settings,mapping_source)?"*":"";
-    if(page==InstallerPage::Controls)return control_value_text(control_spec(static_cast<ControlId>(index)),settings);
     if(page==InstallerPage::Updates)return index==1?update.version:"";
-    if(index==7)return settings.language==Language::Russian?"Русский":"English";
-    if(index==3)return curve_name(settings.stick_curve,settings.language);
+    if(page==InstallerPage::Home && index==7)return settings.language==Language::Russian?"Русский":"English";
+    if(page==InstallerPage::Home && index==3)return curve_name(settings.stick_curve,settings.language);
     return "";
 }
 void InstallerModel::installation_result(const char* result){

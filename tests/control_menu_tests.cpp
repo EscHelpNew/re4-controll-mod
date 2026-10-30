@@ -14,6 +14,40 @@ int main(){
         assert(std::strstr(spec.label.russian,"ходьбы")==nullptr);
     }
     assert(ids.size()==unsigned(ControlId::Count));
+    // Missing, duplicated or misplaced entries would hide settings in both interfaces.
+    const std::array<std::initializer_list<ControlId>,7> expected{{
+        {ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone},
+        {ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife},
+        {ControlId::Gyro,ControlId::GyroSpeed,ControlId::GyroDeadzone,ControlId::GyroX,ControlId::GyroY,ControlId::InvertX,ControlId::InvertY},
+        {ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson},
+        {ControlId::Reticle,ControlId::ReticleSize},
+        {ControlId::ButtonMapping},
+        {ControlId::Profile,ControlId::Reset}
+    }};
+    std::set<unsigned> grouped;
+    assert(control_groups().size()==expected.size());
+    for(unsigned group=0;group<expected.size();++group){
+        const auto id=static_cast<ControlGroup>(group);
+        const auto& spec=control_group_spec(id);
+        assert(spec.id==id && control_groups()[group].id==id);
+        for(auto language:{Language::English,Language::Russian}){
+            assert(std::strlen(spec.label.get(language))>0);
+            assert(std::strlen(spec.help.get(language))>20);
+        }
+        assert(control_group_count(id)==expected[group].size());
+        unsigned row=0;
+        for(const auto item:expected[group]){
+            assert(control_group_item(id,row++)==item && item!=ControlId::Language);
+            assert(grouped.insert(unsigned(item)).second);
+        }
+        assert(control_group_item(id,row)==ControlId::Count);
+        assert(control_group_item(id,999)==ControlId::Count);
+    }
+    assert(grouped.size()==unsigned(ControlId::Count)-1 && !grouped.count(unsigned(ControlId::Language)));
+    for(auto group:{ControlGroup::Count,static_cast<ControlGroup>(999)}){
+        assert(control_group_count(group)==0 && control_group_item(group,0)==ControlId::Count);
+        assert(control_group_spec(group).id==ControlGroup::Count);
+    }
     bool camera_return=false,free_camera=false,mapping=false;
     for(const auto& spec:control_specs()){
         camera_return|=std::strcmp(spec.label.english,"Camera return speed")==0;

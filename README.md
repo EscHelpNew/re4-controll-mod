@@ -9,7 +9,7 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.7.0, unreleased**. Published Releases may
+The current source/local build is **0.7.1, unreleased**. Published Releases may
 contain an earlier version while new features are being tested.
 
 ## Features
@@ -32,6 +32,8 @@ contain an earlier version while new features are being tested.
   motion speed, calibration and a deadzone in degrees/second.
 - Gyro filtering averages two readings separated by 10 ms of sensor time.
 - Live settings, help for every control, English/Russian language selection.
+- Separate settings groups and a main-menu language selector.
+- Live reticle preview while editing its shape or size, with a labelled enlarged sample.
 - A standalone installer that creates its own HOME shortcut with the supplied icon.
 - In-app HTTPS updates with size, SHA-256, application identity and version checks.
 
@@ -43,6 +45,10 @@ Existing saved sensitivities are preserved when updating.
 The overlay opens separate **Controls** and **Graphics** sections. Each has its
 own profile selector; switching one preserves the other, your language and gyro
 calibration. An empty Custom profile becomes available after editing a setting.
+
+Controls are grouped into Sticks, Aiming, Gyro, Camera, Reticle, Button mapping,
+and Profiles and reset. Language is selected only on the main menu. In Reticle,
+the picture updates as you change form or size; Off shows no marker.
 
 The new view, reticle and movement modes start **Off**. Enable them independently
 in Controls. First-person view uses Camera sensitivity for continuous right-stick

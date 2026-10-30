@@ -12,6 +12,53 @@ constexpr ControlSpec toggle(ControlId id,Bilingual label,Bilingual help,bool Se
 constexpr ControlSpec slider(ControlId id,Bilingual label,Bilingual help,float Settings::*field,float step,float maximum){
     return {id,ControlKind::Slider,label,help,field,nullptr,step,0,maximum};
 }
+constexpr std::array<ControlId,unsigned(ControlId::Count)-1> grouped_controls{{
+    ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone,
+    ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife,
+    ControlId::Gyro,ControlId::GyroSpeed,ControlId::GyroDeadzone,ControlId::GyroX,ControlId::GyroY,ControlId::InvertX,ControlId::InvertY,
+    ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson,
+    ControlId::Reticle,ControlId::ReticleSize,
+    ControlId::ButtonMapping,
+    ControlId::Profile,ControlId::Reset
+}};
+constexpr std::array<unsigned,unsigned(ControlGroup::Count)+1> group_offsets{{0,5,11,18,22,24,25,27}};
+}
+const std::array<ControlGroupSpec,unsigned(ControlGroup::Count)>& control_groups(){
+    static constexpr std::array<ControlGroupSpec,unsigned(ControlGroup::Count)> groups{{
+        {ControlGroup::Sticks,{"Sticks","Стики"},
+            {"Stick response, smooth control and turn speed.\nAdjust left and right stick deadzones.",
+             "Кривая стиков, плавное управление и повороты.\nМёртвые зоны левого и правого стика."}},
+        {ControlGroup::Aiming,{"Aiming","Прицеливание"},
+            {"Separate aiming speeds for both sticks.\nMovement while aiming or using the knife.",
+             "Скорость прицеливания каждым стиком.\nДвижение при прицеливании и с ножом."}},
+        {ControlGroup::Gyro,{"Gyro","Гироскоп"},
+            {"Motion aiming, speed and gyro deadzone.\nSeparate axis sensitivities and inversion.",
+             "Прицеливание движением и мёртвая зона.\nЧувствительность и инверсия по осям."}},
+        {ControlGroup::Camera,{"Camera","Камера"},
+            {"Look sensitivity and camera return speed.\nFree camera orbit and first-person view.",
+             "Чувствительность обзора и возврат камеры.\nСвободная камера и вид от первого лица."}},
+        {ControlGroup::Reticle,{"Reticle","Прицел"},
+            {"Choose the screen aiming marker and size.\nWeapon accuracy remains unchanged.",
+             "Вид и размер экранного прицела.\nТочность оружия сохраняется."}},
+        {ControlGroup::Mapping,{"Button mapping","Назначение кнопок"},
+            {"Assign physical buttons to game buttons.\nMappings work in play, menus and QTE.",
+             "Назначить физическим кнопкам кнопки игры.\nДля игры, меню и QTE."}},
+        {ControlGroup::Profiles,{"Profiles and reset","Профили и сброс"},
+            {"Choose Default or your Custom controls.\nReset settings with A when selected.",
+             "Профиль управления: штатный или свой.\nДля сброса выберите строку и нажмите A."}}
+    }};
+    return groups;
+}
+const ControlGroupSpec& control_group_spec(ControlGroup group){
+    static constexpr ControlGroupSpec invalid{ControlGroup::Count,{"",""},{"",""}};
+    return unsigned(group)<unsigned(ControlGroup::Count)?control_groups()[unsigned(group)]:invalid;
+}
+unsigned control_group_count(ControlGroup group){
+    const auto index=unsigned(group);
+    return index<unsigned(ControlGroup::Count)?group_offsets[index+1]-group_offsets[index]:0;
+}
+ControlId control_group_item(ControlGroup group,unsigned index){
+    return index<control_group_count(group)?grouped_controls[group_offsets[unsigned(group)]+index]:ControlId::Count;
 }
 const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
     static constexpr std::array<ControlSpec,unsigned(ControlId::Count)> items{

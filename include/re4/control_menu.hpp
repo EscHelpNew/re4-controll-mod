@@ -14,6 +14,15 @@ enum class ControlId : unsigned {
     Language, Curve, Analog, Turn, Camera, CameraReturn, FreeCamera, ButtonMapping, Profile, AimX, AimY, RightAimX, RightAimY, LeftDeadzone, RightDeadzone,
     Gyro, GyroSpeed, GyroDeadzone, GyroX, GyroY, InvertX, InvertY, FirstPerson, Reticle, ReticleSize, MoveAiming, MoveKnife, Reset, Count
 };
+enum class ControlGroup : unsigned { Sticks, Aiming, Gyro, Camera, Reticle, Mapping, Profiles, Count };
+struct ControlGroupSpec {
+    ControlGroup id;
+    Bilingual label,help;
+};
+const std::array<ControlGroupSpec,unsigned(ControlGroup::Count)>& control_groups();
+const ControlGroupSpec& control_group_spec(ControlGroup);
+unsigned control_group_count(ControlGroup);
+ControlId control_group_item(ControlGroup,unsigned index);
 enum class ControlKind { Selector, Toggle, Slider, Action };
 struct ControlSpec {
     ControlId id{};

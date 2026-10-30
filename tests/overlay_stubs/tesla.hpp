@@ -13,9 +13,11 @@ namespace style::color {constexpr unsigned ColorDescription=1,ColorText=2;}
 namespace gfx {
 struct Renderer {
     struct Text {std::string value;int x,y;};
+    struct Rect {int x,y,w,h;unsigned color;};
     std::vector<Text> text;
+    std::vector<Rect> rects;
     static unsigned a(unsigned c){return c;}
-    void drawRect(int,int,int,int,unsigned){}
+    void drawRect(int x,int y,int w,int h,unsigned color){rects.push_back({x,y,w,h,color});}
     std::pair<unsigned,unsigned> drawString(const char* s,bool,int x,int y,float,unsigned,int=0) {
         text.push_back({s,x,y});return {0,0};
     }

@@ -6,6 +6,7 @@
 #include "re4/settings_file.hpp"
 #include "re4/control_menu.hpp"
 #include "re4/version.hpp"
+#include "re4/reticle_preview.hpp"
 
 namespace {
 GameLink link;
@@ -36,19 +37,30 @@ void change_profile(re4::ProfileDomain domain){
 class DescriptionFrame : public tsl::elm::OverlayFrame {
     const char* description_="Select a setting to see its description.";
     unsigned help_y_=tsl::cfg::FramebufferHeight-152;
+    bool preview_=false;
 public:
     DescriptionFrame():OverlayFrame("RE4 Controls",std::string(re4::kVersion)+" - Control settings"){}
     void set_help(const char* text){description_=text;}
+    void set_preview(bool enabled){preview_=enabled;}
     void layout(u16 x,u16 y,u16 width,u16 height)override{
-        OverlayFrame::layout(x,y,width,height);help_y_=y+height-152;
+        OverlayFrame::layout(x,y,width,height);help_y_=y+height-(preview_?310:152);
         if(m_contentElement){
-            m_contentElement->setBoundaries(x+35,y+125,width-85,height-73-125-110);
+            m_contentElement->setBoundaries(x+35,y+125,width-85,height-73-125-(preview_?268:110));
             m_contentElement->invalidate();
         }
     }
     void draw(tsl::gfx::Renderer* renderer)override{
         OverlayFrame::draw(renderer);
         renderer->drawRect(20,help_y_-21,tsl::cfg::FramebufferWidth-40,1,a(tsl::style::color::ColorDescription));
+        if(preview_){
+            renderer->drawString(tr("Reticle preview (x2)","Образец прицела (x2)"),false,20,help_y_+78,16,a(tsl::style::color::ColorDescription));
+            re4::draw_reticle_preview(settings,20,help_y_+105,tsl::cfg::FramebufferWidth-40,130,
+                [&](int x,int y,int w,int h,unsigned rgb){
+                    const u16 color=u16((rgb>>20)&15)|u16((rgb>>12)&15)<<4|u16((rgb>>4)&15)<<8|0xf000;
+                    renderer->drawRect(x,y,w,h,a(color));
+                });
+            if(settings.reticle==re4::ReticleStyle::Off)renderer->drawString(tr("Off","Выключен"),false,32,help_y_+130,16,a(tsl::style::color::ColorDescription));
+        }
         renderer->drawString(description_,false,20,help_y_,16,a(tsl::style::color::ColorDescription));
     }
 };
@@ -146,25 +158,17 @@ public:
         }
     }
 };
-class ControlsGui : public tsl::Gui {
+class ControlsPageGui : public tsl::Gui {
     struct Binding {tsl::elm::ListItem* item;const re4::ControlSpec* spec;};
-    struct Header {tsl::elm::CategoryHeader* item;re4::Bilingual text;};
+    re4::ControlGroup group_;
     std::vector<Binding> bindings_;
-    std::vector<Header> headers_;
-    tsl::elm::ListItem* status_=nullptr;
     DescriptionFrame* description_frame_=nullptr;
     std::array<std::uint8_t,re4::kSettingsBytes> rendered_settings_{};
     std::string rendered_note_;
-    void add_header(tsl::elm::List* list,re4::Bilingual text){
-        auto* item=new tsl::elm::CategoryHeader(text.get(settings.language));
-        list->addItem(item);headers_.push_back({item,text});
-    }
     void refresh(){
         link.language=settings.language;
-        description_frame_->setTitle(tr("RE4 Controls","RE4 Управление"));
-        description_frame_->setSubtitle(std::string(re4::kVersion)+tr(" - Control settings"," - Настройки управления"));
-        status_->setText(note.empty()?tr("Connect to game","Подключиться к игре"):note);
-        for(const auto& header:headers_)header.item->setText(header.text.get(settings.language));
+        description_frame_->setTitle(re4::control_group_spec(group_).label.get(settings.language));
+        description_frame_->setSubtitle(note.empty()?re4::kVersion:note);
         for(const auto& binding:bindings_){
             const auto& spec=*binding.spec;
             binding.item->setText(spec.label.get(settings.language));
@@ -175,25 +179,15 @@ class ControlsGui : public tsl::Gui {
         rendered_note_=note;
     }
 public:
+    explicit ControlsPageGui(re4::ControlGroup group):group_(group){}
     tsl::elm::Element* createUI()override{
-        bindings_.clear();headers_.clear();
+        bindings_.clear();
         auto* frame=description_frame_=new DescriptionFrame;
+        frame->set_preview(group_==re4::ControlGroup::Reticle);
         auto* list=new tsl::elm::List;
-        status_=new tsl::elm::ListItem(tr("Connect to game","Подключиться к игре"),"A");
-        status_->setClickListener([](u64 keys){
-            if(!(keys&HidNpadButton_A))return false;
-            link.language=settings.language;
-            const bool connected=link.connect();record_connection();
-            if(connected)link.apply(settings);
-            note=link.message;return true;
-        });
-        list->addItem(status_);
-        for(const auto& spec:re4::control_specs()){
+        for(unsigned row=0;row<re4::control_group_count(group_);++row){
+            const auto& spec=re4::control_spec(re4::control_group_item(group_,row));
             const auto* entry=&spec;
-            if(spec.id==re4::ControlId::Language)add_header(list,{"General","Общие"});
-            if(spec.id==re4::ControlId::Analog)add_header(list,{"Sticks and aiming","Стики и прицел"});
-            if(spec.id==re4::ControlId::Gyro)add_header(list,{"Gyro - firearm aiming only","Гироскоп - только прицеливание"});
-            if(spec.id==re4::ControlId::FirstPerson)add_header(list,{"View and reticle","Вид и прицел"});
             tsl::elm::ListItem* item;
             if(spec.toggle){
                 auto* toggle=new tsl::elm::ToggleListItem(spec.label.get(settings.language),settings.*spec.toggle,"On","Off");
@@ -222,6 +216,7 @@ public:
             }
             list->addItem(item);bindings_.push_back({item,entry});
         }
+        if(re4::control_group_count(group_))frame->set_help(re4::control_spec(re4::control_group_item(group_,0)).help.get(settings.language));
         frame->setContent(list);refresh();return frame;
     }
     void update()override{
@@ -229,9 +224,6 @@ public:
         re4::encode_settings(settings,current.data(),current.size());
         if(current!=rendered_settings_ || note!=rendered_note_)refresh();
         if(description_frame_){
-            if(getFocusedElement()==status_)description_frame_->set_help(tr(
-                "A: connect to the mod in running RE4.\nReconnect after restarting the game.\nFiltering and AA require a game restart.",
-                "A: найти мод в запущенной RE4.\nПосле перезапуска игры подключитесь снова.\nФильтрация и AA: перезапуск игры."));
             for(const auto& binding:bindings_)if(binding.item==getFocusedElement()){
                 description_frame_->set_help(binding.spec->id==re4::ControlId::Profile && !note.empty()?
                     note.c_str():binding.spec->help.get(settings.language));break;
@@ -239,9 +231,36 @@ public:
         }
     }
 };
+class ControlsGui : public tsl::Gui {
+    DescriptionFrame* frame_=nullptr;
+    std::vector<tsl::elm::ListItem*> groups_;
+public:
+    tsl::elm::Element* createUI()override{
+        groups_.clear();frame_=new DescriptionFrame;auto* list=new tsl::elm::List;
+        for(const auto& group:re4::control_groups()){
+            auto* item=new tsl::elm::ListItem(group.label.get(settings.language),"A");
+            item->setClickListener([id=group.id](u64 keys){
+                if(!(keys&HidNpadButton_A))return false;
+                note.clear();
+                if(id==re4::ControlGroup::Mapping)tsl::changeTo<MappingGui>();
+                else tsl::changeTo<ControlsPageGui>(id);
+                return true;
+            });
+            groups_.push_back(item);list->addItem(item);
+        }
+        frame_->setContent(list);update();return frame_;
+    }
+    void update()override{
+        frame_->setTitle(tr("Controls","Управление"));frame_->setSubtitle(re4::kVersion);
+        for(unsigned i=0;i<groups_.size();++i){
+            const auto& group=re4::control_groups()[i];groups_[i]->setText(group.label.get(settings.language));
+            if(getFocusedElement()==groups_[i])frame_->set_help(group.help.get(settings.language));
+        }
+    }
+};
 class MainGui : public tsl::Gui {
     DescriptionFrame* frame_=nullptr;
-    tsl::elm::ListItem *controls_=nullptr,*graphics_=nullptr,*status_=nullptr;
+    tsl::elm::ListItem *controls_=nullptr,*graphics_=nullptr,*status_=nullptr,*language_=nullptr;
 public:
     tsl::elm::Element* createUI()override{
         frame_=new DescriptionFrame;auto* list=new tsl::elm::List;
@@ -262,15 +281,22 @@ public:
             if(!(keys&HidNpadButton_A))return false;
             note.clear();tsl::changeTo<GraphicsGui>();return true;
         });
-        list->addItem(status_);list->addItem(controls_);list->addItem(graphics_);
+        language_=new tsl::elm::ListItem("Language");
+        language_->setClickListener([this](u64 keys){
+            if(!(keys&(HidNpadButton_A|HidNpadButton_Left|HidNpadButton_Right)))return false;
+            re4::change_control(settings,re4::ControlId::Language,1);note.clear();change();update();return true;
+        });
+        list->addItem(status_);list->addItem(controls_);list->addItem(graphics_);list->addItem(language_);
         frame_->setContent(list);update();return frame_;
     }
     void update()override{
         frame_->setTitle("RE4 Controls");frame_->setSubtitle(re4::kVersion);
         status_->setText(note.empty()?tr("Connect to game","Подключиться к игре"):note);
         controls_->setText(tr("Controls","Управление"));graphics_->setText(tr("Graphics","Графика"));
+        language_->setText(tr("Language","Язык"));language_->setValue(settings.language==re4::Language::Russian?"Русский":"English");
         controls_->setValue(re4::profile_name(re4::profile_kind(settings,re4::ProfileDomain::Controls),settings.language));
         graphics_->setValue(re4::profile_name(re4::profile_kind(settings,re4::ProfileDomain::Graphics),settings.language));
+        if(getFocusedElement()==language_){frame_->set_help(re4::control_spec(re4::ControlId::Language).help.get(settings.language));return;}
         frame_->set_help(getFocusedElement()==graphics_?tr(
             "Independent graphics profile and settings.\nFiltering and AA require a game restart.",
             "Отдельный профиль и настройки графики.\nФильтрация и AA: перезапуск игры."):tr(

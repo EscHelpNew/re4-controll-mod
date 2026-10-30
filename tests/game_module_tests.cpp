@@ -33,6 +33,7 @@ void test_SceneDraw();
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include "re4/reticle_preview.hpp"
 #undef assert
 #define assert(c) do { if(!(c)){std::fprintf(stderr,"line %d: %s\n",__LINE__,#c);std::exit(1);} } while(0)
 namespace {
@@ -258,6 +259,15 @@ struct Fixture {
 };
 }
 int main(){
+    for(unsigned style=0;style<3;++style)for(unsigned size=0;size<3;++size){
+        Fixture f;f.view_mode();f.aim();f.camera()[0x26C]=0;
+        settings.reticle=static_cast<re4::ReticleStyle>(style);settings.reticle_size=static_cast<re4::ReticleSize>(size);publish_view_settings();
+        CameraInput::Callback(f.camera());WeaponLaser::Callback(f.weapon,1,0,0);SceneSubmit::Callback();
+        view_frame.fetch_add(1);SceneDraw::Callback();CameraInput::Callback(f.camera());HudDraw::Callback(nullptr);
+        const auto preview=re4::reticle_marks(settings.reticle,settings.reticle_size);
+        assert(hud_rects.size()==preview.count);
+        for(unsigned i=0;i<preview.count;++i)assert(!std::memcmp(hud_rects[i].data()+0xC,&preview.rects[i],sizeof(re4::ViewReticleRect)));
+    }
     for(bool knife:{false,true}){
         Fixture f;f.view_mode();f.aim();f.actor[0x117]=1;
         if(knife){f.actor[0x115]=11;f.flags()=1ull<<48;}

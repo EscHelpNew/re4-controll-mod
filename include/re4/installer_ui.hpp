@@ -5,7 +5,7 @@
 #include <string>
 
 namespace re4 {
-enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics };
+enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup };
 enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview };
 enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate,
     DefaultControls,CustomControls,DefaultGraphics,CustomGraphics };
@@ -23,6 +23,7 @@ public:
     InstallerPage page=InstallerPage::Home;
     unsigned selected=0,home_selected=0;
     unsigned controls_selected=0,mapping_source=0;
+    re4::ControlGroup control_group=re4::ControlGroup::Sticks;
     InstallerPage graphics_origin=InstallerPage::Home;
     InstallerStatus status=InstallerStatus::Ready;
     DiagnosticSnapshot diagnostic;
@@ -30,6 +31,7 @@ public:
     std::string detail;
     std::string profile_note;
     unsigned item_count()const;
+    ControlId selected_control()const;
     InstallerAction handle(UiEvent);
     const char* status_text()const;
     const char* page_title()const;
