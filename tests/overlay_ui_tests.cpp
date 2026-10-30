@@ -43,8 +43,74 @@ int main(){
         assert(list->y+list->height+16<=unsigned(renderer.text.back().y));
         ++descriptions;
     }
-    assert(descriptions==20 && sends==before && saves==0); // Hover must not save/send.
+    assert(descriptions==unsigned(re4::ControlId::Count)+1 && sends==before && saves==0); // Hover must not save/send.
     assert(frame->title=="RE4 Controls");
+    for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e))if(item->label=="Button mapping"){
+        assert(!item->click(HidNpadButton_Left) && !item->click(HidNpadButton_Right));
+        assert(item->click(HidNpadButton_A));
+        assert(tsl::navigation.size()==1 && sends==before && saves==0);
+    }
+    auto* mapping_gui=tsl::navigation.back().get();
+    auto* mapping_frame=static_cast<tsl::elm::OverlayFrame*>(mapping_gui->root);
+    mapping_frame->layout(0,0,448,720);
+    auto* mapping_list=static_cast<tsl::elm::List*>(mapping_frame->content());
+    assert(mapping_list->children.size()==22);
+    for(unsigned source=0;source<20;++source){
+        auto* source_item=static_cast<tsl::elm::ListItem*>(mapping_list->children[source+1]);
+        assert(source_item->label==re4::button_name(source) && source_item->value==re4::button_name(source));
+        const auto old_saves=saves,old_sends=sends;
+        mapping_gui->focused=source_item;mapping_gui->update();
+        tsl::gfx::Renderer help;mapping_frame->draw(&help);
+        assert(help.text.back().value.find("HOME/Capture")!=std::string::npos);
+        assert(source_item->click(HidNpadButton_A) && tsl::navigation.size()==2);
+        auto* picker=tsl::navigation.back().get();
+        auto* picker_frame=static_cast<tsl::elm::OverlayFrame*>(picker->root);
+        auto* targets=static_cast<tsl::elm::List*>(picker_frame->content());
+        assert(targets->children.size()==21);
+        for(unsigned target=0;target<21;++target){
+            auto* row=static_cast<tsl::elm::ListItem*>(targets->children[target]);
+            assert(row->label==(target==20?"Unbound":re4::button_name(target)));
+            picker->focused=row;picker->update();
+            assert(!row->click(HidNpadButton_Right));
+        }
+        assert(saves==old_saves && sends==old_sends);
+        tsl::goBack();assert(tsl::navigation.size()==1 && saves==old_saves && sends==old_sends);
+        assert(source_item->click(HidNpadButton_A));
+        picker_frame=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+        targets=static_cast<tsl::elm::List*>(picker_frame->content());
+        assert(static_cast<tsl::elm::ListItem*>(targets->children[20])->click(HidNpadButton_A));
+        assert(tsl::navigation.size()==1 && settings.button_map[source]==255 && saves==old_saves+1 && sends==old_sends+1);
+        mapping_gui->update();assert(source_item->value=="Unbound");
+    }
+    auto* first_source=static_cast<tsl::elm::ListItem*>(mapping_list->children[1]);
+    for(unsigned target=0;target<21;++target){
+        assert(first_source->click(HidNpadButton_A));
+        auto* picker_frame=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+        auto* targets=static_cast<tsl::elm::List*>(picker_frame->content());
+        const auto old_saves=saves,old_sends=sends;
+        assert(static_cast<tsl::elm::ListItem*>(targets->children[target])->click(HidNpadButton_A));
+        assert(settings.button_map[0]==(target==20?255:target));
+        assert(saves==old_saves+1 && sends==old_sends+1);
+    }
+    assert(first_source->click(HidNpadButton_A));
+    auto* same_picker=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+    const auto unchanged_saves=saves,unchanged_sends=sends;
+    assert(static_cast<tsl::elm::ListItem*>(static_cast<tsl::elm::List*>(same_picker->content())->children[20])->click(HidNpadButton_A));
+    assert(saves==unchanged_saves && sends==unchanged_sends);
+    auto* reset_mapping=static_cast<tsl::elm::ListItem*>(mapping_list->children[21]);
+    const auto before_mapping_reset=saves;
+    settings.gyro_speed=0.3f;settings.free_camera=true;settings.remap_enabled=false;
+    assert(!reset_mapping->click(HidNpadButton_Left) && !reset_mapping->click(HidNpadButton_Right));
+    assert(saves==before_mapping_reset && settings.button_map[0]==255);
+    assert(reset_mapping->click(HidNpadButton_A) && saves==before_mapping_reset+1);
+    assert(settings.remap_enabled && settings.button_map==re4::identity_button_map());
+    assert(settings.free_camera && settings.gyro_speed==0.3f);
+    assert(reset_mapping->click(HidNpadButton_A) && saves==before_mapping_reset+1);
+    settings.language=re4::Language::Russian;
+    assert(static_cast<tsl::elm::ListItem*>(mapping_list->children[1])->click(HidNpadButton_A));
+    auto* russian_picker=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+    assert(static_cast<tsl::elm::ListItem*>(static_cast<tsl::elm::List*>(russian_picker->content())->children[20])->label=="Не назначено");
+    tsl::goBack();tsl::goBack();settings.language=re4::Language::English;
     for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e)){
         if(item->label=="Connect to game"){
             const auto before_connect=sends;
@@ -85,6 +151,8 @@ int main(){
         }
     assert(!settings.gyro_enabled && settings.turn_gain==1 && settings.invert_x && settings.invert_y);
     assert(settings.language==re4::Language::English && settings.left_deadzone==0.05f);
+    assert(settings.gyro_speed==0.8f && settings.camera_return_speed==1 && !settings.free_camera
+        && settings.remap_enabled && settings.button_map==re4::identity_button_map());
     for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ToggleListItem*>(e)){
         if(item->label=="Invert gyro X"||item->label=="Invert gyro Y")assert(item->state && item->value=="On");
         if(item->label=="Gyro aiming")assert(!item->state && item->value=="Off");

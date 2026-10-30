@@ -1,9 +1,11 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include "re4/button_map.hpp"
 
 namespace re4 {
-constexpr std::size_t kSettingsBytes = 64;
+constexpr std::size_t kLegacySettingsBytes = 64;
+constexpr std::size_t kSettingsBytes = 128;
 constexpr const char* kSettingsPath = "sdmc:/config/re4-controls/settings.bin";
 enum class Language : std::uint8_t { English, Russian };
 enum class StickCurve : std::uint8_t { Linear, Exponential, Logarithmic, Hybrid };
@@ -25,11 +27,15 @@ struct Settings {
     float right_deadzone = 0.05f;
     float gyro_gain_x = 1;
     float gyro_gain_y = 1;
-    float gyro_speed = 1;
+    float gyro_speed = 0.8f;
     float gyro_deadzone_dps = 0.5f;
     float gyro_bias_x = 0;
     float gyro_bias_y = 0;
     float movement_gain = 1; // Legacy wire field; native walking maximum in v4.
+    bool remap_enabled = true;
+    ButtonMap button_map = identity_button_map();
+    bool free_camera = false;
+    float camera_return_speed = 1;
 };
 bool valid_settings(const Settings& settings);
 bool encode_settings(const Settings& settings, std::uint8_t* out, std::size_t size);

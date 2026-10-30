@@ -9,6 +9,33 @@ int main(){
     assert(m.handle(UiEvent::Confirm)==InstallerAction::InstallGame);
     m.selected=3;assert(m.handle(UiEvent::Confirm)==InstallerAction::None && m.page==InstallerPage::Controls);
     assert(m.item_count()==unsigned(ControlId::Count) && m.selected==0);
+    m.selected=unsigned(ControlId::ButtonMapping);
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::None);
+    assert(m.item_label(0)=="Enable mapping" && m.item_count()==22);
+    for(unsigned source=0;source<20;++source){
+        m.selected=source+1;
+        assert(m.item_label(m.selected)==button_name(source));
+        assert(m.item_value(m.selected)==button_name(source));
+        assert(m.handle(UiEvent::Confirm)==InstallerAction::None && m.page==InstallerPage::MappingTargets);
+        assert(m.item_count()==21 && m.selected==source && m.item_label(20)=="Unbound");
+        assert(m.handle(UiEvent::Down)==InstallerAction::None && m.settings.button_map[source]==source);
+        assert(m.handle(UiEvent::Back)==InstallerAction::None && m.page==InstallerPage::Mapping && m.selected==source+1);
+        m.handle(UiEvent::Confirm);m.selected=20;
+        assert(m.handle(UiEvent::Confirm)==InstallerAction::SaveSettings && m.page==InstallerPage::Mapping);
+        assert(m.settings.button_map[source]==255 && m.item_value(source+1)=="Unbound");
+    }
+    m.settings.gyro_speed=0.3f;m.settings.free_camera=true;m.settings.remap_enabled=false;m.selected=21;
+    assert(m.handle(UiEvent::Left)==InstallerAction::None && !m.settings.remap_enabled);
+    assert(m.handle(UiEvent::Right)==InstallerAction::None && m.settings.button_map[0]==255);
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::SaveSettings && m.settings.remap_enabled);
+    assert(m.settings.button_map==identity_button_map() && m.settings.gyro_speed==0.3f && m.settings.free_camera);
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::None);
+    m.settings.language=Language::Russian;
+    assert(m.item_label(0)=="Включить назначения" && m.item_value(0)=="Вкл");
+    m.selected=1;m.handle(UiEvent::Confirm);assert(m.item_label(20)=="Не назначено");
+    m.handle(UiEvent::Back);m.handle(UiEvent::Back);
+    assert(m.page==InstallerPage::Controls && m.selected==unsigned(ControlId::ButtonMapping));
+    m.settings={};m.selected=0;
     assert(m.handle(UiEvent::QuickInstall)==InstallerAction::None); // Never install from a settings page.
     m.selected=unsigned(ControlId::Reset);m.settings.turn_gain=0.4f;m.settings.gyro_bias_x=1.2f;
     assert(m.handle(UiEvent::Left)==InstallerAction::None);

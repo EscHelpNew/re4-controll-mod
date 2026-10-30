@@ -17,14 +17,15 @@ std::uint32_t get32(const std::uint8_t* p) {
     return std::uint32_t(p[0]) | std::uint32_t(p[1]) << 8
         | std::uint32_t(p[2]) << 16 | std::uint32_t(p[3]) << 24;
 }
-std::uint32_t checksum(const std::uint8_t* p) {
+std::uint32_t checksum(const std::uint8_t* p, std::size_t size) {
     std::uint32_t hash = 2166136261u;
-    for (unsigned i = 0; i < 60; ++i) { hash ^= p[i]; hash *= 16777619u; }
+    for (std::size_t i = 0; i < size; ++i) { hash ^= p[i]; hash *= 16777619u; }
     return hash;
 }
 }
 bool valid_settings(const Settings& s) {
-    if (unsigned(s.language)>1 || unsigned(s.stick_curve)>3) return false;
+    if (unsigned(s.language)>1 || unsigned(s.stick_curve)>3 || !valid_button_map(s.button_map)
+        || !std::isfinite(s.camera_return_speed) || s.camera_return_speed<0 || s.camera_return_speed>1) return false;
     const float right_gains[]={s.right_aim_gain_x,s.right_aim_gain_y};
     for(float gain:right_gains)
         if(!std::isfinite(gain) || gain<0 || gain>1)return false;
@@ -42,7 +43,7 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
     if (!out || size != kSettingsBytes || !valid_settings(s)) return false;
     std::memset(out, 0, size);
     std::memcpy(out, "R4CT", 4);
-    put32(out + 4, 6);
+    put32(out + 4, 7);
     put32(out + 8, unsigned(s.analog_enabled) | unsigned(s.gyro_enabled) << 1
           | unsigned(s.invert_x) << 2 | unsigned(s.invert_y) << 3
           | unsigned(s.stick_curve) << 4 | unsigned(s.language) << 6
@@ -54,32 +55,46 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
         const float f = s.*fields[i]; std::memcpy(&value, &f, 4);
         put32(out + 16 + i * 4, value);
     }
-    put32(out + 60, checksum(out));
+    std::memcpy(out + 60, &s.camera_return_speed, 4);
+    out[64] = std::uint8_t(s.free_camera);
+    out[65] = std::uint8_t(s.remap_enabled);
+    std::memcpy(out + 68, s.button_map.data(), kButtonCount);
+    put32(out + 124, checksum(out, 124));
     return true;
 }
 bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) {
-    if (!data || size != kSettingsBytes || std::memcmp(data, "R4CT", 4)
-        || get32(data + 4) < 1 || get32(data + 4) > 6
-        || (get32(data + 8) & (get32(data + 4)<4 ? ~15u : get32(data+4)<6 ? ~127u : ~0x007f7f7fu))
-        || (get32(data + 4) == 1 && get32(data + 56))
-        || checksum(data) != get32(data + 60)) return false;
+    if (!data || (size != kSettingsBytes && size != kLegacySettingsBytes)
+        || std::memcmp(data, "R4CT", 4)) return false;
+    const auto version = get32(data + 4);
+    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version != 7)
+        || (get32(data + 8) & (version<4 ? ~15u : version<6 ? ~127u : ~0x007f7f7fu))
+        || (version == 1 && get32(data + 56))
+        || checksum(data, size - 4) != get32(data + size - 4)) return false;
     Settings s;
+    if (version == 7) {
+        if (data[64] > 1 || data[65] > 1 || data[66] || data[67]) return false;
+        for (unsigned i = 88; i < 124; ++i) if (data[i]) return false;
+        std::memcpy(&s.camera_return_speed, data + 60, 4);
+        s.free_camera = data[64] != 0;
+        s.remap_enabled = data[65] != 0;
+        std::memcpy(s.button_map.data(), data + 68, kButtonCount);
+    }
     const auto flags = get32(data + 8);
     s.analog_enabled = flags & 1; s.gyro_enabled = flags & 2;
     s.invert_x = flags & 4; s.invert_y = flags & 8;
-    if (get32(data+4)>=4) {
+    if (version>=4) {
         s.stick_curve=static_cast<StickCurve>((flags>>4)&3);
         s.language=static_cast<Language>((flags>>6)&1);
     }
-    if(get32(data+4)==6){s.right_aim_gain_x=float((flags>>8)&127)/100;s.right_aim_gain_y=float((flags>>16)&127)/100;}
-    if (get32(data+4)>=5) std::memcpy(&s.gyro_deadzone_dps,data+12,4);
+    if(version>=6){s.right_aim_gain_x=float((flags>>8)&127)/100;s.right_aim_gain_y=float((flags>>16)&127)/100;}
+    if (version>=5) std::memcpy(&s.gyro_deadzone_dps,data+12,4);
     else s.calibration_request = get32(data + 12);
-    const unsigned count = get32(data + 4) >= 5 ? 11 : 10;
+    const unsigned count = version >= 5 ? 11 : 10;
     for (unsigned i = 0; i < count; ++i) {
         const auto value = get32(data + 16 + i * 4);
         std::memcpy(&(s.*fields[i]), &value, 4);
     }
-    if (get32(data + 4) < 3) {
+    if (version < 3) {
         constexpr float Settings::* capped[] = {&Settings::turn_gain, &Settings::camera_gain,
             &Settings::aim_gain_x, &Settings::aim_gain_y};
         for (auto member : capped) {
@@ -88,11 +103,11 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
             s.*member = std::fmin(gain, 1.f);
         }
     }
-    if (get32(data+4)>=2 && get32(data+4)<=4) {
+    if (version>=2 && version<=4) {
         float legacy_walk;std::memcpy(&legacy_walk,data+56,4);
-        if (!std::isfinite(legacy_walk) || legacy_walk<0 || legacy_walk>(get32(data+4)<3?4:1)) return false;
+        if (!std::isfinite(legacy_walk) || legacy_walk<0 || legacy_walk>(version<3?4:1)) return false;
     }
-    if (get32(data+4)<4) {
+    if (version<4) {
         if (std::fabs(s.left_deadzone-0.15f)<0.00001f) s.left_deadzone=0.05f;
         if (std::fabs(s.right_deadzone-0.15f)<0.00001f) s.right_deadzone=0.05f;
     }

@@ -222,7 +222,10 @@ void InstallerRenderer::draw(const InstallerModel& m){
     if(m.page==InstallerPage::Diagnostics)p.diagnostics(m);
     else if(m.page==InstallerPage::Updates)p.updates(m);
     else{
-        p.text(m.page==InstallerPage::Home?tr(m,"OPERATIONS","ДЕЙСТВИЯ"):tr(m,"SETTINGS","НАСТРОЙКИ"),76,184,17,muted);
+        const auto heading=m.page==InstallerPage::MappingTargets?
+            std::string(button_name(m.mapping_source))+tr(m," -> GAME BUTTON"," -> КНОПКА ИГРЫ"):
+            m.page==InstallerPage::Home?tr(m,"OPERATIONS","ДЕЙСТВИЯ"):tr(m,"SETTINGS","НАСТРОЙКИ");
+        p.text(heading,76,184,17,muted);
         const unsigned count=m.item_count(),visible=8;
         unsigned first=m.selected>=visible?m.selected-visible+1:0;
         if(count<visible)first=0;
@@ -245,6 +248,10 @@ void InstallerRenderer::draw(const InstallerModel& m){
         p.text(tr(m,"Keep Wi-Fi connected.\nReopen the app after installation.\nYour settings are preserved.",
                     "Не отключайте Wi-Fi.\nПосле установки откройте\nприложение заново. Ваши\nнастройки сохраняются."),862,399,19,cream,344,true,6);
         p.text(tr(m,"Wi-Fi connection required","Требуется подключение Wi-Fi"),862,585,15,muted,344);
+    }else if(m.page==InstallerPage::Mapping || m.page==InstallerPage::MappingTargets){
+        p.text(tr(m,"PHYSICAL OVERLAY CONTROLS","ФИЗИЧЕСКИЕ КНОПКИ ОВЕРЛЕЯ"),862,386,16,muted,344);
+        p.text(tr(m,"Overlay buttons stay unchanged.\nOpen it to recover any mapping.\n\nHOME/Capture are system buttons\nand cannot be mapped in RE4.",
+                    "Кнопки оверлея не меняются.\nОткройте его для исправления\nназначений.\n\nHOME/Capture — системные кнопки\nвне управления RE4."),862,420,19,cream,344,true,6);
     }else{
         p.text(tr(m,"STICK RESPONSE","КРИВАЯ СТИКОВ"),862,360,16,muted);
         p.text(curve_name(m.settings.stick_curve,m.settings.language),862,386,18,cream);

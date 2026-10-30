@@ -38,7 +38,7 @@ int main(){
     Settings settings; settings.gyro_speed=2.5f;settings.gyro_deadzone_dps=0.75f;
     settings.gyro_enabled=true;settings.language=Language::Russian;settings.stick_curve=StickCurve::Hybrid;
     std::uint8_t bytes[kSettingsBytes];
-    assert(encode_settings(settings,bytes,sizeof(bytes)) && bytes[4]==6);
+    assert(encode_settings(settings,bytes,sizeof(bytes)) && bytes[4]==7);
     Settings decoded;assert(decode_settings(bytes,sizeof(bytes),decoded));
     assert(decoded.gyro_speed==2.5f && decoded.gyro_deadzone_dps==0.75f && decoded.gyro_enabled);
     assert(decoded.language==Language::Russian && decoded.stick_curve==StickCurve::Hybrid);
@@ -49,15 +49,15 @@ int main(){
         std::uint32_t hash=2166136261u;
         for(unsigned i=0;i<60;++i){hash^=bytes[i];hash*=16777619u;}
         std::memcpy(bytes+60,&hash,4);
-        assert(decode_settings(bytes,sizeof(bytes),decoded));
-        assert(decoded.gyro_enabled && decoded.gyro_speed==1 && decoded.gyro_deadzone_dps==0.5f);
+        assert(decode_settings(bytes,kLegacySettingsBytes,decoded));
+        assert(decoded.gyro_enabled && decoded.gyro_speed==0.8f && decoded.gyro_deadzone_dps==0.5f);
         assert(decoded.movement_gain==1);
         assert(decoded.language==(version==4?Language::Russian:Language::English));
     }
     assert(encode_settings(settings,bytes,sizeof(bytes)));bytes[4]=5;bytes[9]=bytes[10]=bytes[11]=0;
     std::uint32_t old_hash=2166136261u;
     for(unsigned i=0;i<60;++i){old_hash^=bytes[i];old_hash*=16777619u;}
-    std::memcpy(bytes+60,&old_hash,4);assert(decode_settings(bytes,sizeof(bytes),decoded));
+    std::memcpy(bytes+60,&old_hash,4);assert(decode_settings(bytes,kLegacySettingsBytes,decoded));
     assert(decoded.gyro_speed==2.5f && decoded.gyro_deadzone_dps==0.75f && decoded.right_aim_gain_x==1);
     settings.gyro_deadzone_dps=-1;assert(!valid_settings(settings));
     settings.gyro_deadzone_dps=0.5f;settings.gyro_speed=10.1f;assert(!valid_settings(settings));

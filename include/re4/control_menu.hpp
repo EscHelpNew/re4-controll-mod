@@ -10,7 +10,7 @@ struct Bilingual {
     const char* get(Language language) const { return language==Language::Russian ? russian : english; }
 };
 enum class ControlId : unsigned {
-    Language, Curve, Analog, Turn, Camera, AimX, AimY, RightAimX, RightAimY, LeftDeadzone, RightDeadzone,
+    Language, Curve, Analog, Turn, Camera, CameraReturn, FreeCamera, ButtonMapping, AimX, AimY, RightAimX, RightAimY, LeftDeadzone, RightDeadzone,
     Gyro, GyroSpeed, GyroDeadzone, GyroX, GyroY, InvertX, InvertY, Reset, Count
 };
 enum class ControlKind { Selector, Toggle, Slider, Action };
@@ -27,4 +27,13 @@ const ControlSpec& control_spec(ControlId id);
 const char* curve_name(StickCurve curve,Language language);
 std::string control_value_text(const ControlSpec&,const Settings&);
 bool change_control(Settings&,ControlId,int direction);
+constexpr unsigned kMappingRowCount=kButtonCount+2;
+std::string mapping_row_label(unsigned,Language);
+std::string mapping_row_value(unsigned,const Settings&);
+const char* mapping_row_help(unsigned,Language);
+const char* mapping_target_label(unsigned,Language);
+const char* mapping_target_help(Language);
+unsigned mapping_target_index(const Settings&,unsigned source);
+bool set_mapping_target(Settings&,unsigned source,unsigned target);
+bool change_mapping(Settings&,unsigned row,int direction);
 }

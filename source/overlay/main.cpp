@@ -44,6 +44,62 @@ public:
         renderer->drawString(description_,false,20,help_y_,16,a(tsl::style::color::ColorDescription));
     }
 };
+class MappingTargetsGui : public tsl::Gui {
+    unsigned source_;
+    DescriptionFrame* frame_=nullptr;
+public:
+    explicit MappingTargetsGui(unsigned source):source_(source){}
+    tsl::elm::Element* createUI()override{
+        frame_=new DescriptionFrame;
+        frame_->setTitle(tr("Choose game button","Выбор кнопки игры"));
+        frame_->setSubtitle(std::string(re4::button_name(source_))+" -> "+re4::mapping_row_value(source_+1,settings));
+        frame_->set_help(re4::mapping_target_help(settings.language));
+        auto* list=new tsl::elm::List;
+        for(unsigned target=0;target<=re4::kButtonCount;++target){
+            auto* item=new tsl::elm::ListItem(re4::mapping_target_label(target,settings.language),
+                target==re4::mapping_target_index(settings,source_)?"*":"");
+            item->setClickListener([source=source_,target](u64 keys){
+                if(!(keys&HidNpadButton_A))return false;
+                if(re4::set_mapping_target(settings,source,target)){note.clear();change();}
+                tsl::goBack();return true;
+            });
+            list->addItem(item);
+        }
+        frame_->setContent(list);return frame_;
+    }
+};
+class MappingGui : public tsl::Gui {
+    DescriptionFrame* frame_=nullptr;
+    std::vector<tsl::elm::ListItem*> rows_;
+public:
+    tsl::elm::Element* createUI()override{
+        rows_.clear();frame_=new DescriptionFrame;
+        frame_->setTitle(tr("Button mapping","Назначение кнопок"));
+        frame_->setSubtitle(tr("Physical button -> game button","Физическая кнопка -> кнопка игры"));
+        frame_->set_help(re4::mapping_row_help(0,settings.language));
+        auto* list=new tsl::elm::List;
+        for(unsigned row=0;row<re4::kMappingRowCount;++row){
+            auto* item=new tsl::elm::ListItem(re4::mapping_row_label(row,settings.language),re4::mapping_row_value(row,settings));
+            item->setClickListener([this,row](u64 keys){
+                if(row>0 && row<=re4::kButtonCount && (keys&HidNpadButton_A)){
+                    tsl::changeTo<MappingTargetsGui>(row-1);return true;
+                }
+                if(row==re4::kMappingRowCount-1 && !(keys&HidNpadButton_A))return false;
+                if(!(keys&(HidNpadButton_A|HidNpadButton_Left|HidNpadButton_Right)))return false;
+                if(re4::change_mapping(settings,row,(keys&HidNpadButton_Left)?-1:1)){note.clear();change();}
+                update();return true;
+            });
+            list->addItem(item);rows_.push_back(item);
+        }
+        frame_->setContent(list);return frame_;
+    }
+    void update()override{
+        for(unsigned row=0;row<rows_.size();++row){
+            rows_[row]->setValue(re4::mapping_row_value(row,settings));
+            if(getFocusedElement()==rows_[row])frame_->set_help(re4::mapping_row_help(row,settings.language));
+        }
+    }
+};
 class ControlsGui : public tsl::Gui {
     struct Binding {tsl::elm::ListItem* item;const re4::ControlSpec* spec;};
     struct Header {tsl::elm::CategoryHeader* item;re4::Bilingual text;};
@@ -98,6 +154,10 @@ public:
             }else{
                 item=new tsl::elm::ListItem(spec.label.get(settings.language),re4::control_value_text(spec,settings));
                 item->setClickListener([this,entry](u64 keys){
+                    if(entry->id==re4::ControlId::ButtonMapping){
+                        if(!(keys&HidNpadButton_A))return false;
+                        tsl::changeTo<MappingGui>();return true;
+                    }
                     if(entry->kind==re4::ControlKind::Action && !(keys&HidNpadButton_A))return false;
                     const bool arrows=keys&(HidNpadButton_Left|HidNpadButton_Right);
                     if(!arrows && !(entry->kind!=re4::ControlKind::Slider && (keys&HidNpadButton_A)))return false;

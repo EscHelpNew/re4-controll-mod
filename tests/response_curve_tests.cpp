@@ -38,7 +38,7 @@ int main(){
     assert(shape_axis(0.5f,0,1,static_cast<StickCurve>(255))==0);
     std::uint8_t bytes[kSettingsBytes];
     Settings s;s.language=Language::Russian;s.stick_curve=StickCurve::Hybrid;
-    assert(encode_settings(s,bytes,sizeof(bytes)) && bytes[4]==6);
+    assert(encode_settings(s,bytes,sizeof(bytes)) && bytes[4]==7);
     Settings decoded;assert(decode_settings(bytes,sizeof(bytes),decoded));
     assert(decoded.language==Language::Russian && decoded.stick_curve==StickCurve::Hybrid);
     s.language=static_cast<Language>(2);assert(!valid_settings(s));
@@ -50,7 +50,7 @@ int main(){
     const float old_zone=0.15f,old_walk=0.3f;
     std::memcpy(bytes+32,&old_zone,4);std::memcpy(bytes+36,&old_zone,4);
     std::memcpy(bytes+56,&old_walk,4);seal(bytes);
-    assert(decode_settings(bytes,sizeof(bytes),decoded));
+    assert(decode_settings(bytes,kLegacySettingsBytes,decoded));
     assert(decoded.turn_gain==0.3f && decoded.movement_gain==1);
     assert(decoded.left_deadzone==0.05f && decoded.right_deadzone==0.05f);
     assert(decoded.language==Language::English && decoded.stick_curve==StickCurve::Linear);

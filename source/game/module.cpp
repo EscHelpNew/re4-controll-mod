@@ -10,6 +10,7 @@
 #include "re4/response.hpp"
 #include "re4/sensor.hpp"
 #include "re4/aim_input.hpp"
+#include "re4/camera.hpp"
 #include <atomic>
 
 namespace {
@@ -65,6 +66,23 @@ std::uint64_t last_sensor_tick = 0;
 std::uint64_t next_sensor_retry = 0, last_fresh_tick = 0, last_sensor_number = 0;
 int (*aiming_predicate)(void*) = nullptr;
 void* gyro_input_actor = nullptr;
+struct CameraContext {
+    void* camera;
+    void* actor;
+    re4::CameraOffsets before;
+    bool neutral,reset;
+    float x,y;
+};
+CameraContext* camera_context = nullptr;
+re4::FreeCamera free_orbit;
+bool ordinary_camera(void* camera,void* actor){
+    if(camera!=reinterpret_cast<void*>(main_base+0x11319C0) || !actor
+        || actor!=*reinterpret_cast<void**>(main_base+re4::profile::player_slot))return false;
+    const auto* bytes=static_cast<const std::uint8_t*>(actor);
+    if(bytes[0x114]!=0 || bytes[0x115]>4 || *reinterpret_cast<const std::uint8_t*>(main_base+0x1131718+0x54)!=10)return false;
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    return state && !(state[0x5092]&4) && aiming_predicate && !aiming_predicate(actor);
+}
 re4::AimRoute aim_route(){
     const auto* type=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE10);
     if(*reinterpret_cast<const int*>(main_base+0xAFF39C)!=2 || !type || type[11]!=2)return {false,63};
@@ -155,10 +173,10 @@ bool read_settings(const char* path) {
     std::uint8_t bytes[re4::kSettingsBytes];
     re4::Settings candidate;
     control.settings_read_result = nn::fs::GetFileSize(&size, handle);
-    bool valid = R_SUCCEEDED(control.settings_read_result) && size == sizeof(bytes);
+    bool valid = R_SUCCEEDED(control.settings_read_result) && (size == sizeof(bytes) || size == re4::kLegacySettingsBytes);
     if(valid){
-        control.settings_read_result = nn::fs::ReadFile(handle, 0, bytes, sizeof(bytes));
-        valid = R_SUCCEEDED(control.settings_read_result) && re4::decode_settings(bytes, sizeof(bytes), candidate);
+        control.settings_read_result = nn::fs::ReadFile(handle, 0, bytes, size);
+        valid = R_SUCCEEDED(control.settings_read_result) && re4::decode_settings(bytes, size, candidate);
     }
     nn::fs::CloseFile(handle);
     if(valid)settings=candidate;
@@ -197,7 +215,10 @@ void poll_settings() {
     control.settings_source = 4;
     re4::acknowledge_settings(control, settings, before);
 }
-void capture(const NpadState& pad, std::uint32_t id, std::uint32_t style) {
+void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
+    // Transform the original SDK state once, including menu and QTE input.
+    // Overlay/HOME controls belong to other processes and remain physical.
+    pad.buttons=re4::remap_buttons(pad.buttons,settings.button_map,settings.remap_enabled);
     control.pad_samples = control.pad_samples + 1;
     control.last_pad_id = id;
     if (id != 0 && id != 0x20) return;
@@ -293,17 +314,53 @@ HOOK_DEFINE_TRAMPOLINE(MotionAdvance) {
         return result;
     }
 };
+HOOK_DEFINE_TRAMPOLINE(CameraApply) {
+    static void Callback(void* camera,void* output){
+        const auto* context=camera_context;
+        const auto* bytes=static_cast<const std::uint8_t*>(camera);
+        if(context && context->camera==camera && ordinary_camera(camera,context->actor)
+            && !context->reset && !bytes[0x222] && bytes[0x26C]==2){
+            if(!settings.free_camera && (!context->neutral || settings.camera_return_speed==1)){
+                free_orbit.reset();Orig(camera,output);return;
+            }
+            auto* offsets=reinterpret_cast<float*>(static_cast<std::uint8_t*>(camera)+0x270);
+            re4::CameraOffsets value{offsets[0],offsets[1]};
+            if(settings.free_camera){
+                value=free_orbit.update(reinterpret_cast<std::uintptr_t>(camera),svcGetSystemTick(),
+                    context->before,context->x,context->y);
+            }else{
+                free_orbit.reset();
+                value=re4::camera_return(context->before,value,context->neutral,settings.camera_return_speed);
+            }
+            offsets[0]=value.pitch;offsets[1]=value.yaw;
+        }else if(context && context->camera==camera)free_orbit.reset();
+        Orig(camera,output); // Consume corrected offsets before native vectors/collision.
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(CameraInput) {
     static void Callback(void* camera) {
         auto* actor = *reinterpret_cast<std::uint8_t**>(main_base + re4::profile::player_slot);
-        if (!settings.analog_enabled || !actor || actor[0x114] != 0 || actor[0x115] > 4) { Orig(camera); return; }
+        if (!settings.analog_enabled || !actor || actor[0x114] != 0 || actor[0x115] > 4) { free_orbit.reset();Orig(camera); return; }
         const bool alternate = *reinterpret_cast<int*>(main_base + 0x11C7D68) == 1;
         auto* input = reinterpret_cast<std::int8_t*>(main_base + 0x124EC38 + (alternate ? 0xC0 : 8));
         const auto x = input[0], y = input[1];
         control.camera_calls = control.camera_calls + 1;
         input[0] = re4::camera_axis(control.raw_rx, settings.right_deadzone, settings.camera_gain, settings.stick_curve);
         input[1] = re4::camera_axis(control.raw_ry, settings.right_deadzone, settings.camera_gain, settings.stick_curve);
+        CameraContext context{camera,actor,{},input[0]==0&&input[1]==0,false,
+            re4::shape_axis(control.raw_rx,settings.right_deadzone,settings.camera_gain,settings.stick_curve),
+            re4::shape_axis(control.raw_ry,settings.right_deadzone,settings.camera_gain,settings.stick_curve)};
+        auto* previous=camera_context;
+        if(ordinary_camera(camera,actor)){
+            const auto* bytes=static_cast<const std::uint8_t*>(camera);
+            const auto* offsets=reinterpret_cast<const float*>(bytes+0x270);
+            context.before={offsets[0],offsets[1]};context.reset=bytes[0x222]!=0;
+            const auto* type=*reinterpret_cast<const int**>(main_base+0xB1AE10);
+            if(type && *type<0)context.y=-context.y;
+            camera_context=&context;
+        }else{camera_context=nullptr;free_orbit.reset();}
         Orig(camera);
+        camera_context=previous;
         input[0] = x; input[1] = y;
     }
 };
@@ -381,6 +438,7 @@ extern "C" void exl_main(void*, void*) {
     MovementTurn::InstallAtOffset(re4::profile::movement_dispatch);
     MotionAdvance::InstallAtOffset(0x2B8F10);
     CameraInput::InstallAtOffset(0x19B20);
+    CameraApply::InstallAtOffset(0x18520);
     AimSensitivity::InstallAtOffset(0x33DF80);
     AimSway::InstallAtOffset(0x33EC50);
     control.status = 1;

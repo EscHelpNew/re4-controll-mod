@@ -78,11 +78,18 @@ public:
 class Gui {
 public:
     elm::Element* focused=nullptr;
-    virtual ~Gui()=default;
+    elm::Element* root=nullptr;
+    virtual ~Gui(){delete root;}
     virtual elm::Element* createUI()=0;
     virtual void update(){}
     elm::Element* getFocusedElement(){return focused;}
 };
+inline std::vector<std::unique_ptr<Gui>> navigation;
+template<class T,class... Args>std::unique_ptr<Gui>& changeTo(Args&&... args){
+    auto gui=std::make_unique<T>(std::forward<Args>(args)...);
+    gui->root=gui->createUI();navigation.push_back(std::move(gui));return navigation.back();
+}
+inline void goBack(){if(!navigation.empty())navigation.pop_back();}
 class Overlay {
 public:
     virtual ~Overlay()=default;

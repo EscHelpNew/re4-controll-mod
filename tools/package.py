@@ -47,7 +47,8 @@ def package() -> None:
                 'features': ['proportional turning and walking', 'camera/aim sensitivity',
                              'additive firearm-aim gyro', 'English/Russian settings',
                              'four stick response curves', 'themed reloadable installer',
-                             'separate right-stick aiming','10ms gyro average and angular deadzone','public GitHub OTA updates'],
+                             'separate right-stick aiming','10ms gyro average and angular deadzone','public GitHub OTA updates',
+                             '20-button mapping including menus/QTE','adjustable camera return and free 360 orbit'],
                 'verified': ['user confirmed movement/camera/aim in 0.2.0',
                              'user confirmed additive aim-only gyro, vertical range, help and speed caps in 0.2.2',
                              'overlay UI on existing Uberhand',
@@ -56,7 +57,8 @@ def package() -> None:
                              'user confirmed gyro filter/speed/deadzone and automatic HOME icon in 0.3.1',
                              'user confirmed right-stick aim zero/variable-speed behavior in 0.4.0',
                              'diagnostic sticks/gyro on console', 'NRO changed-image reload and new PID', 'cold-launch credential'],
-                'pending': ['public anonymous OTA hardware download (repository currently private)',
+                'pending': ['anonymous OTA installation on console',
+                            'free camera and button mapping hardware acceptance',
                             'special weapons and all gameplay contexts', 'controller switch in game'],
                 'files': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}}
     destination = OUT / 're4-controls-experimental.zip'

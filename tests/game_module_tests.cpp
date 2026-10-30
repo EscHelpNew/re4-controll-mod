@@ -10,6 +10,7 @@ int test_PadNormalize(void*);
 void test_MovementTurn(void*);
 unsigned test_MotionAdvance(void*);
 void test_CameraInput(void*);
+void test_CameraApply(void*,void*);
 int test_AimSensitivity(void*, int);
 void test_AimSway(void*, unsigned, float*, float*);
 }
@@ -23,7 +24,7 @@ std::vector<re4::SensorState> sensor_batch;
 bool consume_aim_axes=false;
 int seen_aim_x=0,seen_aim_y=0;
 float aim_full_scale=63,cached_aim_yaw=0,cached_aim_pitch=0,native_pitch_sign=1;
-void test_FullPad(NpadState* state, const std::uint32_t&) { *state={}; state->attributes=game_test::pad_attributes; }
+void test_FullPad(NpadState* state, const std::uint32_t&) { *state={}; state->attributes=game_test::pad_attributes;state->buttons=game_test::pad_buttons; }
 void test_HandheldPad(NpadState* state, const std::uint32_t& id) { test_FullPad(state,id); }
 void test_DualPad(NpadState* state, const std::uint32_t& id) { test_FullPad(state,id); }
 int test_PadNormalize(void*) { return 7; }
@@ -39,10 +40,26 @@ void test_MovementTurn(void* actor) {
     *reinterpret_cast<float*>(b+0xB4)+=b[0x115]==5 ? 3.14159265f : 0.04f;
     MotionAdvance::Callback(b+0x228);
 }
-void test_CameraInput(void*) {
+void test_CameraInput(void* camera) {
     const bool alternate=*reinterpret_cast<int*>(main_base+0x11C7D68)==1;
     auto* in=reinterpret_cast<std::int8_t*>(main_base+0x124EC38+(alternate?0xC0:8));
     game_test::camera_x=in[0]; game_test::camera_y=in[1];
+    if(camera){
+        auto* bytes=static_cast<std::uint8_t*>(camera);
+        auto* offsets=reinterpret_cast<float*>(bytes+0x270);
+        if(in[0]||in[1]){
+            const auto* type=*reinterpret_cast<const int**>(main_base+0xB1AE10);
+            offsets[0]=std::clamp(float(in[1])/59*(type&&*type<0?-1:1),-1.f,1.f);
+            offsets[1]=float(in[0])/59*-1.04719758f;
+        }else{offsets[0]*=0.9f;offsets[1]*=0.9f;}
+        if(game_test::camera_gate_change==1)bytes[0x26C]=0;
+        if(game_test::camera_gate_change==2)bytes[0x222]=1;
+        CameraApply::Callback(camera,nullptr);
+    }
+}
+void test_CameraApply(void* camera,void*){
+    const auto* offsets=reinterpret_cast<const float*>(static_cast<const std::uint8_t*>(camera)+0x270);
+    game_test::rendered_pitch=offsets[0];game_test::rendered_camera_yaw=offsets[1];
 }
 int test_AimSensitivity(void* actor,int) {
     auto* b=static_cast<std::uint8_t*>(actor);
@@ -84,8 +101,11 @@ bool near(float a,float b) {return std::fabs(a-b)<0.0001f;}
 struct Fixture {
     std::vector<std::uint8_t> image=std::vector<std::uint8_t>(0x1267000);
     alignas(16) std::uint8_t actor[0xA00]{};
+    std::vector<std::uint8_t> input_state=std::vector<std::uint8_t>(0x5200);
+    alignas(4) std::uint8_t input_type[16]{};
     Fixture() {
         sensor.stop();sensor={};gyro.reset();gyro_pending={};last_sensor_tick=0;
+        free_orbit.reset();camera_context=nullptr;
         consume_aim_axes=true;seen_aim_x=seen_aim_y=0;aim_full_scale=63;cached_aim_yaw=cached_aim_pitch=0;
         native_pitch_sign=1;
         sensor_pad=0;sensor_style=0;sensor_attributes=0;
@@ -95,8 +115,10 @@ struct Fixture {
         game_test::sensor_starts=game_test::sensor_stops=game_test::sensor_reads=0;
         game_test::start_result=0;game_test::tick=1;game_test::native_aim=1;
         game_test::apply_sway=false;game_test::aim_step=0.08f;game_test::sway_baseline=0;
+        game_test::pad_buttons=0;
+        game_test::camera_gate_change=0;
         game_test::program=re4::profile::title_id;
-        settings={};settings.invert_x=settings.invert_y=false;
+        settings={};settings.gyro_speed=1;settings.invert_x=settings.invert_y=false;
         settings.left_deadzone=settings.right_deadzone=0.15f;
         file_read=false;file_mounted=false;file_attempts=0;next_file_retry=0;
         last_sequence=0;raw_left_x=0;dpad_move=dpad_turn=false;movement_actor=nullptr;
@@ -112,6 +134,14 @@ struct Fixture {
     float& yaw(){return *reinterpret_cast<float*>(actor+0xB4);}
     float* pitch(){return reinterpret_cast<float*>(image.data()+0x1265A08);}
     void aim(){actor[0x115]=6;actor[0x116]=1;flags()=0x10;aiming_predicate=test_is_aiming;}
+    std::uint8_t* camera(){return image.data()+0x11319C0;}
+    float* look(){return reinterpret_cast<float*>(camera()+0x270);}
+    void camera_mode(){
+        actor[0x115]=1;game_test::native_aim=0;aiming_predicate=test_is_aiming;
+        image[0x1131718+0x54]=10;camera()[0x26C]=2;
+        *reinterpret_cast<void**>(image.data()+0xB1AE08)=input_state.data();
+        *reinterpret_cast<void**>(image.data()+0xB1AE10)=input_type;
+    }
     void sample(unsigned n) {
         re4::SensorState s{};s.number=n;s.interval_ns=5'000'000;s.attributes=1;
         s.angular_velocity[0]=s.angular_velocity[1]=-1/6.28318530718f;
@@ -120,6 +150,85 @@ struct Fixture {
 };
 }
 int main(){
+    for(unsigned style:{1u,2u,4u}){
+        Fixture f;f.actor[0x114]=9;f.actor[0x115]=99; // Menus/QTE remain remapped too.
+        settings.button_map[0]=1;settings.button_map[1]=0;settings.button_map[2]=re4::kUnboundButton;
+        settings.button_map[4]=8;game_test::pad_buttons=1ull|4ull|16ull|(1ull<<40);
+        NpadState pad{};const std::uint32_t id=style==2?32:0;
+        if(style==1)FullPad::Callback(&pad,id);
+        else if(style==2)HandheldPad::Callback(&pad,id);
+        else DualPad::Callback(&pad,id);
+        assert(pad.buttons==(2ull|256ull|(1ull<<40)) && pad.attributes==game_test::pad_attributes);
+        settings.remap_enabled=false;FullPad::Callback(&pad,id);assert(pad.buttons==game_test::pad_buttons);
+    }
+    {
+        Fixture f;f.camera_mode();f.look()[0]=0.8f;f.look()[1]=-1;
+        settings.camera_return_speed=0.5f;CameraInput::Callback(f.camera());
+        assert(near(game_test::rendered_pitch,0.8f*std::sqrt(0.9f)));
+        assert(near(game_test::rendered_camera_yaw,-std::sqrt(0.9f)));
+        assert(game_test::rendered_camera_yaw==f.look()[1]); // Correction precedes native consumers.
+        settings.camera_return_speed=0;const auto held=f.look()[1];CameraInput::Callback(f.camera());
+        assert(f.look()[1]==held);
+        settings.camera_return_speed=1;CameraInput::Callback(f.camera());assert(near(f.look()[1],held*0.9f));
+        settings.camera_return_speed=0;control.raw_rx=1;CameraInput::Callback(f.camera());
+        assert(near(f.look()[1],-63.f/59*1.04719758f) && f.look()[0]==0); // Joint neutral, not per-axis decay.
+    }
+    {
+        Fixture f;f.camera_mode();settings.free_camera=true;settings.right_deadzone=0;control.raw_rx=1;
+        CameraInput::Callback(f.camera());
+        for(unsigned n=0;n<60;++n){game_test::tick+=320'000;CameraInput::Callback(f.camera());}
+        assert(near(game_test::rendered_camera_yaw,-2.0943951f) && f.yaw()==0);
+        control.raw_rx=0;const auto held=f.look()[1];game_test::tick+=320'000;CameraInput::Callback(f.camera());
+        assert(f.look()[1]==held); // Free orbit remains held after release.
+        *reinterpret_cast<int*>(f.input_type)=-1;control.raw_ry=1;
+        game_test::tick+=320'000;CameraInput::Callback(f.camera());assert(f.look()[0]<0);
+        f.look()[0]=f.look()[1]=0;control.raw_ry=0; // Native aim entry consumes and clears camera state.
+        game_test::tick+=320'000;CameraInput::Callback(f.camera());assert(f.look()[1]==0);
+        control.raw_rx=1;game_test::tick+=320'000;CameraInput::Callback(f.camera());assert(f.look()[1]<0);
+        f.input_state[0x5092]=4;const auto before=f.look()[1];game_test::tick+=320'000;
+        CameraInput::Callback(f.camera());assert(near(f.look()[1],-63.f/59*1.04719758f) && f.look()[1]!=before);
+        f.input_state[0x5092]=0;control.raw_rx=0;game_test::tick+=320'000;CameraInput::Callback(f.camera());
+        const auto resumed=f.look()[1];game_test::tick+=320'000;CameraInput::Callback(f.camera());
+        assert(f.look()[1]==resumed); // Pause resets continuity instead of replaying old orbit.
+    }
+    for(unsigned gate=0;gate<11;++gate){
+        Fixture f;f.camera_mode();settings.free_camera=true;settings.camera_return_speed=0;
+        f.look()[0]=0.5f;f.look()[1]=0.7f;
+        if(gate==0)f.camera()[0x222]=1;
+        if(gate==1)f.camera()[0x26C]=0;
+        if(gate==2)f.image[0x1131718+0x54]=9;
+        if(gate==3)f.actor[0x114]=1;
+        if(gate==4)f.actor[0x115]=6;
+        if(gate==5)game_test::native_aim=1;
+        if(gate==6)settings.analog_enabled=false;
+        if(gate==7)*reinterpret_cast<void**>(f.image.data()+0xB1AE08)=nullptr;
+        if(gate==8)f.input_state[0x5092]=4;
+        if(gate==9)game_test::camera_gate_change=1;
+        if(gate==10)game_test::camera_gate_change=2;
+        CameraInput::Callback(f.camera());
+        assert(near(game_test::rendered_pitch,0.45f) && near(game_test::rendered_camera_yaw,0.63f));
+        assert(camera_context==nullptr);
+    }
+    {
+        Fixture f;f.camera_mode();settings.free_camera=true;settings.right_deadzone=0;
+        settings.camera_gain=0.5f;settings.stick_curve=re4::StickCurve::Exponential;
+        *reinterpret_cast<int*>(f.image.data()+0x11C7D68)=1;control.raw_rx=0.5f;
+        CameraInput::Callback(f.camera());
+        for(unsigned n=0;n<60;++n){game_test::tick+=320'000;CameraInput::Callback(f.camera());}
+        assert(near(f.look()[1],-2.0943951f*0.125f)); // Curve and sensitivity applied once in the alternate input route.
+        assert(f.image[0x124EC38+0xC0]==0 && f.image[0x124EC38+0xC1]==0);
+    }
+    {
+        Fixture f;re4::Settings legacy;legacy.gyro_enabled=true;legacy.gyro_speed=1.7f;
+        std::uint8_t current[re4::kSettingsBytes];assert(re4::encode_settings(legacy,current,sizeof(current)));
+        game_test::settings_primary.assign(current,current+re4::kLegacySettingsBytes);
+        auto& old=game_test::settings_primary;old[4]=6;
+        std::uint32_t sum=2166136261u;for(unsigned i=0;i<60;++i){sum^=old[i];sum*=16777619u;}
+        for(unsigned i=0;i<4;++i)old[60+i]=std::uint8_t(sum>>(i*8));
+        game_test::mount_result=0;PadNormalize::Callback(nullptr);
+        assert(settings.gyro_enabled && settings.gyro_speed==1.7f);
+        assert(settings.button_map==re4::identity_button_map() && !settings.free_camera && settings.camera_return_speed==1);
+    }
     for(bool enabled:{false,true}){
         Fixture f;re4::Settings saved;saved.gyro_enabled=enabled;saved.gyro_speed=2.5f;
         saved.gyro_deadzone_dps=0.7f;saved.turn_gain=0.37f;
@@ -184,7 +293,7 @@ int main(){
         game_test::program=re4::profile::title_id;f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
         assert(control.status==2 && game_test::installed==0);
         f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
-        assert(control.status==1 && game_test::installed==9 && game_test::initialized==1);
+        assert(control.status==1 && game_test::installed==10 && game_test::initialized==1);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }

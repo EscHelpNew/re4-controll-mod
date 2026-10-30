@@ -5,7 +5,7 @@
 #include <string>
 
 namespace re4 {
-enum class InstallerPage { Home, Controls, Diagnostics, Updates };
+enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets };
 enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview };
 enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate };
 enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
@@ -21,6 +21,7 @@ public:
     Settings settings;
     InstallerPage page=InstallerPage::Home;
     unsigned selected=0,home_selected=0;
+    unsigned controls_selected=0,mapping_source=0;
     InstallerStatus status=InstallerStatus::Ready;
     DiagnosticSnapshot diagnostic;
     UpdateSnapshot update;

@@ -14,6 +14,9 @@ and updates from GitHub Releases. English is the default language.
 - Proportional turning, walking, camera and firearm aiming.
 - Separate left/right aiming sensitivities and adjustable stick deadzones.
 - Linear, exponential, logarithmic and blended response curves.
+- Remap 20 game-visible buttons, including menus and QTE, with swaps, duplicate
+  targets or unbound buttons. The overlay keeps its physical controls.
+- Adjustable camera return speed and a continuous 360-degree free camera.
 - Additive gyro aiming **only while aiming a firearm**; independent X/Y gains,
   motion speed, calibration and a deadzone in degrees/second.
 - Gyro filtering averages two readings separated by 10 ms of sensor time.
@@ -23,6 +26,15 @@ and updates from GitHub Releases. English is the default language.
 
 Stick speed is capped at the game's native maximum. Default stick deadzones
 are 0.05. Both gyro inversions default to on; gyro aiming defaults to off.
+Sensitivity/speed defaults are 1.00, except gyro aiming speed at 0.80.
+Existing saved sensitivities are preserved when updating.
+
+In **Control settings → Button mapping**, select a physical button and its game
+target. HOME/Capture belong to the system and are outside game remapping.
+**Camera return speed** ranges from 1.00 (native return) to 0.00 (hold the bounded
+look angle). **Free camera 360** adds continuous right-stick rotation with no
+return, using Camera sensitivity and the chosen curve. Smooth sticks must be on.
+Pitch remains within the native vertical range; normal weapon aiming remains separate.
 
 ## Supported game
 

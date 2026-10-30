@@ -116,7 +116,7 @@ int main() {
     assert(decoded.movement_gain == 1);
     // Version 1's reserved slot was zero. Preserve existing SD settings and
     // give old files the original full walking speed.
-    auto legacy = std::vector<std::uint8_t>(encoded, encoded + sizeof(encoded));
+    auto legacy = std::vector<std::uint8_t>(encoded, encoded + kLegacySettingsBytes);
     legacy[4] = 1;
     legacy[8]&=15;legacy[9]=legacy[10]=legacy[11]=0;
     std::memset(legacy.data() + 56, 0, 4);
@@ -127,7 +127,7 @@ int main() {
     assert(decoded.movement_gain == 1 && decoded.turn_gain == 1);
     // Older releases allowed speed-up to4. Migrate each old stick gain down to
     // the original game limit while preserving the remaining configuration.
-    legacy.assign(encoded, encoded + sizeof(encoded));
+    legacy.assign(encoded, encoded + kLegacySettingsBytes);
     legacy[4] = 2;
     legacy[8]&=15;legacy[9]=legacy[10]=legacy[11]=0;
     const float old_gain = 3;

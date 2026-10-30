@@ -36,6 +36,10 @@ def tests():
          'tests/input_tests.cpp', 'source/input.cpp', 'source/settings.cpp',
          '-o', OUT / 'input_tests.exe'])
     native('input_tests.exe')
+    for name,sources in [('button_map_tests',[]),('settings_v7_tests',['source/settings.cpp']),('camera_tests',[])]:
+        run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+             'tests/'+name+'.cpp',*sources,'-o',OUT/(name+'.exe')])
+        native(name+'.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/settings_file_tests.cpp', 'source/settings.cpp', 'source/settings_file.cpp',
          '-o', OUT / 'settings_file_tests.exe'])

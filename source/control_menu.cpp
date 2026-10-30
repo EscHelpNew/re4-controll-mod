@@ -30,6 +30,15 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
         slider(ControlId::Camera,{"Camera sensitivity","Чувствительность камеры"},
             {"Right-stick look outside firearm aiming.\nA lower value gives a gentler response.\n1 keeps the native full look range.",
              "Обзор правым стиком вне прицеливания.\nМеньше значение — мягче отклик камеры.\n1: полный штатный диапазон обзора."},&Settings::camera_gain,0.1f,1),
+        slider(ControlId::CameraReturn,{"Camera return speed","Скорость возврата камеры"},
+            {"Return to centre after releasing the stick.\n1: native return; 0: hold the look angle.\nFree camera has no automatic return.",
+             "Возврат камеры при отпускании стика.\n1: штатный; 0: удерживать угол обзора.\nСвободная камера не возвращается сама."},&Settings::camera_return_speed,0.1f,1),
+        toggle(ControlId::FreeCamera,{"Free camera 360","Свободная камера 360"},
+            {"Continuous right-stick orbit while walking.\nCamera sensitivity sets the orbit speed.\nNative collision stays active; no auto return.",
+             "Непрерывный обзор правым стиком при ходьбе.\nЧувствительность камеры задаёт скорость.\nШтатные столкновения; без автовозврата."},&Settings::free_camera),
+        {ControlId::ButtonMapping,ControlKind::Action,{"Button mapping","Назначение кнопок"},
+            {"Map physical buttons in menus, QTE and play.\nOverlay controls remain physical for recovery.\nHOME/Capture are system buttons outside RE4.",
+             "Кнопки в игре, меню и QTE.\nОверлей использует физические кнопки.\nHOME/Capture — системные кнопки вне RE4."}},
         slider(ControlId::AimX,{"Left-stick aim X","Прицел левым стиком X"},
             {"Horizontal aiming from the stick.\n0: disabled; 1: native maximum.\nGyro sensitivity is independent.",
              "Прицел влево и вправо от стика.\n0: выключено; 1: штатный максимум.\nЧувствительность гироскопа отдельно."},&Settings::aim_gain_x,0.1f,1),
@@ -105,5 +114,50 @@ bool change_control(Settings& s,ControlId id,int direction){
     if(id==ControlId::Curve){s.stick_curve=static_cast<StickCurve>((unsigned(s.stick_curve)+(direction>0?1:3))%4);return true;}
     if(id==ControlId::Reset){s={};return true;}
     return false;
+}
+const char* mapping_target_label(unsigned target,Language language){
+    if(target>=kButtonCount)return Bilingual{"Unbound","Не назначено"}.get(language);
+    return button_name(target);
+}
+unsigned mapping_target_index(const Settings& s,unsigned source){
+    return source<kButtonCount && s.button_map[source]<kButtonCount?s.button_map[source]:kButtonCount;
+}
+std::string mapping_row_label(unsigned row,Language language){
+    if(row==0)return Bilingual{"Enable mapping","Включить назначения"}.get(language);
+    if(row<=kButtonCount)return button_name(row-1);
+    return Bilingual{"Reset mappings","Сбросить назначения"}.get(language);
+}
+std::string mapping_row_value(unsigned row,const Settings& s){
+    if(row==0)return Bilingual{s.remap_enabled?"On":"Off",s.remap_enabled?"Вкл":"Выкл"}.get(s.language);
+    if(row<=kButtonCount)return mapping_target_label(mapping_target_index(s,row-1),s.language);
+    return "A";
+}
+const char* mapping_target_help(Language language){
+    return Bilingual{"A: use this game button; B: cancel.\nDuplicates, swaps and cycles are allowed.\nOverlay controls always stay physical.",
+        "A: назначить кнопку; B: отменить.\nДопустимы повторы, обмен и циклы.\nОверлей всегда использует физические кнопки."}.get(language);
+}
+const char* mapping_row_help(unsigned row,Language language){
+    if(row==0)return Bilingual{"Enable mappings in play, menus and QTE.\nOverlay buttons stay physical for recovery.\nHOME/Capture belong to the system, not RE4.",
+        "Назначения для игры, меню и QTE.\nКнопки оверлея остаются физическими.\nHOME/Capture — системные кнопки вне RE4."}.get(language);
+    if(row>kButtonCount)return Bilingual{"A: enable mapping and restore every button.\nCamera, gyro and other settings are kept.\nArrows do not reset mappings.",
+        "A: включить и вернуть исходные кнопки.\nКамера, гироскоп и прочие настройки сохранятся.\nСтрелки не сбрасывают назначения."}.get(language);
+    return Bilingual{"Physical source -> game button. A: choose.\nLEFT/RIGHT: cycle targets, including Unbound.\nOverlay stays physical; HOME/Capture excluded.",
+        "Физическая кнопка -> кнопка игры. A: выбрать.\nВлево/вправо: сменить, «Не назначено».\nОверлей физический; HOME/Capture вне игры."}.get(language);
+}
+bool set_mapping_target(Settings& s,unsigned source,unsigned target){
+    if(source>=kButtonCount || target>kButtonCount)return false;
+    const auto value=target==kButtonCount?kUnboundButton:std::uint8_t(target);
+    if(s.button_map[source]==value)return false;
+    s.button_map[source]=value;return true;
+}
+bool change_mapping(Settings& s,unsigned row,int direction){
+    if(!direction || row>=kMappingRowCount)return false;
+    if(row==0){s.remap_enabled=!s.remap_enabled;return true;}
+    if(row>kButtonCount){
+        const bool changed=!s.remap_enabled || s.button_map!=identity_button_map();
+        s.remap_enabled=true;s.button_map=identity_button_map();return changed;
+    }
+    const unsigned next=(mapping_target_index(s,row-1)+(direction>0?1:kButtonCount))%(kButtonCount+1);
+    return set_mapping_target(s,row-1,next);
 }
 }

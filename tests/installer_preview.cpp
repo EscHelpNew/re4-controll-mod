@@ -16,6 +16,18 @@ int main(){
     model.page=re4::InstallerPage::Controls;model.selected=1;
     model.settings.language=re4::Language::Russian;model.settings.stick_curve=re4::StickCurve::Hybrid;
     renderer.draw(model);assert(renderer.save_preview("build/installer-controls-ru.bmp"));
+    for(auto language:{re4::Language::English,re4::Language::Russian}){
+        model.settings.language=language;
+        model.page=re4::InstallerPage::Mapping;model.selected=21;
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-mapping-en.bmp":"build/installer-mapping-ru.bmp"));
+        model.page=re4::InstallerPage::MappingTargets;model.mapping_source=19;model.selected=20;
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-mapping-targets-en.bmp":"build/installer-mapping-targets-ru.bmp"));
+        model.page=re4::InstallerPage::Controls;model.selected=unsigned(re4::ControlId::CameraReturn);
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-camera-en.bmp":"build/installer-camera-ru.bmp"));
+    }
     model.page=re4::InstallerPage::Diagnostics;model.settings.language=re4::Language::English;
     model.diagnostic.connected=true;model.diagnostic.sensors=1;model.diagnostic.raw[0]=0.65f;
     model.diagnostic.processed[0]=0.5f;

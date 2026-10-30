@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- Add complete 20-button game mapping to installer and overlay, including menus/QTE.
+- Support duplicate targets, swaps, cycles, unbound buttons and mapping-only reset.
+- Add camera return speed and continuous right-stick 360-degree free camera.
+- Preserve native camera collision/smoothing and exclude aiming, pause/reset and scripted camera paths.
+- Set new/reset gyro aiming speed to 0.80; other sensitivity/speed defaults remain 1.00.
+- Migrate 64-byte settings v1-v6 into strict 128-byte v7 without resetting saved controls.
+- Expand core, actual game callback, bilingual UI and rendering tests; bump shared ABI to 11.
+
 ## 0.4.2
 
 - Restore saved gyro enable/sensitivity after restarting RE4 without toggling the overlay.
