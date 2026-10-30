@@ -9,7 +9,7 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.6.0, unreleased**. Published Releases may
+The current source/local build is **0.7.0, unreleased**. Published Releases may
 contain an earlier version while new features are being tested.
 
 ## Features
@@ -22,6 +22,8 @@ contain an earlier version while new features are being tested.
 - Adjustable camera return speed and a continuous 360-degree free camera.
 - A Graphics menu with Native defaults: bilinear/trilinear/AF2x-16x filtering,
   handheld900p SSAA, loaded-object culling distance and rendered shadows.
+- Independent Default/Custom profiles for controls and graphics. Editing a setting
+  saves Custom; selecting Default keeps your last Custom for later restoration.
 - Additive gyro aiming **only while aiming a firearm**; independent X/Y gains,
   motion speed, calibration and a deadzone in degrees/second.
 - Gyro filtering averages two readings separated by 10 ms of sensor time.
@@ -33,6 +35,10 @@ Stick speed is capped at the game's native maximum. Default stick deadzones
 are 0.05. Both gyro inversions default to on; gyro aiming defaults to off.
 Sensitivity/speed defaults are 1.00, except gyro aiming speed at 0.80.
 Existing saved sensitivities are preserved when updating.
+
+The overlay opens separate **Controls** and **Graphics** sections. Each has its
+own profile selector; switching one preserves the other, your language and gyro
+calibration. An empty Custom profile becomes available after editing a setting.
 
 In **Control settings → Button mapping**, select a physical button and its game
 target. HOME/Capture belong to the system and are outside game remapping.

@@ -40,6 +40,7 @@ unsigned InstallerModel::item_count()const{
     return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlId::Count):page==InstallerPage::Updates?2:0;
 }
 InstallerAction InstallerModel::handle(UiEvent event){
+    profile_note.clear();
     if(event==UiEvent::Exit)return InstallerAction::Exit;
     if(event==UiEvent::Back){
         if(page==InstallerPage::Graphics){page=graphics_origin;selected=page==InstallerPage::Home?home_selected:controls_selected;return InstallerAction::None;}
@@ -94,6 +95,11 @@ InstallerAction InstallerModel::handle(UiEvent event){
     if(page==InstallerPage::Graphics){
         if(selected>=count)selected=0;
         const auto& spec=graphics_specs()[selected];
+        if(spec.id==GraphicsId::Profile){
+            if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
+            return profile_kind(settings,ProfileDomain::Graphics)==ProfileKind::Default?
+                InstallerAction::CustomGraphics:InstallerAction::DefaultGraphics;
+        }
         if(spec.kind==ControlKind::Action)return event==UiEvent::Confirm && reset_graphics(settings)?InstallerAction::SaveSettings:InstallerAction::None;
         if(event!=UiEvent::Left && event!=UiEvent::Right && !(event==UiEvent::Confirm && spec.kind!=ControlKind::Slider))return InstallerAction::None;
         return change_graphics(settings,spec.id,event==UiEvent::Left?-1:1)?InstallerAction::SaveSettings:InstallerAction::None;
@@ -101,9 +107,10 @@ InstallerAction InstallerModel::handle(UiEvent event){
     if(page==InstallerPage::Controls){
         if(selected>=count)selected=0;
         const auto& spec=control_specs()[selected];
-        if(spec.id==ControlId::GraphicsMenu){
-            if(event==UiEvent::Confirm){controls_selected=selected;graphics_origin=page;page=InstallerPage::Graphics;selected=0;}
-            return InstallerAction::None;
+        if(spec.id==ControlId::Profile){
+            if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
+            return profile_kind(settings,ProfileDomain::Controls)==ProfileKind::Default?
+                InstallerAction::CustomControls:InstallerAction::DefaultControls;
         }
         if(spec.id==ControlId::ButtonMapping){
             if(event==UiEvent::Confirm){controls_selected=selected;page=InstallerPage::Mapping;selected=0;}
@@ -171,6 +178,8 @@ const char* InstallerModel::status_text()const{
     return messages[index<sizeof(messages)/sizeof(*messages)?index:unsigned(InstallerStatus::Failed)].get(settings.language);
 }
 const char* InstallerModel::selected_help()const{
+    if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
+        || (page==InstallerPage::Controls && selected==unsigned(ControlId::Profile))))return profile_note.c_str();
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_help(selected,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);

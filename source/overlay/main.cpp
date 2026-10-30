@@ -20,10 +20,18 @@ void record_connection() {
     }
 }
 void change() {
-    const bool saved=overlay_storage::ready() && re4::save_settings_file(overlay_storage::settings_path,settings);
+    const bool saved=overlay_storage::ready() && re4::save_profiled_settings(overlay_storage::settings_path,settings);
     link.language=settings.language;
     link.apply(settings);
     note=saved?link.message:tr("Could not save settings to SD","Не удалось сохранить настройки на SD");
+}
+void change_profile(re4::ProfileDomain domain){
+    const auto next=re4::profile_kind(settings,domain)==re4::ProfileKind::Default?
+        re4::ProfileKind::Custom:re4::ProfileKind::Default;
+    const auto result=overlay_storage::ready()?re4::switch_profile(overlay_storage::settings_path,settings,domain,next):
+        re4::ProfileResult::SaveFailed;
+    if(result==re4::ProfileResult::Applied){link.language=settings.language;link.apply(settings);}
+    note=re4::profile_result_text(result,settings.language);
 }
 class DescriptionFrame : public tsl::elm::OverlayFrame {
     const char* description_="Select a setting to see its description.";
@@ -115,6 +123,7 @@ public:
                 if(entry.kind==re4::ControlKind::Action && !(keys&HidNpadButton_A))return false;
                 const bool arrows=keys&(HidNpadButton_Left|HidNpadButton_Right);
                 if(!arrows && !(entry.kind!=re4::ControlKind::Slider && (keys&HidNpadButton_A)))return false;
+                if(id==re4::GraphicsId::Profile){change_profile(re4::ProfileDomain::Graphics);update();return true;}
                 const bool changed=id==re4::GraphicsId::Reset?re4::reset_graphics(settings):
                     re4::change_graphics(settings,id,(keys&HidNpadButton_Left)?-1:1);
                 if(changed){note.clear();change();}
@@ -132,7 +141,8 @@ public:
             const auto& spec=re4::graphics_specs()[row];
             rows_[row]->setText(spec.label.get(settings.language));
             rows_[row]->setValue(re4::graphics_value_text(spec,settings));
-            if(getFocusedElement()==rows_[row])frame_->set_help(spec.help.get(settings.language));
+            if(getFocusedElement()==rows_[row])frame_->set_help(spec.id==re4::GraphicsId::Profile && !note.empty()?
+                note.c_str():spec.help.get(settings.language));
         }
     }
 };
@@ -143,7 +153,6 @@ class ControlsGui : public tsl::Gui {
     std::vector<Header> headers_;
     tsl::elm::ListItem* status_=nullptr;
     DescriptionFrame* description_frame_=nullptr;
-    unsigned frame_=0;
     void add_header(tsl::elm::List* list,re4::Bilingual text){
         auto* item=new tsl::elm::CategoryHeader(text.get(settings.language));
         list->addItem(item);headers_.push_back({item,text});
@@ -152,7 +161,7 @@ class ControlsGui : public tsl::Gui {
         link.language=settings.language;
         description_frame_->setTitle(tr("RE4 Controls","RE4 Управление"));
         description_frame_->setSubtitle(std::string(re4::kVersion)+tr(" - Control settings"," - Настройки управления"));
-        status_->setText(tr("Connect to game","Подключиться к игре"));
+        status_->setText(note.empty()?tr("Connect to game","Подключиться к игре"):note);
         for(const auto& header:headers_)header.item->setText(header.text.get(settings.language));
         for(const auto& binding:bindings_){
             const auto& spec=*binding.spec;
@@ -190,9 +199,9 @@ public:
             }else{
                 item=new tsl::elm::ListItem(spec.label.get(settings.language),re4::control_value_text(spec,settings));
                 item->setClickListener([this,entry](u64 keys){
-                    if(entry->id==re4::ControlId::GraphicsMenu){
-                        if(!(keys&HidNpadButton_A))return false;
-                        tsl::changeTo<GraphicsGui>();return true;
+                    if(entry->id==re4::ControlId::Profile){
+                        if(!(keys&(HidNpadButton_A|HidNpadButton_Left|HidNpadButton_Right)))return false;
+                        change_profile(re4::ProfileDomain::Controls);refresh();return true;
                     }
                     if(entry->id==re4::ControlId::ButtonMapping){
                         if(!(keys&HidNpadButton_A))return false;
@@ -211,15 +220,55 @@ public:
         frame->setContent(list);refresh();return frame;
     }
     void update()override{
+        refresh();
         if(description_frame_){
             if(getFocusedElement()==status_)description_frame_->set_help(tr(
                 "A: connect to the mod in running RE4.\nReconnect after restarting the game.\nFiltering and AA require a game restart.",
                 "A: найти мод в запущенной RE4.\nПосле перезапуска игры подключитесь снова.\nФильтрация и AA: перезапуск игры."));
             for(const auto& binding:bindings_)if(binding.item==getFocusedElement()){
-                description_frame_->set_help(binding.spec->help.get(settings.language));break;
+                description_frame_->set_help(binding.spec->id==re4::ControlId::Profile && !note.empty()?
+                    note.c_str():binding.spec->help.get(settings.language));break;
             }
         }
-        if(++frame_%15==0 && status_ && !note.empty())status_->setText(note);
+    }
+};
+class MainGui : public tsl::Gui {
+    DescriptionFrame* frame_=nullptr;
+    tsl::elm::ListItem *controls_=nullptr,*graphics_=nullptr,*status_=nullptr;
+public:
+    tsl::elm::Element* createUI()override{
+        frame_=new DescriptionFrame;auto* list=new tsl::elm::List;
+        status_=new tsl::elm::ListItem("Connect to game","A");
+        status_->setClickListener([](u64 keys){
+            if(!(keys&HidNpadButton_A))return false;
+            link.language=settings.language;const bool connected=link.connect();record_connection();
+            if(connected)link.apply(settings);
+            note=link.message;return true;
+        });
+        controls_=new tsl::elm::ListItem("Controls");
+        controls_->setClickListener([](u64 keys){
+            if(!(keys&HidNpadButton_A))return false;
+            note.clear();tsl::changeTo<ControlsGui>();return true;
+        });
+        graphics_=new tsl::elm::ListItem("Graphics");
+        graphics_->setClickListener([](u64 keys){
+            if(!(keys&HidNpadButton_A))return false;
+            note.clear();tsl::changeTo<GraphicsGui>();return true;
+        });
+        list->addItem(status_);list->addItem(controls_);list->addItem(graphics_);
+        frame_->setContent(list);update();return frame_;
+    }
+    void update()override{
+        frame_->setTitle("RE4 Controls");frame_->setSubtitle(re4::kVersion);
+        status_->setText(note.empty()?tr("Connect to game","Подключиться к игре"):note);
+        controls_->setText(tr("Controls","Управление"));graphics_->setText(tr("Graphics","Графика"));
+        controls_->setValue(re4::profile_name(re4::profile_kind(settings,re4::ProfileDomain::Controls),settings.language));
+        graphics_->setValue(re4::profile_name(re4::profile_kind(settings,re4::ProfileDomain::Graphics),settings.language));
+        frame_->set_help(getFocusedElement()==graphics_?tr(
+            "Independent graphics profile and settings.\nFiltering and AA require a game restart.",
+            "Отдельный профиль и настройки графики.\nФильтрация и AA: перезапуск игры."):tr(
+            "Controls and graphics have separate profiles.\nEach keeps Default and your last Custom.\nA: open. B: return.",
+            "Управление и графика: отдельные профили.\nШтатный и последний пользовательский.\nA: открыть. B: назад."));
     }
 };
 class ControlsOverlay:public tsl::Overlay{
@@ -233,7 +282,7 @@ class ControlsOverlay:public tsl::Overlay{
         if(loaded){link.apply(settings);note=link.message;}
     }
     void exitServices()override{link.close();overlay_storage::close();}
-    std::unique_ptr<tsl::Gui> loadInitialGui()override{return initially<ControlsGui>();}
+    std::unique_ptr<tsl::Gui> loadInitialGui()override{return initially<MainGui>();}
 };
 }
 int main(int argc,char** argv){return tsl::loop<ControlsOverlay>(argc,argv);}

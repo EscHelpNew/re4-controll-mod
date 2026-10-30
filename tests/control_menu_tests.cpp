@@ -23,9 +23,9 @@ int main(){
     assert(camera_return && free_camera && mapping);
     bool graphics=false;
     for(const auto& spec:control_specs())graphics|=std::strcmp(spec.label.english,"Graphics")==0;
-    assert(graphics);
+    assert(!graphics); // Independent root menu, never nested in the controls catalogue.
     Settings s;
-    assert(!change_control(s,ControlId::GraphicsMenu,1));
+    assert(!change_control(s,ControlId::Profile,1)); // Persistence handled by the application.
     assert(std::strstr(graphics_spec(GraphicsId::AntiAliasing).help.english,"Restart")!=nullptr);
     assert(std::strstr(graphics_spec(GraphicsId::AntiAliasing).help.russian,"Перезапуск")!=nullptr);
     for(const auto& spec:graphics_specs()){

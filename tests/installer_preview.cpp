@@ -21,6 +21,14 @@ int main(){
         model.page=re4::InstallerPage::Graphics;model.selected=0;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-graphics-en.bmp":"build/installer-graphics-ru.bmp"));
+        model.settings.texture_filtering=re4::TextureFilter::Aniso4;
+        model.selected=unsigned(re4::GraphicsId::Profile);
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-graphics-profile-en.bmp":"build/installer-graphics-profile-ru.bmp"));
+        model.page=re4::InstallerPage::Controls;model.settings.camera_gain=0.6f;
+        model.selected=unsigned(re4::ControlId::Profile);
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-controls-profile-en.bmp":"build/installer-controls-profile-ru.bmp"));
         model.page=re4::InstallerPage::Mapping;model.selected=21;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-mapping-en.bmp":"build/installer-mapping-ru.bmp"));

@@ -39,9 +39,9 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
         {ControlId::ButtonMapping,ControlKind::Action,{"Button mapping","Назначение кнопок"},
             {"Map physical buttons in menus, QTE and play.\nOverlay controls remain physical for recovery.\nHOME/Capture are system buttons outside RE4.",
              "Кнопки в игре, меню и QTE.\nОверлей использует физические кнопки.\nHOME/Capture — системные кнопки вне RE4."}},
-        {ControlId::GraphicsMenu,ControlKind::Action,{"Graphics","Графика"},
-            {"Manual graphics settings. Native by default.\nFiltering and AA require a game restart.\nOpen with A; B returns without changes.",
-             "Ручная графика. По умолчанию штатная.\nФильтрация и AA: перезапуск игры.\nA: открыть; B: назад без изменений."}},
+        selector(ControlId::Profile,{"Controls profile","Профиль управления"},
+            {"Default or your last Custom controls.\nEditing controls saves Custom automatically.\nGraphics and calibration are preserved.",
+             "По умолчанию / пользовательский.\nИзменения сохраняются в пользовательский.\nГрафика и калибровка сохраняются."}),
         slider(ControlId::AimX,{"Left-stick aim X","Прицел левым стиком X"},
             {"Horizontal aiming from the stick.\n0: disabled; 1: native maximum.\nGyro sensitivity is independent.",
              "Прицел влево и вправо от стика.\n0: выключено; 1: штатный максимум.\nЧувствительность гироскопа отдельно."},&Settings::aim_gain_x,0.1f,1),
@@ -102,6 +102,7 @@ std::string control_value_text(const ControlSpec& item,const Settings& s){
     if(item.toggle)return s.language==Language::Russian?(s.*item.toggle?"Вкл":"Выкл"):(s.*item.toggle?"On":"Off");
     if(item.id==ControlId::Language)return s.language==Language::Russian?"Русский":"English";
     if(item.id==ControlId::Curve)return curve_name(s.stick_curve,s.language);
+    if(item.id==ControlId::Profile)return profile_name(profile_kind(s,ProfileDomain::Controls),s.language);
     return "A";
 }
 bool change_control(Settings& s,ControlId id,int direction){
@@ -132,6 +133,9 @@ const std::array<GraphicsSpec,unsigned(GraphicsId::Count)>& graphics_specs(){
         {GraphicsId::Shadows,ControlKind::Selector,{"Shadows","Тени"},
             {"Rendered shadows: Native or Off.\nCast, self and foot shadows.\nBaked texture lighting stays unchanged.",
              "Отрисовываемые тени: штатные/выкл.\nТени сцены, самотени и тени под ногами.\nОсвещение в текстурах сохраняется."}},
+        {GraphicsId::Profile,ControlKind::Selector,{"Graphics profile","Профиль графики"},
+            {"Default or your last Custom graphics.\nEditing graphics saves Custom automatically.\nControls and calibration are preserved.\nFiltering and AA: restart the game.",
+             "По умолчанию / пользовательский.\nИзменения сохраняются в пользовательский.\nУправление и калибровка сохраняются.\nФильтрация и AA: перезапуск игры."}},
         {GraphicsId::Reset,ControlKind::Action,{"Reset graphics","Сбросить графику"},
             {"A: restore native graphics only.\nFiltering, AA, shadows: Native.\nObject distance: 1.00x.\nControls and mappings are preserved.",
              "A: вернуть только штатную графику.\nФильтрация, сглаживание, тени: штатные.\nДальность объектов: 1.00x.\nУправление и назначения сохраняются."}}
@@ -151,6 +155,7 @@ std::string graphics_value_text(const GraphicsSpec& item,const Settings& s){
     if(item.id==GraphicsId::AntiAliasing)return s.anti_aliasing==AntiAliasing::HandheldSsaa?"Handheld SSAA":native;
     if(item.id==GraphicsId::Shadows)return s.shadow_mode==ShadowMode::Off?Bilingual{"Off","Выкл"}.get(s.language):native;
     if(item.id==GraphicsId::DrawDistance){char text[24];std::snprintf(text,sizeof(text),"%.2fx",s.draw_distance_scale);return text;}
+    if(item.id==GraphicsId::Profile)return profile_name(profile_kind(s,ProfileDomain::Graphics),s.language);
     return "A";
 }
 bool change_graphics(Settings& s,GraphicsId id,int direction){
@@ -166,6 +171,18 @@ bool reset_graphics(Settings& s){
         || s.shadow_mode!=ShadowMode::Native || s.draw_distance_scale!=1.f;
     s.texture_filtering=TextureFilter::Native;s.anti_aliasing=AntiAliasing::Native;s.shadow_mode=ShadowMode::Native;s.draw_distance_scale=1.f;
     return changed;
+}
+const char* profile_name(ProfileKind kind,Language language){
+    return (kind==ProfileKind::Default?Bilingual{"Default","По умолчанию"}:
+        Bilingual{"Custom","Пользовательский"}).get(language);
+}
+const char* profile_result_text(ProfileResult result,Language language){
+    if(result==ProfileResult::MissingCustom)return Bilingual{
+        "Custom profile is empty. Edit a setting first.",
+        "Пользовательский профиль пуст. Измените настройку."}.get(language);
+    if(result==ProfileResult::SaveFailed)return Bilingual{
+        "Could not save profile to SD.","Не удалось сохранить профиль на SD."}.get(language);
+    return Bilingual{"Profile applied","Профиль применён"}.get(language);
 }
 const char* mapping_target_label(unsigned target,Language language){
     if(target>=kButtonCount)return Bilingual{"Unbound","Не назначено"}.get(language);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+- Add independent Default/Custom profiles for controls and graphics, with automatic
+  Custom snapshots, migration and recovery through the existing settings codec.
+- Preserve the other domain, language and gyro calibration when switching profiles.
+- Open Controls and Graphics as peers in the overlay root menu.
+- Test actual profile UI events, restore and failed writes; fix persistent feedback.
+
 ## 0.6.0 (unreleased)
 
 - Add a bilingual Graphics menu with exact Native defaults and graphics-only reset.

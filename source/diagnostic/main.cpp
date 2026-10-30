@@ -367,8 +367,19 @@ int main(int argc, char** argv) {
             if(R_SUCCEEDED(pm))pmdmntExit();
         }
         if(action==re4::InstallerAction::SaveSettings)
-            model.status=re4::save_settings_file(re4::kSettingsPath,settings)
+            model.status=re4::save_profiled_settings(re4::kSettingsPath,settings)
                 ?re4::InstallerStatus::Saved:re4::InstallerStatus::Failed;
+        if(action==re4::InstallerAction::DefaultControls || action==re4::InstallerAction::CustomControls
+            || action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics){
+            const bool graphics_profile=action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics;
+            const bool custom=action==re4::InstallerAction::CustomControls || action==re4::InstallerAction::CustomGraphics;
+            const auto result=re4::switch_profile(re4::kSettingsPath,settings,
+                graphics_profile?re4::ProfileDomain::Graphics:re4::ProfileDomain::Controls,
+                custom?re4::ProfileKind::Custom:re4::ProfileKind::Default);
+            model.status=result==re4::ProfileResult::Applied || result==re4::ProfileResult::Unchanged?
+                re4::InstallerStatus::Saved:re4::InstallerStatus::Failed;
+            model.profile_note=re4::profile_result_text(result,settings.language);
+        }
         if(action==re4::InstallerAction::ResetPreview)aim_x=aim_y=0;
         if(action==re4::InstallerAction::Calibrate && sensors.count){
             calibration.begin();
@@ -389,7 +400,7 @@ int main(int argc, char** argv) {
             const float yaw=-sample.angular_velocity.y*tau,pitch=-sample.angular_velocity.x*tau;
             if((sample.attributes&1) && calibration.add(sample.sampling_number,yaw,pitch)){
                 settings.gyro_bias_x=calibration.bias_x();settings.gyro_bias_y=calibration.bias_y();
-                model.status=re4::save_settings_file(re4::kSettingsPath,settings)
+                model.status=re4::save_profiled_settings(re4::kSettingsPath,settings)
                     ?re4::InstallerStatus::Calibrated:re4::InstallerStatus::Failed;
             }
             const bool active=model.page==re4::InstallerPage::Diagnostics && !page_changed && !sensor_changed

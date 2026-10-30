@@ -8,7 +8,7 @@ bool storage_available=true,have_saved=false,saved_gyro=true,last_sent_gyro=fals
 }
 namespace overlay_storage {bool ready(){return storage_available;}bool mount(){return storage_available;}void close(){}}
 namespace re4 {
-bool save_settings_file(const char*,const Settings& s){++saves;return valid_settings(s);}
+bool save_settings_file(const char* path,const Settings& s){if(std::string(path)==overlay_storage::settings_path)++saves;return valid_settings(s);}
 bool load_settings_file(const char*,Settings& s){if(have_saved)s.gyro_enabled=saved_gyro;return have_saved;}
 }
 void GameLink::initialize(){}
@@ -45,7 +45,10 @@ int main(){
     }
     assert(descriptions==unsigned(re4::ControlId::Count)+1 && sends==before && saves==0); // Hover must not save/send.
     assert(frame->title=="RE4 Controls");
-    for(auto* e:list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e))if(item->label=="Graphics"){
+    MainGui root_gui;
+    auto* root_frame=static_cast<tsl::elm::OverlayFrame*>(root_gui.createUI());
+    auto* root_list=static_cast<tsl::elm::List*>(root_frame->content());
+    for(auto* e:root_list->children)if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e))if(item->label=="Graphics"){
         const auto before_open_saves=saves,before_open_sends=sends;
         assert(!item->click(HidNpadButton_Left) && !item->click(HidNpadButton_Right));
         assert(item->click(HidNpadButton_A) && tsl::navigation.size()==1);
@@ -53,7 +56,7 @@ int main(){
         auto* graphics_frame=static_cast<tsl::elm::OverlayFrame*>(graphics_gui->root);
         graphics_frame->layout(0,0,448,720);
         auto* graphics_list=static_cast<tsl::elm::List*>(graphics_frame->content());
-        assert(graphics_frame->title=="Graphics" && graphics_list->children.size()==5);
+        assert(graphics_frame->title=="Graphics" && graphics_list->children.size()==6);
         for(auto* child:graphics_list->children){
             graphics_gui->focused=child;graphics_gui->update();
             tsl::gfx::Renderer help;graphics_frame->draw(&help);
@@ -80,7 +83,7 @@ int main(){
         assert(graphics_frame->title=="Графика" && filter->label=="Фильтрация текстур");
         tsl::gfx::Renderer ru;graphics_frame->draw(&ru);assert(ru.text.back().value.find("перезапуск")!=std::string::npos);
         settings.free_camera=true;settings.button_map[0]=255;settings.gyro_speed=0.3f;
-        auto* reset=static_cast<tsl::elm::ListItem*>(graphics_list->children[4]);
+        auto* reset=static_cast<tsl::elm::ListItem*>(graphics_list->children[5]);
         assert(!reset->click(HidNpadButton_Left) && !reset->click(HidNpadButton_Right) && saves==at_limit);
         assert(reset->click(HidNpadButton_A) && saves==at_limit+1);
         assert(reset->click(HidNpadButton_A) && saves==at_limit+1);
@@ -202,6 +205,6 @@ int main(){
         if(item->label=="Invert gyro X"||item->label=="Invert gyro Y")assert(item->state && item->value=="On");
         if(item->label=="Gyro aiming")assert(!item->state && item->value=="Off");
     }
-    delete frame;
+    delete root_frame;delete frame;
     std::puts("actual overlay UI: every focused item has help, no hover writes, speed caps and reset PASS");
 }

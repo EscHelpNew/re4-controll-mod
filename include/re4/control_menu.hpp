@@ -1,5 +1,6 @@
 #pragma once
 #include "settings.hpp"
+#include "profiles.hpp"
 #include <array>
 #include <string>
 
@@ -10,7 +11,7 @@ struct Bilingual {
     const char* get(Language language) const { return language==Language::Russian ? russian : english; }
 };
 enum class ControlId : unsigned {
-    Language, Curve, Analog, Turn, Camera, CameraReturn, FreeCamera, ButtonMapping, GraphicsMenu, AimX, AimY, RightAimX, RightAimY, LeftDeadzone, RightDeadzone,
+    Language, Curve, Analog, Turn, Camera, CameraReturn, FreeCamera, ButtonMapping, Profile, AimX, AimY, RightAimX, RightAimY, LeftDeadzone, RightDeadzone,
     Gyro, GyroSpeed, GyroDeadzone, GyroX, GyroY, InvertX, InvertY, Reset, Count
 };
 enum class ControlKind { Selector, Toggle, Slider, Action };
@@ -27,7 +28,7 @@ const ControlSpec& control_spec(ControlId id);
 const char* curve_name(StickCurve curve,Language language);
 std::string control_value_text(const ControlSpec&,const Settings&);
 bool change_control(Settings&,ControlId,int direction);
-enum class GraphicsId : unsigned { TextureFiltering, AntiAliasing, DrawDistance, Shadows, Reset, Count };
+enum class GraphicsId : unsigned { TextureFiltering, AntiAliasing, DrawDistance, Shadows, Profile, Reset, Count };
 struct GraphicsSpec {
     GraphicsId id{};
     ControlKind kind{};
@@ -38,6 +39,8 @@ const GraphicsSpec& graphics_spec(GraphicsId);
 std::string graphics_value_text(const GraphicsSpec&,const Settings&);
 bool change_graphics(Settings&,GraphicsId,int direction);
 bool reset_graphics(Settings&);
+const char* profile_name(ProfileKind,Language);
+const char* profile_result_text(ProfileResult,Language);
 constexpr unsigned kMappingRowCount=kButtonCount+2;
 std::string mapping_row_label(unsigned,Language);
 std::string mapping_row_value(unsigned,const Settings&);

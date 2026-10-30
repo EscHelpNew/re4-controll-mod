@@ -7,7 +7,8 @@
 namespace re4 {
 enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics };
 enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview };
-enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate };
+enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate,
+    DefaultControls,CustomControls,DefaultGraphics,CustomGraphics };
 enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
 struct DiagnosticSnapshot {
     bool connected=false,network=false;
@@ -27,6 +28,7 @@ public:
     DiagnosticSnapshot diagnostic;
     UpdateSnapshot update;
     std::string detail;
+    std::string profile_note;
     unsigned item_count()const;
     InstallerAction handle(UiEvent);
     const char* status_text()const;

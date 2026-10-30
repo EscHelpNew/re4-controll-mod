@@ -45,6 +45,10 @@ def tests():
          'tests/settings_file_tests.cpp', 'source/settings.cpp', 'source/settings_file.cpp',
          '-o', OUT / 'settings_file_tests.exe'])
     native('settings_file_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/profiles_tests.cpp','source/profiles.cpp','source/settings.cpp','source/settings_file.cpp',
+         '-o',OUT/'profiles_tests.exe'])
+    native('profiles_tests.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/install_tests.cpp', 'source/install.cpp', '-o', OUT / 'install_tests.exe'])
     native('install_tests.exe')
@@ -61,8 +65,13 @@ def tests():
     native('game_module_tests.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
-         'tests/overlay_ui_tests.cpp', 'source/settings.cpp', 'source/control_menu.cpp', '-o', OUT / 'overlay_ui_tests.exe'])
+         'tests/overlay_ui_tests.cpp', 'source/settings.cpp', 'source/control_menu.cpp','source/profiles.cpp', '-o', OUT / 'overlay_ui_tests.exe'])
     native('overlay_ui_tests.exe')
+    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static',
+         '-Itests/overlay_stubs','-Iinclude','-Isource/overlay','tests/profile_ui_tests.cpp',
+         'source/settings.cpp','source/control_menu.cpp','source/profiles.cpp','source/diagnostic/installer_model.cpp',
+         '-o',OUT/'profile_ui_tests.exe'])
+    native('profile_ui_tests.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
          'tests/game_link_tests.cpp', 'source/settings.cpp', '-o', OUT / 'game_link_tests.exe'])
@@ -93,12 +102,12 @@ def tests():
              'tests/'+name+'.cpp',*sources,OUT/'reload_core_host.o','-ladvapi32','-o',OUT/(name+'.exe')])
         native(name+'.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
-         'tests/control_menu_tests.cpp', 'source/control_menu.cpp', 'source/settings.cpp',
+         'tests/control_menu_tests.cpp', 'source/control_menu.cpp', 'source/settings.cpp','source/profiles.cpp','source/settings_file.cpp',
          '-o', OUT / 'control_menu_tests.exe'])
     native('control_menu_tests.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/installer_model_tests.cpp', 'source/diagnostic/installer_model.cpp',
-         'source/control_menu.cpp', 'source/settings.cpp', '-o', OUT / 'installer_model_tests.exe'])
+         'source/control_menu.cpp', 'source/settings.cpp','source/profiles.cpp','source/settings_file.cpp', '-o', OUT / 'installer_model_tests.exe'])
     native('installer_model_tests.exe')
     run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/calibration_tests.cpp','-o',OUT/'calibration_tests.exe'])
@@ -107,7 +116,7 @@ def tests():
     run([host,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static-libgcc','-static-libstdc++',
          '-Iinclude','-IC:/msys64/mingw64/include/SDL2','-isystem','third_party/libtesla/include',
          'tests/installer_preview.cpp','source/diagnostic/installer_renderer.cpp',
-         'source/diagnostic/installer_model.cpp','source/control_menu.cpp','source/settings.cpp','source/input.cpp',
+         'source/diagnostic/installer_model.cpp','source/control_menu.cpp','source/settings.cpp','source/input.cpp','source/profiles.cpp','source/settings_file.cpp',
          '-LC:/msys64/mingw64/lib','-lSDL2','-o',OUT/'installer_preview.exe'])
     preview_env=os.environ.copy()
     preview_env['PATH']='C:/msys64/mingw64/bin'+os.pathsep+preview_env.get('PATH','')
@@ -141,7 +150,7 @@ def diagnostic():
         dest = OUT / (name + '.o')
         run([tool('gcc'), '-std=gnu11', *common, '-c', receiver / (name + '.c'), '-o', dest])
         objects.append(dest)
-    for source in ('source/input.cpp', 'source/settings.cpp', 'source/control_menu.cpp', 'source/settings_file.cpp', 'source/install.cpp','source/update.cpp',
+    for source in ('source/input.cpp', 'source/settings.cpp', 'source/control_menu.cpp', 'source/settings_file.cpp','source/profiles.cpp', 'source/install.cpp','source/update.cpp',
                    'source/overlay/game_link.cpp',
                    'source/overlay/storage.cpp',
                    'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
@@ -251,7 +260,7 @@ def overlay():
     env = os.environ.copy(); env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), *flags, 'source/overlay/main.cpp', 'source/overlay/game_link.cpp',
          'source/overlay/storage.cpp',
-         'source/settings.cpp', 'source/settings_file.cpp', 'source/control_menu.cpp',
+         'source/settings.cpp', 'source/settings_file.cpp', 'source/control_menu.cpp','source/profiles.cpp',
          '-specs=' + str(SDK / 'libnx/switch.specs'), '-L' + str(SDK / 'libnx/lib'),
          '-lnx', '-lm', '-o', elf], env=env)
     output = OUT / 'experimental/switch/.overlays/re4-controls.ovl'
