@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <vector>
+#include <utility>
 using u64 = std::uint64_t;
 using Result = unsigned;
 #define R_FAILED(v) ((v) != 0)
@@ -36,7 +37,11 @@ inline u64 svcGetSystemTick() { return game_test::tick; }
 namespace exl::util { inline const auto& GetMainModuleInfo() { return game_test::module; } }
 namespace exl::hook { inline void Initialize() { ++game_test::initialized; } }
 template<auto Function> struct TestHook {
-    static constexpr auto Orig=Function;
+    // Match exlaunch's non-constexpr forwarding function, including in C++17.
+    // A constexpr function-pointer stand-in changes lambda constexpr analysis.
+    template<class... Args> static decltype(auto) Orig(Args&&... args){
+        return Function(std::forward<Args>(args)...);
+    }
     static void InstallAtOffset(std::size_t) { ++game_test::installed; }
     template<class T> static void InstallAtFuncPtr(T) { ++game_test::installed; }
 };
