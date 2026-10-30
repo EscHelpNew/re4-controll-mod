@@ -39,6 +39,7 @@ struct Settings {
     ButtonMap button_map = identity_button_map();
     bool free_camera = false;
     float camera_return_speed = 1;
+    float third_person_distance = 1;
     TextureFilter texture_filtering = TextureFilter::Native;
     ShadowMode shadow_mode = ShadowMode::Native;
     AntiAliasing anti_aliasing = AntiAliasing::Native;

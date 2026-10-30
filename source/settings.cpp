@@ -26,7 +26,8 @@ std::uint32_t checksum(const std::uint8_t* p, std::size_t size) {
 bool valid_settings(const Settings& s) {
     if (!valid_graphics({s.texture_filtering,s.shadow_mode,s.anti_aliasing,s.draw_distance_scale})
         || unsigned(s.language)>1 || unsigned(s.stick_curve)>3 || unsigned(s.reticle)>2 || unsigned(s.reticle_size)>2 || !valid_button_map(s.button_map)
-        || !std::isfinite(s.camera_return_speed) || s.camera_return_speed<0 || s.camera_return_speed>1) return false;
+        || !std::isfinite(s.camera_return_speed) || s.camera_return_speed<0 || s.camera_return_speed>1
+        || !std::isfinite(s.third_person_distance) || s.third_person_distance<1 || s.third_person_distance>2) return false;
     const float right_gains[]={s.right_aim_gain_x,s.right_aim_gain_y};
     for(float gain:right_gains)
         if(!std::isfinite(gain) || gain<0 || gain>1)return false;
@@ -44,7 +45,7 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
     if (!out || size != kSettingsBytes || !valid_settings(s)) return false;
     std::memset(out, 0, size);
     std::memcpy(out, "R4CT", 4);
-    put32(out + 4, 9);
+    put32(out + 4, 10);
     put32(out + 8, unsigned(s.analog_enabled) | unsigned(s.gyro_enabled) << 1
           | unsigned(s.invert_x) << 2 | unsigned(s.invert_y) << 3
           | unsigned(s.stick_curve) << 4 | unsigned(s.language) << 6
@@ -68,6 +69,7 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
     out[96]=std::uint8_t(s.reticle);
     out[97]=std::uint8_t(unsigned(s.first_person) | unsigned(s.move_while_aiming)<<1 | unsigned(s.move_while_knife)<<2);
     out[98]=std::uint8_t(s.reticle_size);
+    std::memcpy(out+100,&s.third_person_distance,4);
     put32(out + 124, checksum(out, 124));
     return true;
 }
@@ -75,7 +77,7 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
     if (!data || (size != kSettingsBytes && size != kLegacySettingsBytes)
         || std::memcmp(data, "R4CT", 4)) return false;
     const auto version = get32(data + 4);
-    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version < 7 || version > 9)
+    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version < 7 || version > 10)
         || (get32(data + 8) & (version<4 ? ~15u : version<6 ? ~127u : ~0x007f7f7fu))
         || (version == 1 && get32(data + 56))
         || checksum(data, size - 4) != get32(data + size - 4)) return false;
@@ -89,7 +91,8 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
             if(version<9){for (unsigned i = 96; i < 124; ++i) if (data[i]) return false;}
             else{
                 if(data[97]&~7u || data[99])return false;
-                for(unsigned i=100;i<124;++i)if(data[i])return false;
+                for(unsigned i=version>=10?104:100;i<124;++i)if(data[i])return false;
+                if(version>=10)std::memcpy(&s.third_person_distance,data+100,4);
                 s.reticle=static_cast<ReticleStyle>(data[96]);s.reticle_size=static_cast<ReticleSize>(data[98]);
                 s.first_person=data[97]&1;s.move_while_aiming=data[97]&2;s.move_while_knife=data[97]&4;
             }

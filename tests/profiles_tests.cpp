@@ -166,11 +166,115 @@ void failed_snapshot_preserves_active() {
     CHECK(!save_profiled_settings(file.c_str(), invalid)); CHECK(bytes(file) == original);
     CHECK(!save_profiled_settings(nullptr, active)); CHECK(!save_profiled_settings("", active));
 }
+void re9_recipe_switch_and_restart() {
+    const auto file = path("re9.bin");
+    const auto re9 = ProfileKind::RE9;
+    auto active = custom();
+    CHECK(save_settings_file(file.c_str(), active));
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Controls, re9) == ProfileResult::Applied);
+    CHECK(active.analog_enabled && active.gyro_enabled && active.free_camera);
+    CHECK(active.camera_return_speed == 0 && !active.first_person);
+    CHECK(active.third_person_distance == 1.35f);
+    CHECK(active.move_while_aiming && active.move_while_knife);
+    CHECK(active.reticle == ReticleStyle::Crosshair && active.reticle_size == ReticleSize::Small);
+    CHECK(active.aim_gain_x == 0 && active.aim_gain_y == 0);
+    CHECK(active.right_aim_gain_x == 1 && active.right_aim_gain_y == 1);
+    CHECK(active.gyro_speed == 0.8f && active.gyro_gain_x == 1 && active.gyro_gain_y == 1);
+    CHECK(active.turn_gain == 1 && active.camera_gain == 1 && active.movement_gain == 1);
+    CHECK(active.left_deadzone == 0.05f && active.right_deadzone == 0.05f && active.gyro_deadzone_dps == 0.5f);
+    CHECK(active.invert_x && active.invert_y && active.remap_enabled && active.stick_curve == StickCurve::Linear);
+    const ButtonMap expected{1,3,10,1,1,5,6,7,8,9,11,2,12,13,14,15,16,17,18,19};
+    CHECK(active.button_map == expected);
+    CHECK(active.texture_filtering == TextureFilter::Aniso4 && active.draw_distance_scale == 1.5f);
+    CHECK(active.language == Language::Russian && active.calibration_request == 17);
+    CHECK(active.gyro_bias_x == 1.2f && active.gyro_bias_y == -2.1f);
+    CHECK(profile_kind(active, ProfileDomain::Controls) == re9);
+    CHECK(profile_kind(active, ProfileDomain::Graphics) == ProfileKind::Custom);
+    Settings restarted;
+    CHECK(load_settings_file(file.c_str(), restarted));
+    CHECK(profile_kind(restarted, ProfileDomain::Controls) == re9);
+    CHECK(restarted.third_person_distance == 1.35f);
+    const auto saved = bytes(file), controls = bytes(file + ".controls-custom");
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, re9) == ProfileResult::Unchanged);
+    CHECK(bytes(file) == saved && bytes(file + ".controls-custom") == controls);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, ProfileKind::Default) == ProfileResult::Applied);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, re9) == ProfileResult::Applied);
+    CHECK(bytes(file + ".controls-custom") == controls);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, ProfileKind::Custom) == ProfileResult::Applied);
+    CHECK(restarted.turn_gain == 0.43f && restarted.button_map[0] == kUnboundButton);
+    CHECK(restarted.texture_filtering == TextureFilter::Aniso4 && restarted.language == Language::Russian);
+}
+void builtin_saves_preserve_existing_custom() {
+    const auto file = path("preserve.bin");
+    auto active = custom(); CHECK(save_profiled_settings(file.c_str(), active));
+    const auto controls = bytes(file + ".controls-custom"), graphics = bytes(file + ".graphics-custom");
+    // A legacy/external active file must not replace an already saved Custom.
+    active.turn_gain = 0.91f; active.draw_distance_scale = 1.75f;
+    CHECK(save_settings_file(file.c_str(), active));
+    Settings defaults;
+    CHECK(save_profiled_settings(file.c_str(), defaults));
+    CHECK(bytes(file + ".controls-custom") == controls);
+    CHECK(bytes(file + ".graphics-custom") == graphics);
+    CHECK(load_custom_profile(file.c_str(), ProfileDomain::Controls, defaults));
+    CHECK(defaults.turn_gain == 0.43f);
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Controls, ProfileKind::RE9) == ProfileResult::Applied);
+    CHECK(bytes(file + ".controls-custom") == controls);
+    active.aim_gain_x = 0.25f;
+    CHECK(profile_kind(active, ProfileDomain::Controls) == ProfileKind::Custom);
+    CHECK(save_profiled_settings(file.c_str(), active));
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Controls, ProfileKind::Default) == ProfileResult::Applied);
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Controls, ProfileKind::Custom) == ProfileResult::Applied);
+    CHECK(active.aim_gain_x == 0.25f && active.gyro_enabled && active.free_camera);
+}
+void re9_rejection_and_failed_save() {
+    const auto file = path("re9-failure.bin");
+    auto active = custom(); CHECK(save_settings_file(file.c_str(), active));
+    const auto original = bytes(file);
+    const auto before = active;
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Graphics, ProfileKind::RE9) == ProfileResult::SaveFailed);
+    CHECK(encoded_equal(active, before) && bytes(file) == original);
+    CHECK(!fs::exists(file + ".controls-custom") && !fs::exists(file + ".graphics-custom"));
+    fs::create_directory(file + ".incoming");
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Controls, ProfileKind::RE9) == ProfileResult::SaveFailed);
+    CHECK(encoded_equal(active, before) && active.calibration_request == before.calibration_request && bytes(file) == original);
+    fs::remove(file + ".incoming");
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Controls, ProfileKind::RE9) == ProfileResult::Applied);
+    CHECK(profile_kind(active, ProfileDomain::Controls) == ProfileKind::RE9);
+}
+void re9_canonical_identity() {
+    Settings active = re9_profile();
+    CHECK(valid_settings(active));
+    CHECK(profile_kind(active, ProfileDomain::Controls) == ProfileKind::RE9);
+    CHECK(profile_kind(active, ProfileDomain::Graphics) == ProfileKind::Default);
+    active.language = Language::Russian; active.calibration_request = 99;
+    active.gyro_bias_x = 3; active.gyro_bias_y = -4;
+    active.texture_filtering = TextureFilter::Aniso4; active.draw_distance_scale = 1.5f;
+    CHECK(profile_kind(active, ProfileDomain::Controls) == ProfileKind::RE9);
+    CHECK(profile_kind(active, ProfileDomain::Graphics) == ProfileKind::Custom);
+    active.right_aim_gain_x = 0.999f;
+    CHECK(profile_kind(active, ProfileDomain::Controls) == ProfileKind::RE9);
+    active.right_aim_gain_x = 0.994f;
+    CHECK(profile_kind(active, ProfileDomain::Controls) == ProfileKind::Custom);
+    active = re9_profile(); active.third_person_distance = 1.45f;
+    CHECK(profile_kind(active, ProfileDomain::Controls) == ProfileKind::Custom);
+    active = re9_profile(); active.button_map[7] = kUnboundButton;
+    CHECK(profile_kind(active, ProfileDomain::Controls) == ProfileKind::Custom);
+    const auto file = path("builtin-sidecar.bin");
+    CHECK(save_settings_file((file + ".controls-custom").c_str(), re9_profile()));
+    const auto before = custom(); active = before;
+    CHECK(!load_custom_profile(file.c_str(), ProfileDomain::Controls, active));
+    CHECK(encoded_equal(active, before) && active.calibration_request == before.calibration_request);
+    // A built-in-only save creates no false Custom snapshot.
+    CHECK(save_profiled_settings(path("builtin-only.bin").c_str(), re9_profile()));
+    CHECK(!fs::exists(path("builtin-only.bin") + ".controls-custom"));
+    CHECK(!fs::exists(path("builtin-only.bin") + ".graphics-custom"));
+}
 }
 int main() {
     fs::remove_all(root); fs::create_directories(root);
     domain_copy_and_identity(); migration_and_restore(); snapshots_survive_default_preferences();
     invalid_custom_is_unchanged(); recovery(); failed_snapshot_preserves_active();
+    re9_recipe_switch_and_restart(); builtin_saves_preserve_existing_custom(); re9_rejection_and_failed_save(); re9_canonical_identity();
     fs::remove_all(root);
     if (failures) { std::fprintf(stderr, "%d profile checks failed\n", failures); return 1; }
     std::puts("profiles: independent domains, canonical identity, migration, recovery and failed writes PASS");

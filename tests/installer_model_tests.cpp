@@ -75,12 +75,14 @@ int main(){
     assert(m.selected_control()==ControlId::Profile && m.item_value(0)=="Custom");
     m.profile_note="A missing Custom profile";
     assert(std::strcmp(m.selected_help(),m.profile_note.c_str())==0);
-    assert(m.handle(UiEvent::Confirm)==InstallerAction::DefaultControls);
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::None && m.page==InstallerPage::Profiles);
+    m.selected=0;assert(m.handle(UiEvent::Confirm)==InstallerAction::DefaultControls);
     assert(m.settings.turn_gain==0.5f); // Application performs profile persistence.
     m.settings={};
-    assert(m.handle(UiEvent::Right)==InstallerAction::CustomControls);
+    m.selected=2;assert(m.handle(UiEvent::Confirm)==InstallerAction::CustomControls);
     m.settings.shadow_mode=ShadowMode::Off;
-    assert(m.item_value(0)=="Default" && m.handle(UiEvent::Left)==InstallerAction::CustomControls);
+    assert(m.item_value(0)=="Active" && m.handle(UiEvent::Left)==InstallerAction::None);
+    assert(m.handle(UiEvent::Back)==InstallerAction::None && m.selected_control()==ControlId::Profile);
     m.selected=1;m.profile_note="Should only be shown for a profile";
     assert(m.selected_control()==ControlId::Reset && std::strcmp(m.selected_help(),m.profile_note.c_str())!=0);
     m.settings.turn_gain=0.4f;m.settings.gyro_bias_x=1.2f;

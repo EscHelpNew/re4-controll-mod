@@ -16,12 +16,12 @@ constexpr std::array<ControlId,unsigned(ControlId::Count)-1> grouped_controls{{
     ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone,
     ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife,
     ControlId::Gyro,ControlId::GyroSpeed,ControlId::GyroDeadzone,ControlId::GyroX,ControlId::GyroY,ControlId::InvertX,ControlId::InvertY,
-    ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson,
+    ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson,ControlId::ThirdPersonDistance,
     ControlId::Reticle,ControlId::ReticleSize,
     ControlId::ButtonMapping,
     ControlId::Profile,ControlId::Reset
 }};
-constexpr std::array<unsigned,unsigned(ControlGroup::Count)+1> group_offsets{{0,5,11,18,22,24,25,27}};
+constexpr std::array<unsigned,unsigned(ControlGroup::Count)+1> group_offsets{{0,5,11,18,23,25,26,28}};
 }
 const std::array<ControlGroupSpec,unsigned(ControlGroup::Count)>& control_groups(){
     static constexpr std::array<ControlGroupSpec,unsigned(ControlGroup::Count)> groups{{
@@ -44,7 +44,7 @@ const std::array<ControlGroupSpec,unsigned(ControlGroup::Count)>& control_groups
             {"Assign physical buttons to game buttons.\nMappings work in play, menus and QTE.",
              "Назначить физическим кнопкам кнопки игры.\nДля игры, меню и QTE."}},
         {ControlGroup::Profiles,{"Profiles and reset","Профили и сброс"},
-            {"Choose Default or your Custom controls.\nReset settings with A when selected.",
+            {"Choose Default, RE9 or your Custom controls.\nReset settings with A when selected.",
              "Профиль управления: штатный или свой.\nДля сброса выберите строку и нажмите A."}}
     }};
     return groups;
@@ -87,7 +87,7 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
             {"Map physical buttons in menus, QTE and play.\nOverlay controls remain physical for recovery.\nHOME/Capture are system buttons outside RE4.",
              "Кнопки в игре, меню и QTE.\nОверлей использует физические кнопки.\nHOME/Capture — системные кнопки вне RE4."}},
         selector(ControlId::Profile,{"Controls profile","Профиль управления"},
-            {"Default or your last Custom controls.\nEditing controls saves Custom automatically.\nGraphics and calibration are preserved.",
+            {"Choose Default, RE9 or last Custom controls.\nA: open the profile list. Edits save Custom.\nGraphics and calibration are preserved.",
              "По умолчанию / пользовательский.\nИзменения сохраняются в пользовательский.\nГрафика и калибровка сохраняются."}),
         slider(ControlId::AimX,{"Left-stick aim X","Прицел левым стиком X"},
             {"Horizontal aiming from the stick.\n0: disabled; 1: native maximum.\nGyro sensitivity is independent.",
@@ -143,6 +143,10 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
         toggle(ControlId::MoveKnife,{"Move with knife","Движение с ножом"},
             {"Left-stick movement in knife stance\nand during a slash. Right stick aims.\nNative attack timing is preserved.",
              "Движение левым стиком в стойке\nс ножом и при ударе. Правый: прицел.\nШтатное время удара сохраняется."},&Settings::move_while_knife),
+        {ControlId::ThirdPersonDistance,ControlKind::Slider,{"Third-person distance","Дистанция камеры"},
+            {"1.00: original shoulder view. Larger values\nshow more space around Leon. Wall collision\nstays active. Not used in first person/scopes.",
+             "1.00: штатный вид из-за плеча. Увеличьте,\nчтобы Леон меньше закрывал обзор. Стены\nучитываются. Не влияет на вид от глаз/оптику."},
+             &Settings::third_person_distance,nullptr,0.05f,1,2},
         {ControlId::Reset,ControlKind::Action,{"Reset settings","Сбросить настройки"},
             {"Restore defaults: English, linear curve,\n0.05 deadzones, native stick speeds,\ngyro off and both gyro inversions on.",
              "Вернуть настройки: английский, линейная\nкривая, мёртвые зоны 0.05, гироскоп выкл.,\nобе инверсии вкл., штатные скорости."}}
@@ -245,8 +249,19 @@ bool reset_graphics(Settings& s){
     return changed;
 }
 const char* profile_name(ProfileKind kind,Language language){
+    if(kind==ProfileKind::RE9)return "RE9";
     return (kind==ProfileKind::Default?Bilingual{"Default","По умолчанию"}:
         Bilingual{"Custom","Пользовательский"}).get(language);
+}
+const char* control_profile_help(ProfileKind kind,Language language){
+    if(kind==ProfileKind::RE9)return Bilingual{
+        "RE9-inspired view, moving aim/knife, crosshair.\nUse RE4 default controls. Hold L3 to run;\nY reloads while aiming. No crouch/parry/heal.",
+        "Камера RE9, движение с прицелом/ножом, прицел.\nНужна штатная раскладка RE4. Бег: держать L3.\nY: зарядить с ZL. Без приседания/парирования."}.get(language);
+    if(kind==ProfileKind::Custom)return Bilingual{
+        "Restore your last edited controls.\nChoosing a built-in profile keeps this copy.\nEdit any control setting to create Custom.",
+        "Вернуть последние пользовательские настройки.\nГотовые профили сохраняют эту копию.\nДля создания измените любой параметр."}.get(language);
+    return Bilingual{"Restore the mod's default controls.\nYour Custom profile and graphics are kept.",
+        "Вернуть управление мода по умолчанию.\nВаш профиль и графика сохраняются."}.get(language);
 }
 const char* profile_result_text(ProfileResult result,Language language){
     if(result==ProfileResult::MissingCustom)return Bilingual{

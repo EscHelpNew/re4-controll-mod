@@ -54,6 +54,24 @@ inline bool view_inverse_point(const ViewMatrix3x4& matrix,ViewVec3 point,ViewVe
         (c02*x+(a[0][1]*a[2][0]-a[0][0]*a[2][1])*y
             +(a[0][0]*a[1][1]-a[0][1]*a[1][0])*z)/determinant,out);
 }
+// QFPS eye1 is the native collision anchor; eye0 is the desired shoulder eye.
+// Return false without writing for native distance1 and for invalid candidates.
+inline bool third_person_view(const ViewQfpsOutput& native,float distance,ViewQfpsOutput& out){
+    if(!std::isfinite(distance)||distance<=1||distance>2
+        ||!view_finite(native.eye0)||!view_finite(native.eye1)||!view_finite(native.target)
+        ||!std::isfinite(native.roll)||!std::isfinite(native.fov))return false;
+    const double dx=double(native.eye0.x)-native.eye1.x;
+    const double dy=double(native.eye0.y)-native.eye1.y;
+    const double dz=double(native.eye0.z)-native.eye1.z;
+    if(std::hypot(dx,dy,dz)<=1e-6
+        ||std::hypot(double(native.target.x)-native.eye0.x,
+            double(native.target.y)-native.eye0.y,double(native.target.z)-native.eye0.z)<=1e-6)return false;
+    const double factor=double(distance)-1;
+    auto value=native;
+    if(!view_store_point(native.eye0.x+dx*factor,native.eye0.y+dy*factor,native.eye0.z+dz*factor,value.eye0)
+        ||!view_store_point(native.target.x+dx*factor,native.target.y+dy*factor,native.target.z+dz*factor,value.target))return false;
+    out=value;return true;
+}
 inline bool first_person_view(const ViewQfpsOutput& native,const ViewMatrix3x4& basis,
         ViewVec3 world_eye,ViewQfpsOutput& out){
     if(!view_finite(native.eye0)||!view_finite(native.eye1)||!view_finite(native.target)

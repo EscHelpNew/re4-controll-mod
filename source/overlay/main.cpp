@@ -26,13 +26,15 @@ void change() {
     link.apply(settings);
     note=saved?link.message:tr("Could not save settings to SD","Не удалось сохранить настройки на SD");
 }
-void change_profile(re4::ProfileDomain domain){
-    const auto next=re4::profile_kind(settings,domain)==re4::ProfileKind::Default?
-        re4::ProfileKind::Custom:re4::ProfileKind::Default;
+void apply_profile(re4::ProfileDomain domain,re4::ProfileKind next){
     const auto result=overlay_storage::ready()?re4::switch_profile(overlay_storage::settings_path,settings,domain,next):
         re4::ProfileResult::SaveFailed;
     if(result==re4::ProfileResult::Applied){link.language=settings.language;link.apply(settings);}
     note=re4::profile_result_text(result,settings.language);
+}
+void change_profile(re4::ProfileDomain domain){
+    apply_profile(domain,re4::profile_kind(settings,domain)==re4::ProfileKind::Default?
+        re4::ProfileKind::Custom:re4::ProfileKind::Default);
 }
 class DescriptionFrame : public tsl::elm::OverlayFrame {
     const char* description_="Select a setting to see its description.";
@@ -62,6 +64,37 @@ public:
             if(settings.reticle==re4::ReticleStyle::Off)renderer->drawString(tr("Off","Выключен"),false,32,help_y_+130,16,a(tsl::style::color::ColorDescription));
         }
         renderer->drawString(description_,false,20,help_y_,16,a(tsl::style::color::ColorDescription));
+    }
+};
+class ControlsProfilesGui : public tsl::Gui {
+    DescriptionFrame* frame_=nullptr;
+    std::array<tsl::elm::ListItem*,3> rows_{};
+    re4::ProfileKind last_action_=re4::ProfileKind::Default;
+public:
+    tsl::elm::Element* createUI()override{
+        frame_=new DescriptionFrame;auto* list=new tsl::elm::List;
+        for(unsigned i=0;i<re4::kControlProfiles.size();++i){
+            const auto kind=re4::kControlProfiles[i];
+            auto* row=new tsl::elm::ListItem(re4::profile_name(kind,settings.language));
+            row->setClickListener([this,kind](u64 keys){
+                if(!(keys&HidNpadButton_A))return false;
+                last_action_=kind;
+                apply_profile(re4::ProfileDomain::Controls,kind);update();return true;
+            });
+            rows_[i]=row;list->addItem(row);
+        }
+        frame_->setContent(list);update();return frame_;
+    }
+    void update()override{
+        if(!frame_)return;
+        const auto active=re4::profile_kind(settings,re4::ProfileDomain::Controls);
+        for(unsigned i=0;i<rows_.size();++i){
+            const auto kind=re4::kControlProfiles[i];
+            rows_[i]->setValue(active==kind?tr("Active","Активен"):"A");
+            if(getFocusedElement()==rows_[i] || (!getFocusedElement() && i==0))
+                frame_->set_help(note.empty()||kind!=last_action_?re4::control_profile_help(kind,settings.language):note.c_str());
+        }
+        frame_->setSubtitle(note.empty()?tr("Choose controls profile","Выберите профиль управления"):note.c_str());
     }
 };
 class MappingTargetsGui : public tsl::Gui {
@@ -200,7 +233,7 @@ public:
                 item->setClickListener([this,entry](u64 keys){
                     if(entry->id==re4::ControlId::Profile){
                         if(!(keys&(HidNpadButton_A|HidNpadButton_Left|HidNpadButton_Right)))return false;
-                        change_profile(re4::ProfileDomain::Controls);refresh();return true;
+                        note.clear();tsl::changeTo<ControlsProfilesGui>();return true;
                     }
                     if(entry->id==re4::ControlId::ButtonMapping){
                         if(!(keys&HidNpadButton_A))return false;

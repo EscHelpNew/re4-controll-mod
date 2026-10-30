@@ -188,6 +188,7 @@ struct Fixture {
         native_view_test=submit_models=short_laser_ray=false;laser_endpoint={0,0,-1000};camera_native_calls=basis_native_calls=laser_native_calls=hud_native_calls=ortho_native_calls=0;
         submitted_models.clear();hud_rects.clear();test_weapon=test_other_model=nullptr;
         native_basis={{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
+        native_profile={{-500,1765,-1190},{-180,1700,-110},{0,1340,1480},0.2f,50};
         view_settings_snapshot=0;view_frame=1;view_camera_frame=0;first_person_frame=0;
         view_camera_actor=0;view_camera_tick=0;view_camera_aim=false;aim_point.sequence=0;aim_point.frame=0;
         pending_aim_point.sequence=0;pending_aim_point.frame=0;displayed_aim_point.sequence=0;displayed_aim_point.frame=0;
@@ -431,6 +432,105 @@ int main(){
         FrustumUpdate::Callback(other);assert(*reinterpret_cast<float*>(other+0x24)==1000);
         settings.shadow_mode=re4::ShadowMode::Native;publish_graphics_settings();*flags=0x02000000;
         SceneDraw::Callback();assert(shadow_flags_seen==0x02000000 && *flags==0x02000400);
+    }
+    {
+        Fixture f;f.view_mode();settings.third_person_distance=1.35f;
+        // A framing setting alone must create the verified view context, even
+        // with analog controls, first person and the reticle disabled.
+        settings.analog_enabled=false;settings.free_camera=false;
+        CameraInput::Callback(f.camera());
+        assert(camera_native_calls==1&&basis_native_calls==1);
+        assert(near(camera_collision_input.eye0.x,-612)&&near(camera_collision_input.eye0.y,1787.75f)&&near(camera_collision_input.eye0.z,-1568));
+        assert(near(camera_collision_input.target.x,-112)&&near(camera_collision_input.target.y,1362.75f)&&near(camera_collision_input.target.z,1102));
+        assert(std::memcmp(&camera_collision_input.eye1,&native_profile.eye1,sizeof(re4::ViewVec3))==0);
+        assert(camera_collision_input.fov==native_profile.fov&&camera_collision_input.roll==native_profile.roll);
+        assert(first_person_frame.load()==0&&fps_override_count.load()==0);
+        submit_models=true;SceneSubmit::Callback();
+        assert(submitted_models.size()==3&&submitted_models[0]==f.actor); // Framing never hides the player.
+        settings.third_person_distance=2;CameraInput::Callback(f.camera());
+        assert(near(camera_collision_input.eye0.x,-820)&&near(camera_collision_input.target.z,400));
+        settings.third_person_distance=1;CameraInput::Callback(f.camera());
+        assert(std::memcmp(&camera_collision_input,&native_profile,sizeof(native_profile))==0);
+        settings.third_person_distance=1.35f;settings.first_person=true;CameraInput::Callback(f.camera());
+        assert(near(camera_collision_input.eye0.x,100)&&near(camera_collision_input.eye0.y,1900)&&near(camera_collision_input.eye0.z,300));
+        assert(near(camera_collision_input.target.x-camera_collision_input.eye0.x,500));
+    }
+    for(unsigned routine:{6u,11u,15u})for(unsigned phase:{1u,2u}){
+        Fixture f;f.view_mode();f.aim();settings.third_person_distance=1.35f;
+        f.actor[0x115]=routine;f.actor[0x116]=phase;f.actor[0x117]=1;f.camera()[0x26C]=0;
+        f.flags()=routine==11?0x800ull:0x10;
+        CameraInput::Callback(f.camera());
+        assert(near(camera_collision_input.eye0.z,-1568)&&near(camera_collision_input.target.z,1102));
+        assert(std::memcmp(&camera_collision_input.eye1,&native_profile.eye1,sizeof(re4::ViewVec3))==0);
+        assert(first_person_frame.load()==0);
+    }
+    for(unsigned gate=0;gate<17;++gate){
+        Fixture f;f.view_mode();settings.third_person_distance=1.35f;
+        if(gate==0)f.camera()[0x222]=1;
+        if(gate==1)f.image[0x1131718+0x54]=16;
+        if(gate==2)f.image[0x1131718+0x54]=17;
+        if(gate==3)f.input_state[0x5092]=4;
+        if(gate==4)f.input_state[0x509E]=0x80;
+        if(gate==5)f.input_state[0x1AB]=0x40;
+        if(gate==6)f.actor[0x114]=1;
+        if(gate==7)f.actor[0x115]=5;
+        if(gate==8)f.image[0x1131718+0x48]=0;
+        if(gate==9)native_basis.m[2][2]=0;
+        if(gate==10)game_test::camera_gate_change=2;
+        if(gate==11)game_test::camera_gate_change=1;
+        if(gate==12)native_basis.m[0][0]=std::numeric_limits<float>::quiet_NaN();
+        if(gate==13)settings.third_person_distance=std::numeric_limits<float>::quiet_NaN();
+        if(gate==14)settings.third_person_distance=2.01f;
+        if(gate==15)settings.third_person_distance=0.99f;
+        if(gate==16)aiming_predicate=nullptr;
+        CameraInput::Callback(f.camera());
+        assert(std::memcmp(&camera_collision_input,&native_profile,sizeof(native_profile))==0);
+        assert(first_person_frame.load()==0&&camera_context==nullptr);
+    }
+    {
+        Fixture f;f.view_mode();settings.third_person_distance=2;
+        native_basis={{{0,0,2,30},{0,3,0,20},{-4,0,0,10}}};
+        CameraInput::Callback(f.camera());
+        // Adjustment is in native profile space before this exact frame basis
+        // and collision consume it; no actor-yaw approximation is involved.
+        assert(near(camera_collision_input.eye0.x,-820)&&near(camera_collision_input.eye0.z,-2270));
+        assert(std::memcmp(&camera_collision_input.eye1,&native_profile.eye1,sizeof(re4::ViewVec3))==0);
+    }
+    for(unsigned invalid=0;invalid<8;++invalid){
+        Fixture f;f.view_mode();settings.third_person_distance=1.35f;
+        const float nan=std::numeric_limits<float>::quiet_NaN();
+        if(invalid==0)native_profile.eye0.x=nan;
+        if(invalid==1)native_profile.eye1.y=nan;
+        if(invalid==2)native_profile.target.z=nan;
+        if(invalid==3)native_profile.roll=nan;
+        if(invalid==4)native_profile.fov=nan;
+        if(invalid==5)native_profile.eye0=native_profile.eye1;
+        if(invalid==6)native_profile.target=native_profile.eye0;
+        if(invalid==7){native_profile.eye0.x=std::numeric_limits<float>::max();native_profile.eye1.x=-native_profile.eye0.x;}
+        CameraInput::Callback(f.camera());
+        assert(std::memcmp(&camera_collision_input,&native_profile,sizeof(native_profile))==0);
+    }
+    for(unsigned gate=0;gate<5;++gate){
+        Fixture f;f.view_mode();settings.third_person_distance=1.35f;
+        CameraContext context{};context.camera=f.camera();context.actor=f.actor;
+        context.view_allowed=context.basis_valid=true;context.basis=native_basis;
+        auto* camera=f.camera();
+        if(gate==0)context.actor=f.other_model; // A captured actor must still be the player.
+        if(gate==1)camera=f.camera()+0x400;
+        if(gate==2)context.basis_valid=false;
+        if(gate==3)context.view_allowed=false;
+        camera_context=gate==4?nullptr:&context;
+        re4::ViewQfpsOutput result{};CameraApply::Callback(camera,&result);camera_context=nullptr;
+        assert(std::memcmp(&result,&native_profile,sizeof(native_profile))==0);
+    }
+    {
+        Fixture f;f.view_mode();settings.third_person_distance=1;
+        // Native bypass must retain payload bits, including signed zero/NaN.
+        native_profile.eye0.x=-0.f;
+        const std::uint32_t nan_bits=0x7FC12345;
+        std::memcpy(&native_profile.target.z,&nan_bits,sizeof(nan_bits));
+        CameraInput::Callback(f.camera());
+        assert(std::memcmp(&camera_collision_input,&native_profile,sizeof(native_profile))==0);
     }
     {
         Fixture f;f.view_mode();CameraInput::Callback(f.camera());

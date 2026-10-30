@@ -40,13 +40,17 @@ int main(){
         model.selected=0;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-controls-profile-en.bmp":"build/installer-controls-profile-ru.bmp"));
+        re4::copy_profile(model.settings,re4::re9_profile(),re4::ProfileDomain::Controls);
+        model.page=re4::InstallerPage::Profiles;model.selected=1;
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-re9-profile-en.bmp":"build/installer-re9-profile-ru.bmp"));
         model.page=re4::InstallerPage::Mapping;model.selected=21;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-mapping-en.bmp":"build/installer-mapping-ru.bmp"));
         model.page=re4::InstallerPage::MappingTargets;model.mapping_source=19;model.selected=20;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-mapping-targets-en.bmp":"build/installer-mapping-targets-ru.bmp"));
-        model.page=re4::InstallerPage::ControlGroup;model.control_group=re4::ControlGroup::Camera;model.selected=1;
+        model.page=re4::InstallerPage::ControlGroup;model.control_group=re4::ControlGroup::Camera;model.selected=4;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-camera-en.bmp":"build/installer-camera-ru.bmp"));
         model.control_group=re4::ControlGroup::Aiming;model.selected=5;

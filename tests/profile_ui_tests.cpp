@@ -35,6 +35,20 @@ bool GameLink::connect(){return true;}
 bool GameLink::apply(const re4::Settings& s){++sends;return re4::valid_settings(s);}
 int main(){
     using namespace re4;
+    {
+        settings={};note.clear();ControlsProfilesGui fresh;
+        auto* choices=static_cast<tsl::elm::OverlayFrame*>(fresh.createUI());
+        const auto untouched=sends;
+        assert(row(choices,"Custom")->click(HidNpadButton_A));
+        assert(profile_kind(settings,ProfileDomain::Controls)==ProfileKind::Default
+            && files.empty() && sends==untouched && note.find("empty")!=std::string::npos);
+        assert(row(choices,"RE9")->click(HidNpadButton_A));
+        assert(profile_kind(settings,ProfileDomain::Controls)==ProfileKind::RE9);
+        assert(files.count(std::string(overlay_storage::settings_path)+".controls-custom")==0);
+        assert(row(choices,"Default")->click(HidNpadButton_A));
+        assert(profile_kind(settings,ProfileDomain::Controls)==ProfileKind::Default);
+        delete choices;files.clear();note.clear();sends=0;
+    }
     settings={};note.clear();MainGui main_gui;
     auto* root=static_cast<tsl::elm::OverlayFrame*>(main_gui.createUI());
     const auto initial_sends=sends;
@@ -64,20 +78,30 @@ int main(){
         if(auto* item=dynamic_cast<tsl::elm::ListItem*>(e))assert(item->label!="Graphics");
     profile=row(controls,"Controls profile");
     assert(profile->value=="Custom");
+    const auto before_picker=sends;
     assert(profile->click(HidNpadButton_A));
+    auto* picker=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+    assert(picker!=controls && sends==before_picker);
+    assert(row(picker,"RE9"));
+    assert(row(picker,"Default")->click(HidNpadButton_A));
     assert(!settings.gyro_enabled && settings.texture_filtering==TextureFilter::Bilinear
-        && settings.gyro_bias_x==0.3f && profile->value=="Default");
-    assert(profile->click(HidNpadButton_Right) && settings.gyro_enabled);
+        && settings.gyro_bias_x==0.3f);
+    assert(row(picker,"RE9")->click(HidNpadButton_A));
+    assert(settings.third_person_distance==1.35f && settings.move_while_aiming && settings.move_while_knife
+        && settings.gyro_speed==0.8f && settings.texture_filtering==TextureFilter::Bilinear);
+    assert(row(picker,"Custom")->click(HidNpadButton_A) && settings.gyro_enabled);
+    assert(settings.third_person_distance==1 && !settings.move_while_knife); // Pre-RE9 Custom was retained.
     const auto before_failure=sends;writable=false;
-    assert(profile->click(HidNpadButton_Left));
+    assert(row(picker,"Default")->click(HidNpadButton_A));
     assert(settings.gyro_enabled && sends==before_failure && note.find("save")!=std::string::npos);
     auto* controls_gui=tsl::navigation.back().get();
-    const auto profile_text_sets=profile->text_sets;
+    const auto profile_text_sets=row(picker,"RE9")->text_sets;
     for(unsigned frame=0;frame<31;++frame){
-        controls_gui->update();assert(controls->subtitle==note);
-        assert(profile->text_sets==profile_text_sets); // Tesla resets marquee text on setText.
+        controls_gui->update();assert(picker->subtitle==note);
+        assert(row(picker,"RE9")->text_sets==profile_text_sets);
     }
     writable=true;
+    tsl::goBack(); // Profile picker -> Profiles and reset.
     tsl::goBack();
     assert(row(groups,"Camera")->click(HidNpadButton_A));
     controls=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
@@ -97,18 +121,28 @@ int main(){
     tsl::goBack();assert(row(groups,"Profiles and reset")->click(HidNpadButton_A));
     controls=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);profile=row(controls,"Controls profile");
     assert(profile->click(HidNpadButton_A));
+    picker=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+    assert(row(picker,"Default")->click(HidNpadButton_A));
     assert(!settings.first_person && !settings.move_while_aiming && !settings.move_while_knife && settings.reticle==ReticleStyle::Off);
-    assert(profile->click(HidNpadButton_A));
+    assert(row(picker,"Custom")->click(HidNpadButton_A));
     assert(settings.first_person && settings.move_while_aiming && settings.move_while_knife && settings.reticle==ReticleStyle::Dot);
-    tsl::goBack();tsl::goBack();delete root;
+    tsl::goBack();tsl::goBack();tsl::goBack();delete root;
 
     InstallerModel model;model.page=InstallerPage::ControlGroup;model.control_group=ControlGroup::Profiles;
     model.selected=0;
     assert(model.item_value(model.selected)=="Default");
-    assert(model.handle(UiEvent::Confirm)==InstallerAction::CustomControls);
+    assert(model.handle(UiEvent::Confirm)==InstallerAction::None);
+    assert(model.item_count()==3 && model.item_label(1)=="RE9");
+    assert(model.item_value(0)=="Active");
+    model.selected=1;
+    assert(model.handle(UiEvent::Confirm)==InstallerAction::RE9Controls);
+    model.settings=re9_profile();assert(model.item_value(1)=="Active");
+    model.selected=2;assert(model.handle(UiEvent::Confirm)==InstallerAction::CustomControls);
+    assert(model.handle(UiEvent::Back)==InstallerAction::None);
     model.settings.camera_gain=0.3f;
     assert(model.item_value(model.selected)=="Custom");
-    assert(model.handle(UiEvent::Left)==InstallerAction::DefaultControls);
+    assert(model.handle(UiEvent::Left)==InstallerAction::None && model.item_count()==3);
+    model.selected=0;assert(model.handle(UiEvent::Confirm)==InstallerAction::DefaultControls);
     model.page=InstallerPage::Graphics;model.selected=unsigned(GraphicsId::Profile);
     assert(model.handle(UiEvent::Right)==InstallerAction::CustomGraphics);
     model.settings.shadow_mode=ShadowMode::Off;

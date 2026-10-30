@@ -18,6 +18,27 @@ std::string snapshot_path(const char* path, ProfileDomain domain) {
     return std::string(path) + (domain == ProfileDomain::Controls ? ".controls-custom" : ".graphics-custom");
 }
 }
+Settings re9_profile() {
+    Settings settings;
+    settings.gyro_enabled = true;
+    settings.free_camera = true;
+    settings.camera_return_speed = 0;
+    settings.third_person_distance = 1.35f;
+    settings.move_while_aiming = true;
+    settings.move_while_knife = true;
+    settings.reticle = ReticleStyle::Crosshair;
+    settings.aim_gain_x = 0;
+    settings.aim_gain_y = 0;
+    // Physical Switch sources -> actions in RE4's native default layout.
+    settings.button_map[0] = 1;   // A -> B: cancel / quick turn.
+    settings.button_map[1] = 3;   // B -> Y: interact / confirm.
+    settings.button_map[2] = 10;  // X -> PLUS: inventory.
+    settings.button_map[3] = 1;   // Y -> B: reload while aiming.
+    settings.button_map[4] = 1;   // L3 -> B: hold run.
+    settings.button_map[10] = 11; // PLUS -> MINUS: pause.
+    settings.button_map[11] = 2;  // MINUS -> X: map.
+    return settings;
+}
 void copy_profile(Settings& destination, const Settings& source, ProfileDomain domain) {
     if (domain == ProfileDomain::Graphics) {
         copy_graphics(destination, source);
@@ -43,7 +64,9 @@ bool same_profile(const Settings& first, const Settings& second, ProfileDomain d
         && first_bytes == second_bytes;
 }
 ProfileKind profile_kind(const Settings& settings, ProfileDomain domain) {
-    return same_profile(settings, Settings{}, domain) ? ProfileKind::Default : ProfileKind::Custom;
+    if (same_profile(settings, Settings{}, domain)) return ProfileKind::Default;
+    if (domain == ProfileDomain::Controls && same_profile(settings, re9_profile(), domain)) return ProfileKind::RE9;
+    return ProfileKind::Custom;
 }
 bool save_profiled_settings(const char* path, const Settings& settings) {
     if (!path || !*path || !valid_settings(settings)) return false;
@@ -52,7 +75,12 @@ bool save_profiled_settings(const char* path, const Settings& settings) {
     for (const auto domain : {ProfileDomain::Controls, ProfileDomain::Graphics}) {
         const Settings* snapshot = nullptr;
         if (profile_kind(settings, domain) == ProfileKind::Custom) snapshot = &settings;
-        else if (have_previous && profile_kind(previous, domain) == ProfileKind::Custom) snapshot = &previous;
+        else if (have_previous && profile_kind(previous, domain) == ProfileKind::Custom) {
+            Settings existing;
+            // Migrate an installation without a Custom sidecar once. Selecting a
+            // built-in must never replace an already recoverable Custom profile.
+            if (!load_custom_profile(path, domain, existing)) snapshot = &previous;
+        }
         if (snapshot && !save_settings_file(snapshot_path(path, domain).c_str(), *snapshot)) return false;
     }
     // Sidecars are individually recoverable, not a multi-file transaction.
@@ -68,10 +96,13 @@ bool load_custom_profile(const char* path, ProfileDomain domain, Settings& out) 
     return true;
 }
 ProfileResult switch_profile(const char* path, Settings& active, ProfileDomain domain, ProfileKind kind) {
-    if (!valid_domain(domain) || (kind != ProfileKind::Default && kind != ProfileKind::Custom))
+    if (!valid_domain(domain)
+        || (kind != ProfileKind::Default && kind != ProfileKind::Custom && kind != ProfileKind::RE9)
+        || (kind == ProfileKind::RE9 && domain != ProfileDomain::Controls))
         return ProfileResult::SaveFailed;
     Settings next = active;
     if (kind == ProfileKind::Default) copy_profile(next, Settings{}, domain);
+    else if (kind == ProfileKind::RE9) copy_profile(next, re9_profile(), domain);
     else if (!load_custom_profile(path, domain, next)) return ProfileResult::MissingCustom;
     if (same_profile(active, next, domain)) return ProfileResult::Unchanged;
     if (!save_profiled_settings(path, next)) return ProfileResult::SaveFailed;

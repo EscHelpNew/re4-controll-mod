@@ -5,10 +5,10 @@
 #include <string>
 
 namespace re4 {
-enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup };
+enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup, Profiles };
 enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview };
 enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate,
-    DefaultControls,CustomControls,DefaultGraphics,CustomGraphics };
+    DefaultControls,CustomControls,DefaultGraphics,CustomGraphics,RE9Controls };
 enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
 struct DiagnosticSnapshot {
     bool connected=false,network=false;

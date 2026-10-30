@@ -32,9 +32,9 @@ void rejected(Bytes bytes) {
 int main() {
     using namespace re4;Settings s;native(s);Bytes bytes{};
     assert(s.gyro_speed==0.8f && encode_settings(s,bytes.data(),bytes.size()));
-    assert(bytes[4]==9 && bytes[88]==0 && bytes[89]==0 && bytes[90]==0 && bytes[91]==0);
+    assert(bytes[4]==10 && bytes[88]==0 && bytes[89]==0 && bytes[90]==0 && bytes[91]==0);
     assert(bytes[92]==0 && bytes[93]==0 && bytes[94]==0x80 && bytes[95]==0x3f);
-    for(unsigned i=96;i<124;++i)assert(bytes[i]==0);
+    for(unsigned i=96;i<124;++i)if(i<100 || i>=104)assert(bytes[i]==0);
     for(unsigned f=0;f<=6;++f)for(unsigned shadow=0;shadow<=1;++shadow)for(unsigned aa=0;aa<=1;++aa)
         for(float distance:{0.5f,1.f,2.f}) {
             s.texture_filtering=static_cast<TextureFilter>(f);s.shadow_mode=static_cast<ShadowMode>(shadow);
@@ -57,6 +57,7 @@ int main() {
     for(unsigned offset=91;offset<124;++offset) {
         if(offset>=92 && offset<96)continue;
         if(offset>=96 && offset<99)continue;
+        if(offset>=100 && offset<104)continue;
         auto bad=bytes;bad[offset]=1;rejected(bad);
     }
     // A real v7 fixture preserves all v7-only controls while graphics migrate Native.
@@ -83,7 +84,7 @@ int main() {
     assert(migrated.free_camera && migrated.camera_return_speed==0.375f && !migrated.remap_enabled);
     assert(migrated.button_map==previous.button_map);
     for(unsigned offset=88;offset<124;++offset){auto bad=bytes;bad[offset]=1;rejected(bad);}
-    assert(encode_settings(migrated,bytes.data(),bytes.size()) && bytes[4]==9);
+    assert(encode_settings(migrated,bytes.data(),bytes.size()) && bytes[4]==10);
     assert(decode_settings(bytes.data(),bytes.size(),migrated));native(migrated);
     std::puts("graphics settings: strict v9 validation, roundtrip, v7 preservation and native migration PASS");
 }

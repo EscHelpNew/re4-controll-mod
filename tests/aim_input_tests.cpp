@@ -13,7 +13,7 @@ int main(){
     out=shape_aim_input(1,1,0.5f,0.5f,s,{true,127});assert(out.x==16 && out.y==8);
     s.right_deadzone=0.05f;
     assert(shape_aim_input(1,1,0.04f,0.04f,s,{true,127}).x==0);
-    std::uint8_t bytes[kSettingsBytes];assert(encode_settings(s,bytes,sizeof(bytes)) && bytes[4]==9);
+    std::uint8_t bytes[kSettingsBytes];assert(encode_settings(s,bytes,sizeof(bytes)) && bytes[4]==10);
     Settings decoded;assert(decode_settings(bytes,sizeof(bytes),decoded));
     assert(decoded.right_aim_gain_x==0.5f && decoded.right_aim_gain_y==0.25f);
     s.right_aim_gain_x=1.01f;assert(!valid_settings(s));

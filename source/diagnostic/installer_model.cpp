@@ -34,6 +34,7 @@ const std::array<HomeItem,9>& installer_home_items(){
     return items;
 }
 unsigned InstallerModel::item_count()const{
+    if(page==InstallerPage::Profiles)return unsigned(kControlProfiles.size());
     if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
     if(page==InstallerPage::ControlGroup)return control_group_count(control_group);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
@@ -47,6 +48,7 @@ InstallerAction InstallerModel::handle(UiEvent event){
     profile_note.clear();
     if(event==UiEvent::Exit)return InstallerAction::Exit;
     if(event==UiEvent::Back){
+        if(page==InstallerPage::Profiles){page=InstallerPage::ControlGroup;control_group=ControlGroup::Profiles;selected=0;return InstallerAction::None;}
         if(page==InstallerPage::Graphics){page=graphics_origin;selected=page==InstallerPage::Home?home_selected:controls_selected;return InstallerAction::None;}
         if(page==InstallerPage::MappingTargets){page=InstallerPage::Mapping;selected=mapping_source+1;return InstallerAction::None;}
         if(page==InstallerPage::Mapping || page==InstallerPage::ControlGroup){
@@ -78,6 +80,12 @@ InstallerAction InstallerModel::handle(UiEvent event){
             status=InstallerStatus::NoSensor;
         }
         return InstallerAction::None;
+    }
+    if(page==InstallerPage::Profiles){
+        if(event!=UiEvent::Confirm || selected>=kControlProfiles.size())return InstallerAction::None;
+        const auto kind=kControlProfiles[selected];
+        return kind==ProfileKind::RE9?InstallerAction::RE9Controls:
+            kind==ProfileKind::Custom?InstallerAction::CustomControls:InstallerAction::DefaultControls;
     }
     if(page==InstallerPage::Updates){
         if(event!=UiEvent::Confirm || update.stage==UpdateStage::Checking || update.stage==UpdateStage::Downloading
@@ -127,8 +135,10 @@ InstallerAction InstallerModel::handle(UiEvent event){
         const auto& spec=control_spec(id);
         if(spec.id==ControlId::Profile){
             if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
-            return profile_kind(settings,ProfileDomain::Controls)==ProfileKind::Default?
-                InstallerAction::CustomControls:InstallerAction::DefaultControls;
+            page=InstallerPage::Profiles;selected=0;
+            for(unsigned i=0;i<kControlProfiles.size();++i)
+                if(kControlProfiles[i]==profile_kind(settings,ProfileDomain::Controls))selected=i;
+            return InstallerAction::None;
         }
         if(spec.id==ControlId::ButtonMapping){
             if(event==UiEvent::Confirm){page=InstallerPage::Mapping;selected=0;}
@@ -154,6 +164,7 @@ InstallerAction InstallerModel::handle(UiEvent event){
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
+    if(page==InstallerPage::Profiles)return Bilingual{"CONTROLS PROFILE","ПРОФИЛЬ УПРАВЛЕНИЯ"}.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_group_spec(control_group).label.get(settings.language);
     if(page==InstallerPage::Graphics)return Bilingual{"GRAPHICS","ГРАФИКА"}.get(settings.language);
     if(page==InstallerPage::Mapping)return Bilingual{"BUTTON MAPPING","НАЗНАЧЕНИЕ КНОПОК"}.get(settings.language);
@@ -198,7 +209,8 @@ const char* InstallerModel::status_text()const{
 }
 const char* InstallerModel::selected_help()const{
     if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
-        || selected_control()==ControlId::Profile))return profile_note.c_str();
+        || selected_control()==ControlId::Profile || page==InstallerPage::Profiles))return profile_note.c_str();
+    if(page==InstallerPage::Profiles)return control_profile_help(kControlProfiles[selected<kControlProfiles.size()?selected:0],settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_help(selected,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);
@@ -220,6 +232,7 @@ const char* InstallerModel::selected_help()const{
 }
 std::string InstallerModel::item_label(unsigned index)const{
     if(index>=item_count())return "";
+    if(page==InstallerPage::Profiles)return profile_name(kControlProfiles[index],settings.language);
     if(page==InstallerPage::Controls)return control_group_spec(static_cast<ControlGroup>(index)).label.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_spec(control_group_item(control_group,index)).label.get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
@@ -232,6 +245,8 @@ std::string InstallerModel::item_label(unsigned index)const{
 }
 std::string InstallerModel::item_value(unsigned index)const{
     if(index>=item_count())return "";
+    if(page==InstallerPage::Profiles)return profile_kind(settings,ProfileDomain::Controls)==kControlProfiles[index]?
+        Bilingual{"Active","Активен"}.get(settings.language):"A";
     if(page==InstallerPage::Controls)return "";
     if(page==InstallerPage::ControlGroup)return control_value_text(control_spec(control_group_item(control_group,index)),settings);
     if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 (unreleased)
+
+- Add a separate RE9-inspired controls profile and explicit Default / RE9 / Custom selection in both interfaces.
+- Keep the last Custom controls when applying built-in profiles; graphics, language and calibration remain independent.
+- Add third-person camera distance1.00–2.00, default1.00; RE9 uses1.35 to give Leon more room in the frame.
+- Extend the native shoulder eye before wall collision while keeping its anchor, view direction, FOV and roll; first person and scopes retain their own views.
+- Combine free360 camera, moving aim/knife, gyro and a crosshair with RE9-inspired physical buttons using RE4's default control layout.
+- Document shared native-button and unsupported-action limitations rather than promising RE9 mechanics.
+- Migrate old settings into wirev10 without changing their framing; use shared ABI14 with the same400-byte block.
+
 ## 0.7.3 (unreleased)
 
 - Fix the native knife-held input mask used by movement and analog knife aiming.

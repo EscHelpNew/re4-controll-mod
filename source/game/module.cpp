@@ -668,6 +668,12 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
             std::memcpy(output,&result,sizeof(result));
             fps_override_count.fetch_add(1,std::memory_order_relaxed);
             first_person_frame.store(view_frame.load(std::memory_order_relaxed),std::memory_order_release);
+        }else if(settings.third_person_distance!=1){
+            re4::ViewQfpsOutput result;
+            if(!re4::third_person_view(native,settings.third_person_distance,result))return;
+            // 18990 traces eye1->eye0 and selects clipped candidates nearest
+            // eye1. Keep that anchor; native collision/smoothing runs next.
+            std::memcpy(output,&result,sizeof(result));
         }
         view_camera_aim.store(native_aim,std::memory_order_relaxed);
         view_camera_actor.store(reinterpret_cast<std::uintptr_t>(actor),std::memory_order_relaxed);
@@ -681,7 +687,8 @@ HOOK_DEFINE_TRAMPOLINE(CameraInput) {
         clear_view_frame();
         auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
         const bool normal=actor&&actor[0x114]==0&&actor[0x115]<=4;
-        const bool wanted=settings.first_person||settings.reticle!=re4::ReticleStyle::Off;
+        const bool framing=settings.third_person_distance>1&&settings.third_person_distance<=2;
+        const bool wanted=settings.first_person||framing||settings.reticle!=re4::ReticleStyle::Off;
         const bool view_allowed=wanted&&view_camera_allowed(camera,actor);
         const bool shape=normal&&(settings.analog_enabled||(settings.first_person&&view_allowed));
         const bool ordinary=normal&&settings.analog_enabled&&ordinary_camera(camera,actor);

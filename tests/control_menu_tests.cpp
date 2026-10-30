@@ -19,7 +19,7 @@ int main(){
         {ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone},
         {ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife},
         {ControlId::Gyro,ControlId::GyroSpeed,ControlId::GyroDeadzone,ControlId::GyroX,ControlId::GyroY,ControlId::InvertX,ControlId::InvertY},
-        {ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson},
+        {ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson,ControlId::ThirdPersonDistance},
         {ControlId::Reticle,ControlId::ReticleSize},
         {ControlId::ButtonMapping},
         {ControlId::Profile,ControlId::Reset}
@@ -55,6 +55,14 @@ int main(){
         mapping|=std::strcmp(spec.label.english,"Button mapping")==0;
     }
     assert(camera_return && free_camera && mapping);
+    Settings framing;
+    assert(!change_control(framing,ControlId::ThirdPersonDistance,-1));
+    for(unsigned n=0;n<40;++n)change_control(framing,ControlId::ThirdPersonDistance,1);
+    assert(framing.third_person_distance==2 && valid_settings(framing));
+    assert(!change_control(framing,ControlId::ThirdPersonDistance,1));
+    for(unsigned n=0;n<40;++n)change_control(framing,ControlId::ThirdPersonDistance,-1);
+    assert(framing.third_person_distance==1 && valid_settings(framing));
+    assert(!change_control(framing,ControlId::ThirdPersonDistance,-1));
     bool graphics=false;
     for(const auto& spec:control_specs())graphics|=std::strcmp(spec.label.english,"Graphics")==0;
     assert(!graphics); // Independent root menu, never nested in the controls catalogue.

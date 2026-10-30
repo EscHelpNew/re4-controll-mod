@@ -53,6 +53,41 @@ int main(){
     zero=native;zero.fov=nan;
     CHECK(!first_person_view(zero,basis,world,fps));CHECK(std::memcmp(&fps,&saved,sizeof(fps))==0);
 
+    // A farther shoulder eye retains the collision pivot and native look delta.
+    const ViewQfpsOutput shoulder{{-4,6,-8},{2,3,4},{1,8,12},0.2f,50};
+    ViewQfpsOutput framed{};
+    CHECK(third_person_view(shoulder,1.35f,framed));
+    same(framed.eye0,{-6.1f,7.05f,-12.2f});same(framed.target,{-1.1f,9.05f,7.8f});
+    CHECK(std::memcmp(&framed.eye1,&shoulder.eye1,sizeof(ViewVec3))==0);
+    CHECK(framed.roll==shoulder.roll&&framed.fov==shoulder.fov);
+    CHECK(third_person_view(shoulder,2,framed));
+    same(framed.eye0,{-10,9,-20});same(framed.target,{-5,11,0});
+    // The displacement remains correct through rotated, nonuniformly scaled bases.
+    ViewQfpsOutput transformed=shoulder;
+    CHECK(view_transform_point(basis,shoulder.eye0,transformed.eye0));
+    CHECK(view_transform_point(basis,shoulder.eye1,transformed.eye1));
+    CHECK(view_transform_point(basis,shoulder.target,transformed.target));
+    CHECK(third_person_view(transformed,2,transformed));
+    same(transformed.eye0,{60,7,90});same(transformed.eye1,{108,-11,42});same(transformed.target,{100,13,70});
+    auto shoulder_alias=shoulder;
+    CHECK(third_person_view(shoulder_alias,2,shoulder_alias));same(shoulder_alias.eye0,framed.eye0);
+    const auto untouched=framed;
+    for(float distance:{1.f,0.f,-1.f,0.99f,2.01f,nan,std::numeric_limits<float>::infinity()}){
+        CHECK(!third_person_view(shoulder,distance,framed));CHECK(std::memcmp(&framed,&untouched,sizeof(framed))==0);
+    }
+    for(unsigned invalid=0;invalid<8;++invalid){
+        auto bad=shoulder;
+        if(invalid==0)bad.eye0.x=nan;
+        if(invalid==1)bad.eye1.y=nan;
+        if(invalid==2)bad.target.z=nan;
+        if(invalid==3)bad.roll=nan;
+        if(invalid==4)bad.fov=nan;
+        if(invalid==5)bad.eye0=bad.eye1;
+        if(invalid==6)bad.target=bad.eye0;
+        if(invalid==7){bad.eye0.x=std::numeric_limits<float>::max();bad.eye1.x=-bad.eye0.x;}
+        CHECK(!third_person_view(bad,2,framed));CHECK(std::memcmp(&framed,&untouched,sizeof(framed))==0);
+    }
+
     const ViewMatrix3x4 identity{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
     // Native row-major perspective: cot(fov/2)/aspect, cot, depth, -z clip w.
     const ViewMatrix4x4 projection{{{0.75f,0,0,0},{0,1,0,0},{0,0,-0.001001f,-100.1001f},{0,0,-1,0}}};
