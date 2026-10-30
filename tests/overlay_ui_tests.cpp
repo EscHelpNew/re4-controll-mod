@@ -4,17 +4,32 @@
 #include <cassert>
 namespace {
 unsigned saves=0,sends=0;
+bool storage_available=true,have_saved=false,saved_gyro=true,last_sent_gyro=false;
 }
-namespace overlay_storage {bool ready(){return true;}bool mount(){return true;}void close(){}}
+namespace overlay_storage {bool ready(){return storage_available;}bool mount(){return storage_available;}void close(){}}
 namespace re4 {
 bool save_settings_file(const char*,const Settings& s){++saves;return valid_settings(s);}
-bool load_settings_file(const char*,Settings&){return false;}
+bool load_settings_file(const char*,Settings& s){if(have_saved)s.gyro_enabled=saved_gyro;return have_saved;}
 }
 void GameLink::initialize(){}
 void GameLink::close(){}
 bool GameLink::connect(){return true;}
-bool GameLink::apply(const re4::Settings& s){++sends;return re4::valid_settings(s);}
+bool GameLink::apply(const re4::Settings& s){++sends;last_sent_gyro=s.gyro_enabled;return re4::valid_settings(s);}
 int main(){
+    {
+        ControlsOverlay overlay;tsl::Overlay& lifecycle=overlay;
+        have_saved=true;
+        for(bool enabled:{false,true}){
+            settings={};saved_gyro=enabled;const auto before=sends;
+            lifecycle.initServices();assert(settings.gyro_enabled==enabled && last_sent_gyro==enabled && sends==before+1 && saves==0);
+            lifecycle.exitServices();
+        }
+        const auto before=sends;
+        storage_available=false;settings={};
+        lifecycle.initServices();assert(sends==before && saves==0);
+        lifecycle.exitServices();storage_available=true;have_saved=false;
+        lifecycle.initServices();assert(sends==before && saves==0);lifecycle.exitServices();
+    }
     settings={};ControlsGui gui;
     auto* frame=static_cast<tsl::elm::OverlayFrame*>(gui.createUI());
     frame->layout(0,0,448,720);

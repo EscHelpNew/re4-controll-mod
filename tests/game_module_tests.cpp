@@ -90,13 +90,16 @@ struct Fixture {
         native_pitch_sign=1;
         sensor_pad=0;sensor_style=0;sensor_attributes=0;
         game_test::installed=game_test::initialized=game_test::mounts=game_test::fs_opens=0;
+        game_test::mount_result=1;game_test::mount_failures=game_test::fs_reads=game_test::fs_closes=0;
+        game_test::settings_primary.clear();game_test::settings_backup.clear();
         game_test::sensor_starts=game_test::sensor_stops=game_test::sensor_reads=0;
         game_test::start_result=0;game_test::tick=1;game_test::native_aim=1;
         game_test::apply_sway=false;game_test::aim_step=0.08f;game_test::sway_baseline=0;
         game_test::program=re4::profile::title_id;
         settings={};settings.invert_x=settings.invert_y=false;
         settings.left_deadzone=settings.right_deadzone=0.15f;
-        file_read=false;last_sequence=0;raw_left_x=0;dpad_move=dpad_turn=false;movement_actor=nullptr;
+        file_read=false;file_mounted=false;file_attempts=0;next_file_retry=0;
+        last_sequence=0;raw_left_x=0;dpad_move=dpad_turn=false;movement_actor=nullptr;
         std::memset(const_cast<re4::SharedControl*>(&control),0,sizeof(control));
         std::memcpy(image.data()+re4::profile::build_id_offset,re4::profile::build_id,32);
         for(auto s:re4::profile::sites)std::memcpy(image.data()+s.offset,&s.instruction,4);
@@ -117,6 +120,64 @@ struct Fixture {
 };
 }
 int main(){
+    for(bool enabled:{false,true}){
+        Fixture f;re4::Settings saved;saved.gyro_enabled=enabled;saved.gyro_speed=2.5f;
+        saved.gyro_deadzone_dps=0.7f;saved.turn_gain=0.37f;
+        game_test::settings_primary.resize(re4::kSettingsBytes);
+        assert(re4::encode_settings(saved,game_test::settings_primary.data(),re4::kSettingsBytes));
+        game_test::mount_result=0;game_test::mount_failures=1;
+        f.aim();NpadState pad{};pad.attributes=1;capture(pad,0,1);
+        assert(PadNormalize::Callback(nullptr)==7 && !settings.gyro_enabled);
+        for(unsigned n=0;n<60;++n)PadNormalize::Callback(nullptr);
+        assert(game_test::mounts==1 && game_test::fs_opens==0);
+        game_test::tick+=19'200'000;PadNormalize::Callback(nullptr);
+        assert(settings.gyro_enabled==enabled && near(settings.gyro_speed,2.5f));
+        assert(near(settings.turn_gain,0.37f) && near(settings.gyro_deadzone_dps,0.7f));
+        assert(sensor.running()==enabled && game_test::mounts==2 && game_test::fs_closes==1);
+        const auto opens=game_test::fs_opens;
+        game_test::tick+=19'200'000;PadNormalize::Callback(nullptr);
+        assert(game_test::mounts==2 && game_test::fs_opens==opens);
+    }
+    {
+        Fixture f;re4::Settings saved;saved.gyro_enabled=true;
+        game_test::settings_primary.assign(re4::kSettingsBytes,0); // Corrupt primary, valid recovery.
+        game_test::settings_backup.resize(re4::kSettingsBytes);
+        assert(re4::encode_settings(saved,game_test::settings_backup.data(),re4::kSettingsBytes));
+        game_test::mount_result=0;f.aim();NpadState pad{};pad.attributes=1;capture(pad,0,1);
+        PadNormalize::Callback(nullptr);
+        assert(settings.gyro_enabled && sensor.running() && control.settings_source==2);
+        assert(game_test::fs_closes==2 && control.settings_read_result==0);
+        for(unsigned n=1;n<=3;++n){game_test::tick+=320'000;f.sample(n);PadNormalize::Callback(nullptr);}
+        AimSensitivity::Callback(f.actor,0);
+        assert(std::fabs(f.yaw())>0 && std::fabs(f.pitch()[0])>0); // No overlay or toggle required.
+    }
+    {
+        Fixture f;
+        for(unsigned n=0;n<20;++n){PadNormalize::Callback(nullptr);game_test::tick+=19'200'000;}
+        assert(file_read && game_test::mounts==8 && control.settings_attempts==8);
+        assert(control.settings_source==3 && !settings.gyro_enabled && !sensor.running());
+        assert(game_test::fs_opens==0); // Exhausted mount attempts never poll SD every frame.
+    }
+    {
+        Fixture f;game_test::mount_result=0;PadNormalize::Callback(nullptr);
+        assert(game_test::mounts==1 && game_test::fs_opens==2 && !file_read);
+        re4::Settings saved;saved.gyro_enabled=true;
+        game_test::settings_primary.resize(re4::kSettingsBytes);
+        assert(re4::encode_settings(saved,game_test::settings_primary.data(),re4::kSettingsBytes));
+        game_test::tick+=19'200'000;PadNormalize::Callback(nullptr);
+        assert(settings.gyro_enabled && control.settings_source==1 && file_read);
+        assert(game_test::mounts==1 && game_test::fs_opens==3); // Retry reads without a duplicate mount.
+    }
+    {
+        Fixture f;publish_settings();PadNormalize::Callback(nullptr); // Initial mount fails.
+        re4::Settings live;live.gyro_enabled=true;live.gyro_speed=3.25f;
+        std::uint8_t bytes[re4::kSettingsBytes];assert(re4::encode_settings(live,bytes,sizeof(bytes)));
+        for(unsigned i=0;i<sizeof(bytes);++i)control.settings[i]=bytes[i];
+        control.sequence=last_sequence+2;
+        game_test::mount_result=0;game_test::tick+=19'200'000;PadNormalize::Callback(nullptr);
+        assert(settings.gyro_enabled && settings.gyro_speed==3.25f && control.settings_source==4);
+        assert(file_read && game_test::mounts==1 && game_test::fs_opens==0); // Live change wins over retry.
+    }
     {
         Fixture f;game_test::program=0;exl_main(nullptr,nullptr);
         assert(control.status==2 && game_test::installed==0 && game_test::initialized==0);

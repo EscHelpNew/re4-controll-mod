@@ -13,6 +13,8 @@ constexpr unsigned InfoType_ProgramId=1, CUR_PROCESS_HANDLE=0;
 namespace game_test {
 inline u64 program=0x010099A00BC1E000, tick=1;
 inline unsigned installed=0, initialized=0, mounts=0, fs_opens=0;
+inline unsigned mount_result=1, mount_failures=0, fs_reads=0, fs_closes=0;
+inline std::vector<std::uint8_t> settings_primary,settings_backup;
 inline unsigned sensor_starts=0, sensor_stops=0, sensor_reads=0, start_result=0;
 inline unsigned pad_attributes=1, native_aim=1;
 inline float motion_speed_seen=0;

@@ -12,7 +12,7 @@
   "is_64_bit": true,
   "address_space_type": 3,
   "filesystem_access": {
-    "permissions": "0x4000000000000000"
+    "permissions": "0x4000000000200000"
   },
   "service_access": [
     "acc:u0",

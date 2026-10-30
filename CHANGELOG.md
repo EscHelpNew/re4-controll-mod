@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2
+
+- Restore saved gyro enable/sensitivity after restarting RE4 without toggling the overlay.
+- Grant explicit SD access and retry startup reads at most eight times, one second apart.
+- Apply saved settings when opening the overlay; live changes take priority over delayed reads.
+- Add startup source/error diagnostics and regression coverage for saved Off, backup recovery and sensor activation.
+- Fix the forwarder build path guard for canonical Windows short/long directory names in CI.
+
 ## 0.4.1
 
 - Prepared the first public release, documentation and source/artifact audits.

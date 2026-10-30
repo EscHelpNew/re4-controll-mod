@@ -18,9 +18,9 @@ def build(keys: Path) -> None:
     output = (ROOT / 'build/forwarder-stage' / uuid.uuid4().hex).resolve()
     published = (ROOT / 'build/forwarder').resolve()
     temporary = (ROOT / 'build/forwarder-tmp').resolve()
-    output.relative_to(ROOT)
-    published.relative_to(ROOT)
-    temporary.relative_to(ROOT)
+    output.relative_to(ROOT.resolve())
+    published.relative_to(ROOT.resolve())
+    temporary.relative_to(ROOT.resolve())
     output.mkdir(parents=True, exist_ok=True)
     Directories.output = output
     Directories.temp = temporary

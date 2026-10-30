@@ -150,6 +150,9 @@ class ForwarderTests(unittest.TestCase):
             with TemporaryDirectory(prefix='re4 forwarder test ') as temp:
                 root=tool.ROOT=Path(temp)
                 (root/'assets').mkdir();(root/'build/forwarder').mkdir(parents=True)
+                # Match the same canonical root through another path spelling;
+                # Windows CI similarly expands RUNNER~1 into runneradmin.
+                tool.ROOT=root/'assets'/'..'
                 (root/'assets/icon-original.png').write_bytes((ROOT/'assets/icon-original.png').read_bytes())
                 (root/'build/forwarder/old.nsp').write_bytes(b'previous-launcher')
                 (root/'build/re4-controls.nro').write_bytes(b'own-nro')

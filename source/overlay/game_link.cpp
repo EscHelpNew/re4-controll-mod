@@ -94,6 +94,10 @@ bool GameLink::connect() {
                     std::snprintf(diagnostic, sizeof(diagnostic), "\nsensor_rc=%08X running=%u samples=%u gyro_delta=%.6f,%.6f",
                         block.sensor_result, block.sensor_running, block.sensor_samples, block.gyro_yaw, block.gyro_pitch);
                     details += diagnostic;
+                    std::snprintf(diagnostic,sizeof(diagnostic),
+                        "\nsettings_startup_source=%u attempts=%u mount_rc=%08X read_rc=%08X",
+                        block.settings_source,block.settings_attempts,block.settings_mount_result,block.settings_read_result);
+                    details += diagnostic;
                     re4::Settings applied_settings;
                     if(re4::decode_settings(block.settings,sizeof(block.settings),applied_settings)){
                         std::snprintf(diagnostic,sizeof(diagnostic),

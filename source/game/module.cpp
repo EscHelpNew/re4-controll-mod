@@ -53,6 +53,9 @@ bool dpad_move = false;
 void* movement_actor = nullptr;
 std::uint32_t last_sequence = 0;
 bool file_read = false;
+bool file_mounted = false;
+unsigned file_attempts = 0;
+std::uint64_t next_file_retry = 0;
 std::uintptr_t main_base = 0;
 std::uint32_t sensor_pad = 0, sensor_style = 0, sensor_attributes = 0;
 re4::SensorReader<SensorBackend> sensor;
@@ -146,23 +149,40 @@ void publish_settings() {
 }
 bool read_settings(const char* path) {
     nn::fs::FileHandle handle{};
-    if (R_FAILED(nn::fs::OpenFile(&handle, path, 1))) return false;
+    control.settings_read_result = nn::fs::OpenFile(&handle, path, 1);
+    if (R_FAILED(control.settings_read_result)) return false;
     long size = 0;
     std::uint8_t bytes[re4::kSettingsBytes];
-    const bool valid = R_SUCCEEDED(nn::fs::GetFileSize(&size, handle)) && size == sizeof(bytes)
-        && R_SUCCEEDED(nn::fs::ReadFile(handle, 0, bytes, sizeof(bytes)))
-        && re4::decode_settings(bytes, sizeof(bytes), settings);
+    re4::Settings candidate;
+    control.settings_read_result = nn::fs::GetFileSize(&size, handle);
+    bool valid = R_SUCCEEDED(control.settings_read_result) && size == sizeof(bytes);
+    if(valid){
+        control.settings_read_result = nn::fs::ReadFile(handle, 0, bytes, sizeof(bytes));
+        valid = R_SUCCEEDED(control.settings_read_result) && re4::decode_settings(bytes, sizeof(bytes), candidate);
+    }
     nn::fs::CloseFile(handle);
+    if(valid)settings=candidate;
+    else if(!control.settings_read_result)control.settings_read_result=0xFFFFFFFFu;
     return valid;
 }
 void read_initial_settings() {
     if (file_read) return;
-    file_read = true;
-    // One bounded startup read; live changes use the shared block, with no
-    // filesystem polling in the per-frame path.
-    if (R_FAILED(nn::fs::MountSdCardForDebug("r4ctl"))) return;
-    if (read_settings("r4ctl:/config/re4-controls/settings.bin")
-        || read_settings("r4ctl:/config/re4-controls/settings.bin.previous")) publish_settings();
+    const auto now=svcGetSystemTick();
+    if(now<next_file_retry)return;
+    next_file_retry=now+19'200'000; // At most once per second, eight attempts total.
+    control.settings_attempts=++file_attempts;
+    if(!file_mounted){
+        control.settings_mount_result=nn::fs::MountSdCardForDebug("r4ctl");
+        file_mounted=R_SUCCEEDED(control.settings_mount_result);
+    }
+    if(file_mounted){
+        if(read_settings("r4ctl:/config/re4-controls/settings.bin"))control.settings_source=1;
+        else if(read_settings("r4ctl:/config/re4-controls/settings.bin.previous"))control.settings_source=2;
+        if(control.settings_source==1 || control.settings_source==2){
+            file_read=true;publish_settings();return;
+        }
+    }
+    if(file_attempts>=8){file_read=true;control.settings_source=3;}
 }
 void poll_settings() {
     const auto before = control.sequence;
@@ -173,6 +193,8 @@ void poll_settings() {
     std::atomic_thread_fence(std::memory_order_seq_cst);
     if (control.sequence != before || !re4::decode_settings(bytes, sizeof(bytes), settings)) return;
     last_sequence = before;
+    file_read = true; // A live update always wins over a delayed startup read.
+    control.settings_source = 4;
     re4::acknowledge_settings(control, settings, before);
 }
 void capture(const NpadState& pad, std::uint32_t id, std::uint32_t style) {
@@ -205,7 +227,7 @@ HOOK_DEFINE_TRAMPOLINE(DualPad) {
 HOOK_DEFINE_TRAMPOLINE(PadNormalize) {
     static int Callback(void* state) {
         const int result = Orig(state);
-        read_initial_settings(); poll_settings();
+        poll_settings(); read_initial_settings();
         poll_sensors();
         control.frames = control.frames + 1;
         return result;

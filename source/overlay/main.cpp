@@ -124,11 +124,13 @@ public:
 };
 class ControlsOverlay:public tsl::Overlay{
     void initServices()override{
+        bool loaded=false;
         if(overlay_storage::mount()){
             mkdir("r4ovl:/config",0777);mkdir("r4ovl:/config/re4-controls",0777);
-            re4::load_settings_file(overlay_storage::settings_path,settings);
+            loaded=re4::load_settings_file(overlay_storage::settings_path,settings);
         }else note=tr("Could not mount SD card","Не удалось подключить SD");
         link.language=settings.language;link.initialize();
+        if(loaded){link.apply(settings);note=link.message;}
     }
     void exitServices()override{link.close();overlay_storage::close();}
     std::unique_ptr<tsl::Gui> loadInitialGui()override{return initially<ControlsGui>();}
