@@ -17,6 +17,8 @@ void reset(){
     attach_rc=write_count=fail_write=reads=0;build_supported=true;write_sizes.clear();
     re4::SharedControl block{};std::memcpy(block.marker,re4::kSharedMarker,16);
     block.abi=re4::kSharedAbi;block.status=1;block.capabilities=re4::kCapabilityTurning;block.sequence=4;
+    block.fps_overrides=7;block.reticle_draws=9;block.modern_move_steps=11;block.modern_pose_steps=13;
+    block.modern_move_status=3;block.modern_move_distance=12.5f;
     std::memcpy(memory.data()+8,&block,sizeof(block));
 }
 }
@@ -54,6 +56,7 @@ int main(){
     reset();
     {
         GameLink link;link.initialize();assert(link.connect());
+        assert(link.details.find("fps=7 reticle=9 move=11 pose=13 status=3 distance=12.500")!=std::string::npos);
         re4::Settings s;s.turn_gain=0.3f;assert(link.apply(s));
         const auto block=snapshot();assert(block.sequence==6);
         assert((write_sizes==std::vector<std::size_t>{4,re4::kSettingsBytes,4}));

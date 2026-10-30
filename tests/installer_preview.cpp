@@ -38,6 +38,9 @@ int main(){
         model.page=re4::InstallerPage::Controls;model.selected=unsigned(re4::ControlId::CameraReturn);
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-camera-en.bmp":"build/installer-camera-ru.bmp"));
+        model.selected=unsigned(re4::ControlId::MoveKnife);
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-gameplay-en.bmp":"build/installer-gameplay-ru.bmp"));
     }
     model.page=re4::InstallerPage::Diagnostics;model.settings.language=re4::Language::English;
     model.diagnostic.connected=true;model.diagnostic.sensors=1;model.diagnostic.raw[0]=0.65f;

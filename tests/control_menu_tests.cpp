@@ -26,6 +26,15 @@ int main(){
     assert(!graphics); // Independent root menu, never nested in the controls catalogue.
     Settings s;
     assert(!change_control(s,ControlId::Profile,1)); // Persistence handled by the application.
+    assert(!s.first_person && change_control(s,ControlId::FirstPerson,1) && s.first_person);
+    assert(change_control(s,ControlId::MoveAiming,1) && s.move_while_aiming);
+    assert(change_control(s,ControlId::MoveKnife,1) && s.move_while_knife);
+    assert(control_value_text(control_spec(ControlId::FirstPerson),s)=="On");
+    for(unsigned i=0;i<3;++i)assert(change_control(s,ControlId::Reticle,1));
+    assert(s.reticle==ReticleStyle::Off);
+    assert(change_control(s,ControlId::Reticle,-1) && s.reticle==ReticleStyle::Crosshair);
+    assert(change_control(s,ControlId::ReticleSize,1) && s.reticle_size==ReticleSize::Medium);
+    s={};
     assert(std::strstr(graphics_spec(GraphicsId::AntiAliasing).help.english,"Restart")!=nullptr);
     assert(std::strstr(graphics_spec(GraphicsId::AntiAliasing).help.russian,"Перезапуск")!=nullptr);
     for(const auto& spec:graphics_specs()){

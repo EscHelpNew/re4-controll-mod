@@ -81,6 +81,21 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
         toggle(ControlId::InvertY,{"Invert gyro Y","Инверсия гироскопа Y"},
             {"Reverses vertical gyro direction.\nDoes not reverse stick input.\nEnabled by default.",
              "Меняет направление вертикального\nгироскопа, не затрагивая стик.\nПо умолчанию включено."},&Settings::invert_y),
+        toggle(ControlId::FirstPerson,{"First-person view","Вид от первого лица"},
+            {"View from the character's eye position.\nRight-stick look uses Camera sensitivity.\nNative scopes and scenes keep their cameras.",
+             "Камера на уровне глаз персонажа.\nОбзор: чувствительность камеры.\nПрицелы и сцены используют штатную камеру."},&Settings::first_person),
+        selector(ControlId::Reticle,{"Reticle","Прицел на экране"},
+            {"Off, dot or cross at the weapon aim point.\nShown only with a valid aiming position.\nThe original laser remains available.",
+             "Выкл., точка или перекрестие цели оружия.\nТолько при доступной точке прицеливания.\nШтатный лазер сохраняется."}),
+        selector(ControlId::ReticleSize,{"Reticle size","Размер прицела"},
+            {"Small, medium or large aiming marker.\nChanges only the screen marker size.\nDoes not change weapon accuracy.",
+             "Малый, средний или большой прицел.\nМеняет только размер метки на экране.\nНе меняет точность оружия."}),
+        toggle(ControlId::MoveAiming,{"Move while aiming","Движение при прицеливании"},
+            {"Left stick: move. Right stick: aim.\nUses the native walk animation speed.\nAvailable with ordinary firearms.",
+             "Левый стик: движение. Правый: прицел.\nСкорость штатной анимации ходьбы.\nДля обычного огнестрельного оружия."},&Settings::move_while_aiming),
+        toggle(ControlId::MoveKnife,{"Move with knife","Движение с ножом"},
+            {"Left-stick movement in knife stance\nand during a slash. Right stick aims.\nNative attack timing is preserved.",
+             "Движение левым стиком в стойке\nс ножом и при ударе. Правый: прицел.\nШтатное время удара сохраняется."},&Settings::move_while_knife),
         {ControlId::Reset,ControlKind::Action,{"Reset settings","Сбросить настройки"},
             {"Restore defaults: English, linear curve,\n0.05 deadzones, native stick speeds,\ngyro off and both gyro inversions on.",
              "Вернуть настройки: английский, линейная\nкривая, мёртвые зоны 0.05, гироскоп выкл.,\nобе инверсии вкл., штатные скорости."}}
@@ -103,6 +118,14 @@ std::string control_value_text(const ControlSpec& item,const Settings& s){
     if(item.id==ControlId::Language)return s.language==Language::Russian?"Русский":"English";
     if(item.id==ControlId::Curve)return curve_name(s.stick_curve,s.language);
     if(item.id==ControlId::Profile)return profile_name(profile_kind(s,ProfileDomain::Controls),s.language);
+    if(item.id==ControlId::Reticle){
+        static constexpr Bilingual names[]={{"Off","Выкл"},{"Dot","Точка"},{"Crosshair","Перекрестие"}};
+        return names[unsigned(s.reticle)<3?unsigned(s.reticle):0].get(s.language);
+    }
+    if(item.id==ControlId::ReticleSize){
+        static constexpr Bilingual names[]={{"Small","Малый"},{"Medium","Средний"},{"Large","Большой"}};
+        return names[unsigned(s.reticle_size)<3?unsigned(s.reticle_size):0].get(s.language);
+    }
     return "A";
 }
 bool change_control(Settings& s,ControlId id,int direction){
@@ -116,6 +139,8 @@ bool change_control(Settings& s,ControlId id,int direction){
     if(item.toggle){s.*item.toggle=!(s.*item.toggle);return true;}
     if(id==ControlId::Language){s.language=s.language==Language::English?Language::Russian:Language::English;return true;}
     if(id==ControlId::Curve){s.stick_curve=static_cast<StickCurve>((unsigned(s.stick_curve)+(direction>0?1:3))%4);return true;}
+    if(id==ControlId::Reticle){s.reticle=static_cast<ReticleStyle>((unsigned(s.reticle)+(direction>0?1:2))%3);return true;}
+    if(id==ControlId::ReticleSize){s.reticle_size=static_cast<ReticleSize>((unsigned(s.reticle_size)+(direction>0?1:2))%3);return true;}
     if(id==ControlId::Reset){s={};return true;}
     return false;
 }

@@ -5,8 +5,8 @@
 #include <atomic>
 
 namespace re4 {
-constexpr char kSharedMarker[16] = "RE4CTL_SHARED12";
-constexpr unsigned kSharedAbi = 12;
+constexpr char kSharedMarker[16] = "RE4CTL_SHARED13";
+constexpr unsigned kSharedAbi = 13;
 // Wire layout is shared by the module and overlay, with no runtime pointers.
 // The overlay publishes an odd sequence, payload, then the next even sequence.
 // The module validates both sequence reads and the payload checksum.
@@ -69,11 +69,17 @@ struct alignas(8) SharedControl {
     std::uint32_t graphics_ready;
     std::uint32_t graphics_aa_latched;
     std::uint32_t graphics_reserved;
+    std::uint32_t fps_overrides;
+    std::uint32_t reticle_draws;
+    std::uint32_t modern_move_steps;
+    std::uint32_t modern_pose_steps;
+    std::uint32_t modern_move_status;
+    float modern_move_distance;
 };
 static_assert(offsetof(SharedControl, settings) == 32);
 static_assert(offsetof(SharedControl, frames) == 160);
 static_assert(offsetof(SharedControl, applied_sequence) == 184);
-static_assert(sizeof(SharedControl) == 376);
+static_assert(sizeof(SharedControl) == 400);
 constexpr unsigned kCapabilityTurning = 1;
 constexpr SharedControl initial_shared_control() {
     SharedControl result{};

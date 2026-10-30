@@ -53,13 +53,13 @@ overlay main, existing UI/model tests and preview fixtures.
 Files: native research notes (ignored), settings codec, pure camera/reticle helpers,
 game module, build profile guards and corresponding codec/native callback tests.
 
-- [ ] Establish precise camera transforms, head visibility, late HUD ABI and native movement/animation budget before writing hooks.
-- [ ] Add RED tests for disabled equivalence, scene/scope gating, true projected reticle, single physics/animation execution, bounded native movement and settings migration.
-- [ ] Implement only supported paths; keep unresolved work explicitly pending.
-- [ ] Build ARM game module, overlay/NRO; verify all instruction guards and SDK imports.
+- [x] Establish precise camera transforms, head visibility, late HUD ABI and native movement/animation budget before writing hooks.
+- [x] Add RED tests for disabled equivalence, scene/scope gating, true projected reticle, single physics/animation execution, bounded native movement and settings migration.
+- [x] Implement only supported paths; keep unresolved work explicitly pending.
+- [x] Build ARM game module, overlay/NRO; verify all instruction guards and SDK imports.
 
 ### Task 4: Review and delivery
 
-- [ ] Run all tests, renderer review, fresh code review and credential audit.
+- [x] Run all tests, renderer review, fresh code review and credential audit.
 - [ ] Commit reviewed source to main, verify GitHub Actions, package locally only.
 - [ ] Transfer through pinned reload library only when console installer is available; request concise hardware acceptance for new native behavior.

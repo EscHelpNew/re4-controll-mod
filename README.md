@@ -24,6 +24,10 @@ contain an earlier version while new features are being tested.
   handheld900p SSAA, loaded-object culling distance and rendered shadows.
 - Independent Default/Custom profiles for controls and graphics. Editing a setting
   saves Custom; selecting Default keeps your last Custom for later restoration.
+- Optional first-person view, preserving native scopes and scripted cameras.
+- Optional dot/crosshair reticle with three sizes, projected from the weapon ray.
+- Optional movement while aiming or using the knife: left stick moves, right
+  stick aims, with native walking motion and leg animation for supported Leon states.
 - Additive gyro aiming **only while aiming a firearm**; independent X/Y gains,
   motion speed, calibration and a deadzone in degrees/second.
 - Gyro filtering averages two readings separated by 10 ms of sensor time.
@@ -39,6 +43,13 @@ Existing saved sensitivities are preserved when updating.
 The overlay opens separate **Controls** and **Graphics** sections. Each has its
 own profile selector; switching one preserves the other, your language and gyro
 calibration. An empty Custom profile becomes available after editing a setting.
+
+The new view, reticle and movement modes start **Off**. Enable them independently
+in Controls. First-person view uses Camera sensitivity for continuous right-stick
+look. Move while aiming/Move with knife retain the game's attack timing and
+collision pipeline. These paths target Leon's ordinary firearms and knife;
+special weapon handlers and other characters are excluded. The0.7 native paths
+have automated callback tests; console visual/collision acceptance is still pending.
 
 In **Control settings → Button mapping**, select a physical button and its game
 target. HOME/Capture belong to the system and are outside game remapping.

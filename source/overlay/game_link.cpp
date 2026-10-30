@@ -107,6 +107,11 @@ bool GameLink::connect() {
                         block.graphics_effective_far,block.graphics_display_index,block.graphics_back_index,
                         block.graphics_resolution_requests);
                     details += diagnostic;
+                    std::snprintf(diagnostic,sizeof(diagnostic),
+                        "\nmodern: fps=%u reticle=%u move=%u pose=%u status=%u distance=%.3f",
+                        block.fps_overrides,block.reticle_draws,block.modern_move_steps,block.modern_pose_steps,
+                        block.modern_move_status,block.modern_move_distance);
+                    details+=diagnostic;
                     if(re4::decode_settings(block.settings,sizeof(block.settings),applied_settings)){
                         std::snprintf(diagnostic,sizeof(diagnostic),
                             "\ngyro_enabled=%u speed=%.2f gain=%.2f,%.2f deadzone_dps=%.2f active=%u fresh=%u restarts=%u rate=%.4f,%.4f style=%u",

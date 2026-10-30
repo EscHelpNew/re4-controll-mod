@@ -10,6 +10,8 @@ constexpr std::size_t kSettingsBytes = 128;
 constexpr const char* kSettingsPath = "sdmc:/config/re4-controls/settings.bin";
 enum class Language : std::uint8_t { English, Russian };
 enum class StickCurve : std::uint8_t { Linear, Exponential, Logarithmic, Hybrid };
+enum class ReticleStyle : std::uint8_t { Off, Dot, Crosshair };
+enum class ReticleSize : std::uint8_t { Small, Medium, Large };
 struct Settings {
     Language language = Language::English;
     StickCurve stick_curve = StickCurve::Linear;
@@ -41,6 +43,11 @@ struct Settings {
     ShadowMode shadow_mode = ShadowMode::Native;
     AntiAliasing anti_aliasing = AntiAliasing::Native;
     float draw_distance_scale = 1;
+    bool first_person = false;
+    bool move_while_aiming = false;
+    bool move_while_knife = false;
+    ReticleStyle reticle = ReticleStyle::Off;
+    ReticleSize reticle_size = ReticleSize::Small;
 };
 bool valid_settings(const Settings& settings);
 bool encode_settings(const Settings& settings, std::uint8_t* out, std::size_t size);

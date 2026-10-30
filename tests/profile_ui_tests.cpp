@@ -70,8 +70,25 @@ int main(){
     assert(profile->click(HidNpadButton_Left));
     assert(settings.gyro_enabled && sends==before_failure && note.find("save")!=std::string::npos);
     auto* controls_gui=tsl::navigation.back().get();
-    for(unsigned frame=0;frame<31;++frame){controls_gui->update();assert(row(controls,note)->label==note);}
-    writable=true;tsl::goBack();delete root;
+    const auto profile_text_sets=profile->text_sets;
+    for(unsigned frame=0;frame<31;++frame){
+        controls_gui->update();assert(row(controls,note)->label==note);
+        assert(profile->text_sets==profile_text_sets); // Tesla resets marquee text on setText.
+    }
+    writable=true;
+    auto* first_person_toggle=dynamic_cast<tsl::elm::ToggleListItem*>(row(controls,"First-person view"));
+    auto* aim_move_toggle=dynamic_cast<tsl::elm::ToggleListItem*>(row(controls,"Move while aiming"));
+    auto* knife_move_toggle=dynamic_cast<tsl::elm::ToggleListItem*>(row(controls,"Move with knife"));
+    assert(first_person_toggle && aim_move_toggle && knife_move_toggle);
+    first_person_toggle->changed(true);aim_move_toggle->changed(true);knife_move_toggle->changed(true);
+    assert(row(controls,"Reticle")->click(HidNpadButton_Right));
+    assert(settings.first_person && settings.move_while_aiming && settings.move_while_knife && settings.reticle==ReticleStyle::Dot);
+    assert(files.at(overlay_storage::settings_path).reticle==ReticleStyle::Dot);
+    assert(profile->click(HidNpadButton_A));
+    assert(!settings.first_person && !settings.move_while_aiming && !settings.move_while_knife && settings.reticle==ReticleStyle::Off);
+    assert(profile->click(HidNpadButton_A));
+    assert(settings.first_person && settings.move_while_aiming && settings.move_while_knife && settings.reticle==ReticleStyle::Dot);
+    tsl::goBack();delete root;
 
     InstallerModel model;model.page=InstallerPage::Controls;
     model.selected=unsigned(ControlId::Profile);

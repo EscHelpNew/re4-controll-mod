@@ -11,6 +11,7 @@ using Result = unsigned;
 #define NORETURN [[noreturn]]
 #define EXL_ABORT(...) std::abort()
 constexpr unsigned InfoType_ProgramId=1, CUR_PROCESS_HANDLE=0;
+struct MemoryInfo {std::uintptr_t addr=0;std::size_t size=0;unsigned perm=0;};
 namespace game_test {
 inline u64 program=0x010099A00BC1E000, tick=1;
 inline unsigned installed=0, initialized=0, mounts=0, fs_opens=0;
@@ -31,6 +32,13 @@ inline std::uintptr_t base=0;
 struct Range { std::uintptr_t m_Start=0; std::size_t m_Size=0; };
 struct Main { Range m_Total; };
 inline Main module;
+inline std::vector<MemoryInfo> memory_maps;
+}
+inline Result svcQueryMemory(MemoryInfo* out,std::uint32_t* page,std::uintptr_t address){
+    for(const auto& region:game_test::memory_maps)if(address>=region.addr && address-region.addr<region.size){
+        *out=region;*page=0;return 0;
+    }
+    return 1;
 }
 inline Result svcGetInfo(u64* out, unsigned, unsigned, unsigned) { *out=game_test::program; return 0; }
 inline u64 svcGetSystemTick() { return game_test::tick; }

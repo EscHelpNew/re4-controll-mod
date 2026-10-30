@@ -7,6 +7,12 @@
 - Preserve the other domain, language and gyro calibration when switching profiles.
 - Open Controls and Graphics as peers in the overlay root menu.
 - Test actual profile UI events, restore and failed writes; fix persistent feedback.
+- Add an optional first-person camera with continuous look and native scope/scene ownership.
+- Add an optional dot/crosshair reticle using native HUD primitives and the displayed weapon ray.
+- Add optional native-budget movement and masked leg animation during Leon's ordinary aiming/knife states.
+- Keep native animation cursor banks isolated during private gait sampling and preserve IK/state restoration.
+- Route the right stick to aiming independently of movement input and exclude knife stance from gyro aiming.
+- Migrate settings v1-v8 into v9 with all new modes Off, shared ABI13 and diagnostic counters.
 
 ## 0.6.0 (unreleased)
 

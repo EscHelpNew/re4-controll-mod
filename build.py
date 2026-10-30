@@ -37,7 +37,8 @@ def tests():
          '-o', OUT / 'input_tests.exe'])
     native('input_tests.exe')
     for name,sources in [('button_map_tests',[]),('settings_v7_tests',['source/settings.cpp']),('camera_tests',[]),
-                         ('graphics_tests',[]),('graphics_settings_tests',['source/settings.cpp'])]:
+                         ('graphics_tests',[]),('graphics_settings_tests',['source/settings.cpp']),('view_tests',[]),
+                         ('view_settings_tests',['source/settings.cpp','source/profiles.cpp','source/settings_file.cpp'])]:
         run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
              'tests/'+name+'.cpp',*sources,'-o',OUT/(name+'.exe')])
         native(name+'.exe')
@@ -59,10 +60,13 @@ def tests():
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/sensor_tests.cpp', '-o', OUT / 'sensor_tests.exe'])
     native('sensor_tests.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static',
+    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/game_stubs', '-Iinclude', 'tests/game_module_tests.cpp',
          'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'game_module_tests.exe'])
     native('game_module_tests.exe')
+    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/modern_move_tests.cpp','source/input.cpp','-o',OUT/'modern_move_tests.exe'])
+    native('modern_move_tests.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
          'tests/overlay_ui_tests.cpp', 'source/settings.cpp', 'source/control_menu.cpp','source/profiles.cpp', '-o', OUT / 'overlay_ui_tests.exe'])
@@ -196,6 +200,7 @@ def module():
     profile = ROOT / 'profiles/010099A00BC1E000/npdm.json'
     (stage / 'config.json').write_text(profile.read_text(encoding='utf-8'), encoding='utf-8')
     shutil.copy2(ROOT / 'source/game/module.cpp', stage / 'source/program/main.cpp')
+    shutil.copy2(ROOT / 'source/game/modern_move.inc', stage / 'source/program/modern_move.inc')
     core = stage / 'source/re4-core'
     core.mkdir(exist_ok=True)
     for name in ('input.cpp', 'settings.cpp'):

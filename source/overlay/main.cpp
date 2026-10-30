@@ -153,6 +153,8 @@ class ControlsGui : public tsl::Gui {
     std::vector<Header> headers_;
     tsl::elm::ListItem* status_=nullptr;
     DescriptionFrame* description_frame_=nullptr;
+    std::array<std::uint8_t,re4::kSettingsBytes> rendered_settings_{};
+    std::string rendered_note_;
     void add_header(tsl::elm::List* list,re4::Bilingual text){
         auto* item=new tsl::elm::CategoryHeader(text.get(settings.language));
         list->addItem(item);headers_.push_back({item,text});
@@ -169,6 +171,8 @@ class ControlsGui : public tsl::Gui {
             if(spec.toggle)static_cast<tsl::elm::ToggleListItem*>(binding.item)->setState(settings.*spec.toggle);
             binding.item->setValue(re4::control_value_text(spec,settings));
         }
+        re4::encode_settings(settings,rendered_settings_.data(),rendered_settings_.size());
+        rendered_note_=note;
     }
 public:
     tsl::elm::Element* createUI()override{
@@ -189,6 +193,7 @@ public:
             if(spec.id==re4::ControlId::Language)add_header(list,{"General","Общие"});
             if(spec.id==re4::ControlId::Analog)add_header(list,{"Sticks and aiming","Стики и прицел"});
             if(spec.id==re4::ControlId::Gyro)add_header(list,{"Gyro - firearm aiming only","Гироскоп - только прицеливание"});
+            if(spec.id==re4::ControlId::FirstPerson)add_header(list,{"View and reticle","Вид и прицел"});
             tsl::elm::ListItem* item;
             if(spec.toggle){
                 auto* toggle=new tsl::elm::ToggleListItem(spec.label.get(settings.language),settings.*spec.toggle,"On","Off");
@@ -220,7 +225,9 @@ public:
         frame->setContent(list);refresh();return frame;
     }
     void update()override{
-        refresh();
+        std::array<std::uint8_t,re4::kSettingsBytes> current{};
+        re4::encode_settings(settings,current.data(),current.size());
+        if(current!=rendered_settings_ || note!=rendered_note_)refresh();
         if(description_frame_){
             if(getFocusedElement()==status_)description_frame_->set_help(tr(
                 "A: connect to the mod in running RE4.\nReconnect after restarting the game.\nFiltering and AA require a game restart.",

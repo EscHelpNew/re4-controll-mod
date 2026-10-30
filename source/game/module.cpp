@@ -11,6 +11,8 @@
 #include "re4/sensor.hpp"
 #include "re4/aim_input.hpp"
 #include "re4/camera.hpp"
+#include "re4/view.hpp"
+#include "re4/modern_move.hpp"
 #include <atomic>
 
 namespace {
@@ -81,6 +83,8 @@ struct CameraContext {
     re4::CameraOffsets before;
     bool neutral,reset;
     float x,y;
+    bool view_allowed=false,basis_valid=false;
+    re4::ViewMatrix3x4 basis{};
 };
 CameraContext* camera_context = nullptr;
 re4::FreeCamera free_orbit;
@@ -108,9 +112,118 @@ re4::AimRoute aim_route(){
 bool firearm_aim(void* actor) {
     auto* bytes = static_cast<std::uint8_t*>(actor);
     if (!actor || actor != *reinterpret_cast<void**>(main_base + re4::profile::player_slot)
-        || bytes[0x114] != 0 || (bytes[0x115] != 6 && bytes[0x115] != 11 && bytes[0x115] != 15)
+        || bytes[0x114] != 0 || (bytes[0x115] != 6 && bytes[0x115] != 15)
         || !(*reinterpret_cast<std::uint64_t*>(main_base + re4::profile::input_flags) & 0x10)) return false;
     return aiming_predicate && aiming_predicate(actor) != 0;
+}
+// Settings and completed frame identities cross the native submit/draw boundary.
+std::atomic<unsigned> view_settings_snapshot{0};
+std::atomic<unsigned> fps_override_count{0},reticle_draw_count{0};
+std::atomic<std::uint64_t> view_frame{1},view_camera_frame{0},first_person_frame{0},view_camera_tick{0};
+std::atomic<std::uintptr_t> view_camera_actor{0};
+std::atomic<bool> view_camera_aim{false};
+void* main_view_actor=nullptr; // Scoped only across the synchronous native submission graph.
+struct AimPoint {
+    std::atomic<std::uint64_t> sequence{0},frame{0};
+    std::atomic<std::uintptr_t> actor{0},weapon{0};
+    std::atomic<std::uint32_t> x{0},y{0},z{0},weapon_id{0};
+    std::atomic<std::uint32_t> matrices[28]{};
+} aim_point,pending_aim_point,displayed_aim_point;
+void (*native_ortho)(void*,float,float,float,float,float,float)=nullptr;
+void (*native_projection)(const void*,unsigned)=nullptr;
+void (*native_pose)(const void*,unsigned)=nullptr;
+void (*native_matrix)(unsigned)=nullptr;
+void (*native_rect)(const void*)=nullptr;
+void publish_view_settings(){
+    const unsigned word=unsigned(settings.first_person)|(unsigned(settings.reticle)<<1)|(unsigned(settings.reticle_size)<<3);
+    const auto before=view_settings_snapshot.exchange(word,std::memory_order_acq_rel);
+    if(!(word&1) || ((before^word)&1))first_person_frame.store(0,std::memory_order_release);
+    if(((before^word)&6) || !(word&6))aim_point.frame.store(0,std::memory_order_release);
+}
+bool view_scene(void* actor){
+    if(!actor || actor!=*reinterpret_cast<void**>(main_base+re4::profile::player_slot))return false;
+    const auto* b=static_cast<const std::uint8_t*>(actor);
+    const auto* controller=reinterpret_cast<const std::uint8_t*>(main_base+0x1131718);
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    return b[0x114]==0 && controller[0x54]==10 && (controller[0x48]&1) && state
+        && !(state[0x5092]&4) && !(state[0x509E]&0x80) && !(state[0x1AB]&0x40);
+}
+bool view_actor_state(void* actor){
+    if(!view_scene(actor))return false;
+    const auto* b=static_cast<const std::uint8_t*>(actor);
+    if(b[0x115]<=4)return true;
+    if(b[0x115]==11)return b[0x116]==1||b[0x116]==2; // Native stance/strike, including recovery.
+    if(b[0x115]==6)return true; // Generic weapon action also owns normal reload camera.
+    return (b[0x115]==6||b[0x115]==15)
+        && (*reinterpret_cast<const std::uint64_t*>(main_base+re4::profile::input_flags)&0x10);
+}
+bool view_camera_allowed(void* camera,void* actor){
+    if(camera!=reinterpret_cast<void*>(main_base+0x11319C0)||!view_actor_state(actor)||!aiming_predicate)return false;
+    return true; // Native26C is checked after profile selection, including non-aim reload.
+}
+void* player_weapon(void* actor){
+    if(!actor)return nullptr;
+    auto* context=*reinterpret_cast<std::uint8_t**>(static_cast<std::uint8_t*>(actor)+0x938);
+    return context?*reinterpret_cast<void**>(context+0x38):nullptr;
+}
+bool view_completed(void* actor){
+    const auto now=svcGetSystemTick(),stamp=view_camera_tick.load(std::memory_order_acquire);
+    return view_camera_frame.load(std::memory_order_acquire)==view_frame.load(std::memory_order_acquire)
+        && view_camera_actor.load(std::memory_order_acquire)==reinterpret_cast<std::uintptr_t>(actor)
+        && now>=stamp && now-stamp<=1'920'000 && view_actor_state(actor);
+}
+void clear_view_frame(){
+    view_camera_frame.store(0,std::memory_order_release);
+    first_person_frame.store(0,std::memory_order_release);
+}
+std::uint32_t view_float_bits(float value){std::uint32_t bits;std::memcpy(&bits,&value,4);return bits;}
+float view_float_value(std::uint32_t bits){float value;std::memcpy(&value,&bits,4);return value;}
+void publish_aim_point(AimPoint& target,void* actor,void* weapon,re4::ViewVec3 value,std::uint64_t frame,
+        const re4::ViewMatrix3x4* view=nullptr,const re4::ViewMatrix4x4* projection=nullptr){
+    target.sequence.fetch_add(1,std::memory_order_acq_rel);
+    std::atomic_thread_fence(std::memory_order_release);
+    target.frame.store(frame,std::memory_order_relaxed);
+    target.actor.store(reinterpret_cast<std::uintptr_t>(actor),std::memory_order_relaxed);
+    target.weapon.store(reinterpret_cast<std::uintptr_t>(weapon),std::memory_order_relaxed);
+    target.x.store(view_float_bits(value.x),std::memory_order_relaxed);
+    target.y.store(view_float_bits(value.y),std::memory_order_relaxed);
+    target.z.store(view_float_bits(value.z),std::memory_order_relaxed);
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    target.weapon_id.store(state?state[0x5034]:0,std::memory_order_relaxed);
+    if(view&&projection){
+        for(unsigned i=0;i<12;++i)target.matrices[i].store(view_float_bits(view->m[i/4][i%4]),std::memory_order_relaxed);
+        for(unsigned i=0;i<16;++i)target.matrices[12+i].store(view_float_bits(projection->m[i/4][i%4]),std::memory_order_relaxed);
+    }
+    target.sequence.fetch_add(1,std::memory_order_release);
+}
+bool read_aim_point(const AimPoint& source,void* actor,std::uint64_t required_frame,re4::ViewVec3& value,
+        re4::ViewMatrix3x4* view=nullptr,re4::ViewMatrix4x4* projection=nullptr){
+    const auto before=source.sequence.load(std::memory_order_acquire);
+    if(before&1)return false;
+    const auto frame=source.frame.load(std::memory_order_relaxed);
+    const auto who=source.actor.load(std::memory_order_relaxed),weapon=source.weapon.load(std::memory_order_relaxed);
+    const auto weapon_id=source.weapon_id.load(std::memory_order_relaxed);
+    value={view_float_value(source.x.load(std::memory_order_relaxed)),
+        view_float_value(source.y.load(std::memory_order_relaxed)),view_float_value(source.z.load(std::memory_order_relaxed))};
+    if(view&&projection){
+        for(unsigned i=0;i<12;++i)view->m[i/4][i%4]=view_float_value(source.matrices[i].load(std::memory_order_relaxed));
+        for(unsigned i=0;i<16;++i)projection->m[i/4][i%4]=view_float_value(source.matrices[12+i].load(std::memory_order_relaxed));
+    }
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    // Keep payload reads before the version recheck on ARM as well as x86.
+    std::atomic_thread_fence(std::memory_order_acquire);
+    return before==source.sequence.load(std::memory_order_relaxed)&&state
+        && frame==required_frame&&frame!=0
+        && who==reinterpret_cast<std::uintptr_t>(actor)&&weapon_id==state[0x5034]
+        && weapon==reinterpret_cast<std::uintptr_t>(player_weapon(actor))&&re4::view_finite(value);
+}
+bool draw_reticle_rect(re4::ViewHudPoint center,unsigned width,unsigned height){
+    re4::ViewReticleRect rect;
+    if(!re4::view_reticle_rect(center,width,height,rect))return false;
+    alignas(8) std::uint8_t packet[0x18]{};
+    packet[8]=packet[9]=packet[10]=packet[11]=255;
+    std::memcpy(packet+0xC,&rect,sizeof(rect)); // Native rect packet uses x,y,w,h then z=0.
+    native_rect(packet);return true;
 }
 void poll_sensors() {
     gyro_pending = {};
@@ -179,6 +292,8 @@ unsigned latch_graphics(std::atomic<unsigned>& latch,unsigned requested,bool rea
     return mode==255?0:mode;
 }
 void publish_graphics_diagnostics(){
+    control.fps_overrides=fps_override_count.load(std::memory_order_relaxed);
+    control.reticle_draws=reticle_draw_count.load(std::memory_order_relaxed);
     control.graphics_sampler_calls=sampler_calls.load(std::memory_order_relaxed);
     control.graphics_sampler_overrides=sampler_overrides.load(std::memory_order_relaxed);
     control.graphics_filter_latched=filter_latched.load(std::memory_order_acquire);
@@ -196,6 +311,7 @@ void publish_graphics_diagnostics(){
     control.graphics_display_index=renderer[0x30/4];control.graphics_back_index=renderer[0x28/4];
 }
 void publish_settings() {
+    publish_view_settings();
     std::uint8_t bytes[re4::kSettingsBytes];
     if (!re4::encode_settings(settings, bytes, sizeof(bytes))) return;
     control.sequence = control.sequence | 1;
@@ -253,6 +369,7 @@ void poll_settings() {
     std::atomic_thread_fence(std::memory_order_seq_cst);
     if (control.sequence != before || !re4::decode_settings(bytes, sizeof(bytes), settings)) return;
     last_sequence = before;
+    publish_view_settings();
     file_read = true; // A live update always wins over a delayed startup read.
     control.settings_source = 4;
     publish_graphics_settings();
@@ -338,11 +455,51 @@ template<class F> void shadow_frame(F original){
     original();
     if(state==*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08))*flags=re4::restore_shadow_flags(*flags,saved);
 }
+HOOK_DEFINE_TRAMPOLINE(ModelSubmit) {
+    static void Callback(void* model){
+        if(model&&model==main_view_actor&&(view_settings_snapshot.load(std::memory_order_acquire)&1)
+            && first_person_frame.load(std::memory_order_acquire)==view_frame.load(std::memory_order_acquire)
+            && view_completed(model))return;
+        Orig(model);
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(SceneSubmit) {
-    static void Callback(){scene_submits.fetch_add(1,std::memory_order_relaxed);shadow_frame([]{Orig();});}
+    static void Callback(){
+        scene_submits.fetch_add(1,std::memory_order_relaxed);
+        auto* actor=*reinterpret_cast<void**>(main_base+re4::profile::player_slot);
+        auto* previous=main_view_actor;
+        main_view_actor=(view_settings_snapshot.load(std::memory_order_acquire)&1)
+            && first_person_frame.load(std::memory_order_acquire)==view_frame.load(std::memory_order_acquire)
+            && view_completed(actor)?actor:nullptr;
+        shadow_frame([]{Orig();});
+        main_view_actor=previous;
+        pending_aim_point.frame.store(0,std::memory_order_release);
+        re4::ViewVec3 point;
+        const auto frame=view_frame.load(std::memory_order_acquire);
+        if((view_settings_snapshot.load(std::memory_order_acquire)&6)&&view_completed(actor)
+            &&read_aim_point(aim_point,actor,frame,point))
+            publish_aim_point(pending_aim_point,actor,player_weapon(actor),point,frame);
+    }
 };
 HOOK_DEFINE_TRAMPOLINE(SceneDraw) {
-    static void Callback(){scene_draws.fetch_add(1,std::memory_order_relaxed);shadow_frame([]{Orig();});}
+    static void Callback(){
+        scene_draws.fetch_add(1,std::memory_order_relaxed);
+        displayed_aim_point.frame.store(0,std::memory_order_release);
+        auto* actor=*reinterpret_cast<void**>(main_base+re4::profile::player_slot);
+        const auto frame=view_frame.load(std::memory_order_acquire);
+        const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+        re4::ViewVec3 point;
+        // Queued scene belongs to the previous simulation. Capture its main
+        // camera before native group23 temporarily swaps in a special camera.
+        if(frame>1&&(view_settings_snapshot.load(std::memory_order_acquire)&6)&&view_actor_state(actor)&&state
+            &&read_aim_point(pending_aim_point,actor,frame-1,point)){
+            re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;
+            std::memcpy(&view,state+0xD8,sizeof(view));std::memcpy(&projection,state+0x10C,sizeof(projection));
+            publish_aim_point(displayed_aim_point,actor,player_weapon(actor),point,frame,&view,&projection);
+        }
+        pending_aim_point.frame.store(0,std::memory_order_release);
+        shadow_frame([]{Orig();});
+    }
 };
 HOOK_DEFINE_TRAMPOLINE(FullPad) {
     static void Callback(NpadState* out, const std::uint32_t& id) { Orig(out, id); capture(*out, id, 1); }
@@ -356,7 +513,8 @@ HOOK_DEFINE_TRAMPOLINE(DualPad) {
 HOOK_DEFINE_TRAMPOLINE(PadNormalize) {
     static int Callback(void* state) {
         const int result = Orig(state);
-        poll_settings(); read_initial_settings();
+        view_frame.fetch_add(1,std::memory_order_acq_rel);
+        poll_settings(); read_initial_settings();publish_view_settings();
         poll_sensors();
         publish_graphics_diagnostics();
         control.frames = control.frames + 1;
@@ -423,63 +581,157 @@ HOOK_DEFINE_TRAMPOLINE(MotionAdvance) {
         return result;
     }
 };
+HOOK_DEFINE_TRAMPOLINE(CameraBasis) {
+    static void Callback(void* camera,void* output){
+        Orig(camera,output);
+        auto* context=camera_context;
+        if(context&&context->camera==camera&&context->view_allowed&&output){
+            std::memcpy(&context->basis,output,sizeof(context->basis));
+            re4::ViewVec3 checked;
+            context->basis_valid=re4::view_inverse_point(context->basis,{},checked);
+        }
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(CameraApply) {
     static void Callback(void* camera,void* output){
         const auto* context=camera_context;
         const auto* bytes=static_cast<const std::uint8_t*>(camera);
-        if(context && context->camera==camera && ordinary_camera(camera,context->actor)
+        const bool fps=settings.first_person && context && context->view_allowed;
+        if(context && context->camera==camera && ordinary_camera(camera,context->actor) && (settings.analog_enabled||fps)
             && !context->reset && !bytes[0x222] && bytes[0x26C]==2){
-            if(!settings.free_camera && (!context->neutral || settings.camera_return_speed==1)){
-                free_orbit.reset();Orig(camera,output);return;
-            }
-            auto* offsets=reinterpret_cast<float*>(static_cast<std::uint8_t*>(camera)+0x270);
-            re4::CameraOffsets value{offsets[0],offsets[1]};
-            if(settings.free_camera){
-                value=free_orbit.update(reinterpret_cast<std::uintptr_t>(camera),svcGetSystemTick(),
+            if(settings.free_camera||fps){
+                auto* offsets=reinterpret_cast<float*>(static_cast<std::uint8_t*>(camera)+0x270);
+                const auto value=free_orbit.update(reinterpret_cast<std::uintptr_t>(camera),svcGetSystemTick(),
                     context->before,context->x,context->y);
+                offsets[0]=value.pitch;offsets[1]=value.yaw;
             }else{
                 free_orbit.reset();
-                value=re4::camera_return(context->before,value,context->neutral,settings.camera_return_speed);
+                if(context->neutral&&settings.camera_return_speed!=1){
+                    auto* offsets=reinterpret_cast<float*>(static_cast<std::uint8_t*>(camera)+0x270);
+                    const auto value=re4::camera_return(context->before,{offsets[0],offsets[1]},true,settings.camera_return_speed);
+                    offsets[0]=value.pitch;offsets[1]=value.yaw;
+                }
             }
-            offsets[0]=value.pitch;offsets[1]=value.yaw;
-        }else if(context && context->camera==camera)free_orbit.reset();
-        Orig(camera,output); // Consume corrected offsets before native vectors/collision.
+        }else if(context&&context->camera==camera)free_orbit.reset();
+        Orig(camera,output); // Native profiles first;18990 still collides the chosen eye afterward.
+        if(!context||context->camera!=camera||!context->view_allowed||!output||context->reset||bytes[0x222]
+            ||!context->basis_valid||!view_camera_allowed(camera,context->actor))return;
+        const auto* actor=static_cast<const std::uint8_t*>(context->actor);
+        const bool native_aim=aiming_predicate(context->actor)!=0;
+        if(bytes[0x26C]!=(native_aim?0:2))return;
+        re4::ViewQfpsOutput native;std::memcpy(&native,output,sizeof(native));
+        // Also validate unmodified native output before publishing render eligibility.
+        if(!re4::view_finite(native.eye0)||!re4::view_finite(native.eye1)||!re4::view_finite(native.target)
+            ||!std::isfinite(native.roll)||!std::isfinite(native.fov))return;
+        if(fps){
+            re4::ViewMatrix3x4 body;std::memcpy(&body,actor+0x18,sizeof(body));
+            re4::ViewVec3 eye;re4::ViewQfpsOutput result;
+            if(!re4::view_inverse_point(body,{},eye)||!re4::view_transform_point(body,{0,1700,0},eye)
+                ||!re4::first_person_view(native,context->basis,eye,result))return;
+            std::memcpy(output,&result,sizeof(result));
+            fps_override_count.fetch_add(1,std::memory_order_relaxed);
+            first_person_frame.store(view_frame.load(std::memory_order_relaxed),std::memory_order_release);
+        }
+        view_camera_aim.store(native_aim,std::memory_order_relaxed);
+        view_camera_actor.store(reinterpret_cast<std::uintptr_t>(actor),std::memory_order_relaxed);
+        view_camera_tick.store(svcGetSystemTick(),std::memory_order_relaxed);
+        view_camera_frame.store(view_frame.load(std::memory_order_relaxed),std::memory_order_release);
     }
 };
 HOOK_DEFINE_TRAMPOLINE(CameraInput) {
     static void Callback(void* camera) {
-        auto* actor = *reinterpret_cast<std::uint8_t**>(main_base + re4::profile::player_slot);
-        if (!settings.analog_enabled || !actor || actor[0x114] != 0 || actor[0x115] > 4) { free_orbit.reset();Orig(camera); return; }
-        const bool alternate = *reinterpret_cast<int*>(main_base + 0x11C7D68) == 1;
-        auto* input = reinterpret_cast<std::int8_t*>(main_base + 0x124EC38 + (alternate ? 0xC0 : 8));
-        const auto x = input[0], y = input[1];
-        control.camera_calls = control.camera_calls + 1;
-        input[0] = re4::camera_axis(control.raw_rx, settings.right_deadzone, settings.camera_gain, settings.stick_curve);
-        input[1] = re4::camera_axis(control.raw_ry, settings.right_deadzone, settings.camera_gain, settings.stick_curve);
+        publish_view_settings();
+        clear_view_frame();
+        auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
+        const bool normal=actor&&actor[0x114]==0&&actor[0x115]<=4;
+        const bool wanted=settings.first_person||settings.reticle!=re4::ReticleStyle::Off;
+        const bool view_allowed=wanted&&view_camera_allowed(camera,actor);
+        const bool shape=normal&&(settings.analog_enabled||(settings.first_person&&view_allowed));
+        const bool ordinary=normal&&settings.analog_enabled&&ordinary_camera(camera,actor);
+        if(!shape&&!view_allowed){free_orbit.reset();Orig(camera);return;}
+        const bool alternate=*reinterpret_cast<int*>(main_base+0x11C7D68)==1;
+        auto* input=reinterpret_cast<std::int8_t*>(main_base+0x124EC38+(alternate?0xC0:8));
+        const auto x=input[0],y=input[1];
+        if(shape){
+            control.camera_calls=control.camera_calls+1;
+            input[0]=re4::camera_axis(control.raw_rx,settings.right_deadzone,settings.camera_gain,settings.stick_curve);
+            input[1]=re4::camera_axis(control.raw_ry,settings.right_deadzone,settings.camera_gain,settings.stick_curve);
+        }
         CameraContext context{camera,actor,{},input[0]==0&&input[1]==0,false,
             re4::shape_axis(control.raw_rx,settings.right_deadzone,settings.camera_gain,settings.stick_curve),
             re4::shape_axis(control.raw_ry,settings.right_deadzone,settings.camera_gain,settings.stick_curve)};
         auto* previous=camera_context;
-        if(ordinary_camera(camera,actor)){
+        if(ordinary||view_allowed){
             const auto* bytes=static_cast<const std::uint8_t*>(camera);
             const auto* offsets=reinterpret_cast<const float*>(bytes+0x270);
-            context.before={offsets[0],offsets[1]};context.reset=bytes[0x222]!=0;
+            context.before={offsets[0],offsets[1]};context.reset=bytes[0x222]!=0;context.view_allowed=view_allowed;
             const auto* type=*reinterpret_cast<const int**>(main_base+0xB1AE10);
-            if(type && *type<0)context.y=-context.y;
+            if(type&&*type<0)context.y=-context.y;
             camera_context=&context;
         }else{camera_context=nullptr;free_orbit.reset();}
         Orig(camera);
         camera_context=previous;
-        input[0] = x; input[1] = y;
+        if(shape){input[0]=x;input[1]=y;}
+        if(view_allowed&&!view_camera_allowed(camera,actor))clear_view_frame();
     }
 };
+HOOK_DEFINE_TRAMPOLINE(WeaponLaser) {
+    static void Callback(void* weapon,unsigned draw,unsigned reuse,unsigned style){
+        Orig(weapon,draw,reuse,style); // Keep native laser, collision and effects unchanged.
+        if(reuse&1)return;
+        auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
+        if(!(view_settings_snapshot.load(std::memory_order_acquire)&6)||!view_scene(actor)
+            ||!actor||(actor[0x115]!=6&&actor[0x115]!=15)||!firearm_aim(actor)||weapon!=player_weapon(actor))return;
+        // Native skips model+40C copy when the clipped ray is shorter than500.
+        // The shared endpoint is already rebuilt/clipped on every reuse==0 call.
+        re4::ViewVec3 endpoint;std::memcpy(&endpoint,reinterpret_cast<const void*>(main_base+0x1265320),sizeof(endpoint));
+        if(re4::view_finite(endpoint))publish_aim_point(aim_point,actor,weapon,endpoint,view_frame.load(std::memory_order_relaxed));
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(HudDraw) {
+    static void Callback(void* list){
+        Orig(list);
+        const auto options=view_settings_snapshot.load(std::memory_order_acquire);
+        const auto style=(options>>1)&3u,size=(options>>3)&3u;
+        if(!style||style>2||size>2||!native_ortho||!native_projection||!native_pose||!native_matrix||!native_rect)return;
+        auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
+        if(!actor||(actor[0x115]!=6&&actor[0x115]!=15)||!view_completed(actor)
+            ||!view_camera_aim.load(std::memory_order_acquire)
+            ||!(*reinterpret_cast<const std::uint64_t*>(main_base+re4::profile::input_flags)&0x10))return;
+        const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+        if(!state||(*reinterpret_cast<const std::uint32_t*>(state+0x7C)&(1u<<13)))return;
+        re4::ViewVec3 endpoint;re4::ViewHudPoint point;
+        re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;
+        if(!read_aim_point(displayed_aim_point,actor,view_frame.load(std::memory_order_acquire),endpoint,&view,&projection)
+            ||!re4::project_view_point(view,projection,endpoint,point))return;
+        re4::ViewMatrix4x4 ortho{};
+        const re4::ViewMatrix3x4 identity{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
+        native_ortho(&ortho,0,448,0,512,0,-100);native_projection(&ortho,1);
+        native_pose(&identity,0);native_matrix(0);
+        bool drawn=false;
+        if(style==1){const unsigned extent=2+size;drawn=draw_reticle_rect(point,extent,extent);}
+        else{
+            const unsigned length=6+size*2,thickness=size?2:1,gap=2+size;
+            const float offset=float(gap)+float(length)*0.5f;
+            drawn|=draw_reticle_rect({point.x-offset,point.y},length,thickness);
+            drawn|=draw_reticle_rect({point.x+offset,point.y},length,thickness);
+            drawn|=draw_reticle_rect({point.x,point.y-offset},thickness,length);
+            drawn|=draw_reticle_rect({point.x,point.y+offset},thickness,length);
+        }
+        if(drawn)reticle_draw_count.fetch_add(1,std::memory_order_relaxed);
+    }
+};
+#include "modern_move.inc"
+
 HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
     static int Callback(void* actor, int mode) {
         auto* bytes = static_cast<std::uint8_t*>(actor);
         const bool ours = actor && actor == *reinterpret_cast<void**>(main_base + re4::profile::player_slot);
-        const bool active = ours && (settings.analog_enabled || settings.gyro_enabled) && bytes[0x114] == 0
-            && (bytes[0x115] == 6 || bytes[0x115] == 11 || bytes[0x115] == 15)
-            && (*reinterpret_cast<std::uint64_t*>(main_base + re4::profile::input_flags) & 0x10);
+        const auto flags=*reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags);
+        const bool held=ours&&(bytes[0x115]==11?(flags&(1ull<<48)):(flags&0x10));
+        const bool modern=ours && modern_move_aim_active(actor);
+        const bool active = ours && (settings.analog_enabled || settings.gyro_enabled || modern) && bytes[0x114] == 0
+            && (bytes[0x115] == 6 || bytes[0x115] == 11 || bytes[0x115] == 15) && held;
         if (!active) return Orig(actor, mode);
         auto* pitch = reinterpret_cast<float*>(main_base + 0x1265A08);
         auto* yaw = reinterpret_cast<float*>(bytes + 0xB4);
@@ -499,8 +751,9 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
         }
         auto* axes=reinterpret_cast<std::int32_t*>(main_base+0x124E9C8);
         const std::int32_t old_x=axes[0],old_y=axes[1];
-        if(settings.analog_enabled){
-            const auto route=aim_route();
+        if(settings.analog_enabled || modern){
+            auto route=aim_route();
+            if(modern)route.right=true;
             const auto shaped=re4::shape_aim_input(control.raw_lx,control.raw_ly,control.raw_rx,control.raw_ry,settings,route);
             axes[0]=shaped.x;axes[1]=shaped.y;
             control.aim_source=route.right;control.applied_aim_x=shaped.x;control.applied_aim_y=shaped.y;
@@ -531,15 +784,21 @@ extern "C" void exl_main(void*, void*) {
         || program_id != re4::profile::title_id) { control.status = 2; return; }
     const auto& main = exl::util::GetMainModuleInfo();
     const auto* memory = reinterpret_cast<const std::uint8_t*>(main.m_Total.m_Start);
-    if (!re4::profile::matches(memory, main.m_Total.m_Size)) {
+    if (!re4::profile::matches(memory, main.m_Total.m_Size) || !modern_move_matches(memory,main.m_Total.m_Size)) {
         control.status = 2; // Unsupported executable: no game/SDK hooks installed.
         return;
     }
     if (main.m_Total.m_Size < 0x1273300) { control.status = 2; return; }
     main_base = reinterpret_cast<std::uintptr_t>(memory);
     aiming_predicate = reinterpret_cast<int (*)(void*)>(main_base + 0x317630);
+    native_ortho=reinterpret_cast<decltype(native_ortho)>(main_base+0x27A0D0);
+    native_projection=reinterpret_cast<decltype(native_projection)>(main_base+0x2515E0);
+    native_pose=reinterpret_cast<decltype(native_pose)>(main_base+0x2507D0);
+    native_matrix=reinterpret_cast<decltype(native_matrix)>(main_base+0x2511A0);
+    native_rect=reinterpret_cast<decltype(native_rect)>(main_base+0x29D460);
     publish_settings();
     exl::hook::Initialize();
+    modern_move_install();
     FullPad::InstallAtFuncPtr(get_full);
     HandheldPad::InstallAtFuncPtr(get_handheld);
     DualPad::InstallAtFuncPtr(get_dual);
@@ -548,6 +807,10 @@ extern "C" void exl_main(void*, void*) {
     MotionAdvance::InstallAtOffset(0x2B8F10);
     CameraInput::InstallAtOffset(0x19B20);
     CameraApply::InstallAtOffset(0x18520);
+    CameraBasis::InstallAtOffset(0x17F40);
+    ModelSubmit::InstallAtOffset(0x4EB950);
+    WeaponLaser::InstallAtOffset(0x2E8750);
+    HudDraw::InstallAtOffset(0x29CEF0);
     RomMount::InstallAtFuncPtr(nn_mount_rom);
     SamplerCreate::InstallAtOffset(0x64C3A0);
     ResolutionMap::InstallAtOffset(0x24FAE0);

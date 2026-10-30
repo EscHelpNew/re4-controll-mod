@@ -37,10 +37,11 @@ public:
 class ListItem:public Element {
 public:
     std::string label,value;
+    unsigned text_sets=0;
     std::function<bool(u64)> click;
     ListItem(std::string a,std::string b=""):label(a),value(b){}
     void setClickListener(std::function<bool(u64)> f){click=f;}
-    void setText(std::string s){label=s;}
+    void setText(std::string s){label=s;++text_sets;}
     void setValue(std::string s){value=s;}
 };
 class ToggleListItem:public ListItem {
