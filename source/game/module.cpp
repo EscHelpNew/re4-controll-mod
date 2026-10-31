@@ -881,6 +881,16 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
             std::memcpy(output,&result,sizeof(result));
             fps_override_count.fetch_add(1,std::memory_order_relaxed);
             first_person_frame.store(view_frame.load(std::memory_order_relaxed),std::memory_order_release);
+        }else if(stable_profile&&settings.re6_response
+            &&!(*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08))[0x503C]){
+            re4::ViewMatrix3x4 body;std::memcpy(&body,actor+0x18,sizeof(body));
+            re4::ViewVec3 root,checked;re4::ViewQfpsOutput result;
+            if(!re4::view_inverse_point(body,{},checked)||!re4::view_transform_point(body,{},root)
+                ||!re4::re6_shoulder_view(native,context->basis,root,
+                    *reinterpret_cast<const float*>(actor+0xB4),unified_pitch,settings.third_person_distance,result))return;
+            // Keep native eye1 and let the next native18990 wall trace decide
+            // the final eye. Never fix composition after collision.
+            std::memcpy(output,&result,sizeof(result));
         }else if(settings.third_person_distance!=1){
             re4::ViewQfpsOutput result;
             if(!re4::third_person_view(native,settings.third_person_distance,result))return;

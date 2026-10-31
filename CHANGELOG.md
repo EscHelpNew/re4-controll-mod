@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.15.1 (2026-10-31, steady RE6 shoulder framing)
+
+- Anchor the RE6-response third-person shoulder eye to Leon's root position and
+  owned look direction before native wall collision. Native profile blends and
+  delayed camera-basis translation no longer move the desired framing.
+- Retain the existing side, neutral shoulder dimensions, distance slider, FOV,
+  collision anchor and truthful projected reticle. First person, other characters,
+  Default/classic controls and special cameras keep their existing paths.
+- Verify that choosing RE6 from an older reload-off configuration enables and
+  saves reload walking, which is already on in the built-in preset. Custom reload
+  choices remain recoverable; old files are not silently overwritten.
+- Add geometric and actual callback regressions for profile drift, movement,
+  turns, pitch poles, invalid matrices and view isolation. Camera comfort and
+  wall behavior still require console confirmation.
+
 ## 0.15.0 (2026-10-31, illustrated graphics menus)
 
 - Add a Graphics page to the standalone installer's RE6 tab, with filtering,

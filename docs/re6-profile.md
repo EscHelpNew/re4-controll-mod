@@ -51,6 +51,14 @@ Reload walking covers ordinary Leon reloads in the generic firearm handler.
 Unsupported handlers retain native behavior. Existing v12 settings keep reload
 walking off; reselect RE6 to apply the updated preset, or enable the new toggle.
 
+From0.15.1, RE6-response third-person views use a shoulder arm anchored to Leon's
+root position and the owned look direction. The neutral side and distance remain
+the same, but walking profiles and the native delayed camera basis cannot drag
+the desired eye around. Native wall collision still runs afterward and can move
+the composition near obstacles. Body and weapon animations are retained; this is
+not a frozen character pose. Default/classic controls, other characters and first
+person keep their previous camera paths. Console comfort remains to be checked.
+
 This does not replace RE4's animation, weapon or collision engine. First-person
 weapon behavior and camera collision still belong to RE4. Actual comparison of
 the new preset in RE4 is required before calling it a complete control match.

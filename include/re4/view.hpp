@@ -90,6 +90,33 @@ inline bool first_person_view(const ViewQfpsOutput& native,const ViewMatrix3x4& 
     if(!view_store_point(eye.x+dx,eye.y+dy,eye.z+dz,value.target))return false;
     out=value;return true;
 }
+// A root-relative rig for RE6-response third person. Native neutral QFPS
+// dimensions supply the arm; its collision anchor remains owned by18990.
+// The captured basis may lag the player, so construct in world space first.
+inline bool re6_shoulder_view(const ViewQfpsOutput& native,const ViewMatrix3x4& basis,
+        ViewVec3 root,float heading,float pitch,float distance,ViewQfpsOutput& out){
+    if(!view_finite(root)||!view_finite(native.eye0)||!view_finite(native.eye1)||!view_finite(native.target)
+        ||!std::isfinite(native.roll)||!std::isfinite(native.fov)||!std::isfinite(heading)
+        ||!std::isfinite(pitch)||std::fabs(pitch)>1.570797f
+        ||!std::isfinite(distance)||distance<1||distance>2)return false;
+    ViewVec3 original_eye,original_target;
+    if(!view_transform_point(basis,native.eye0,original_eye)||!view_transform_point(basis,native.target,original_target))return false;
+    const double length=std::hypot(double(original_target.x)-original_eye.x,
+        double(original_target.y)-original_eye.y,double(original_target.z)-original_eye.z);
+    if(!std::isfinite(length)||length<=1e-6)return false;
+    const double sh=std::sin(double(heading)),ch=std::cos(double(heading));
+    const double sp=std::sin(double(pitch)),cp=std::cos(double(pitch));
+    const double lateral=500+320*(double(distance)-1),height=65*double(distance);
+    const double back=1190+1080*(double(distance)-1);
+    ViewVec3 eye,target;
+    if(!view_store_point(root.x-ch*lateral-sh*sp*height-sh*cp*back,
+            root.y+1700+cp*height-sp*back,
+            root.z+sh*lateral-ch*sp*height-ch*cp*back,eye)
+        ||!view_store_point(eye.x+sh*cp*length,eye.y+sp*length,eye.z+ch*cp*length,target))return false;
+    auto value=native;
+    if(!view_inverse_point(basis,eye,value.eye0)||!view_inverse_point(basis,target,value.target))return false;
+    out=value;return true;
+}
 inline bool view_projection_valid(const ViewMatrix4x4& matrix){
     double a[4][4];
     for(unsigned i=0;i<4;++i){

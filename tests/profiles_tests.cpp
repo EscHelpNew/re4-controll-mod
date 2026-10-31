@@ -235,6 +235,16 @@ void re6_recipe_and_custom_restore() {
     CHECK(decode_settings(old_wire.data(),old_wire.size(),old_re6));
     CHECK(old_re6.re6_response && !old_re6.move_while_reloading);
     CHECK(profile_kind(old_re6,ProfileDomain::Controls)==ProfileKind::Custom);
+    // Legacy reload-off values are preserved on load, but choosing the built-in
+    // RE6 preset explicitly enables reload walking and persists that default.
+    const auto migrated_file=path("old-re6-reload.bin");
+    CHECK(save_settings_file(migrated_file.c_str(),old_re6));
+    CHECK(switch_profile(migrated_file.c_str(),old_re6,ProfileDomain::Controls,re6)==ProfileResult::Applied);
+    Settings migrated;
+    CHECK(load_settings_file(migrated_file.c_str(),migrated)&&migrated.move_while_reloading);
+    CHECK(profile_kind(migrated,ProfileDomain::Controls)==re6);
+    CHECK(switch_profile(migrated_file.c_str(),migrated,ProfileDomain::Controls,ProfileKind::Custom)==ProfileResult::Applied);
+    CHECK(!migrated.move_while_reloading); // Manual/old choice stays recoverable.
     auto scoped = re6_profile();
     copy_profile(scoped, custom(), ProfileDomain::Graphics);
     CHECK(scoped.re6_response && profile_kind(scoped, ProfileDomain::Controls)==re6);

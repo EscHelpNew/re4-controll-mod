@@ -338,6 +338,60 @@ struct Fixture {
 };
 }
 int main(){
+    for(bool aiming:{false,true}){
+        Fixture f;f.view_mode();if(aiming){f.aim();f.camera()[0x26C]=0;}
+        settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        publish_view_settings();unified_pitch_actor=reinterpret_cast<std::uintptr_t>(f.actor);unified_pitch=0;
+        CameraInput::Callback(f.camera());
+        // Root(100,200,300) + the neutral shoulder arm at distance1.15.
+        assert(near(camera_collision_input.eye0.x,-448)&&near(camera_collision_input.eye0.y,1974.75f)
+            &&near(camera_collision_input.eye0.z,-1052));
+        assert(std::memcmp(&camera_collision_input.eye1,&native_profile.eye1,sizeof(re4::ViewVec3))==0);
+        const auto expected=camera_collision_input.eye0;
+        // Native profile blending and delayed/transformed frame bases cannot
+        // drag the desired world eye. Native18990 still receives the output.
+        native_profile.eye0={-700,1800,-900};native_profile.target={80,1400,1800};
+        native_basis={{{0,0,1,800},{0,1,0,-300},{-1,0,0,1200}}};
+        CameraInput::Callback(f.camera());re4::ViewVec3 world;
+        assert(re4::view_transform_point(native_basis,camera_collision_input.eye0,world));
+        assert(near(world.x,expected.x)&&near(world.y,expected.y)&&near(world.z,expected.z));
+        assert(camera_collision_input.fov==native_profile.fov&&camera_collision_input.roll==native_profile.roll);
+        auto* body=reinterpret_cast<re4::ViewMatrix3x4*>(f.actor+0x18);
+        body->m[0][3]+=320;body->m[2][3]-=180;
+        CameraInput::Callback(f.camera());assert(re4::view_transform_point(native_basis,camera_collision_input.eye0,world));
+        assert(near(world.x,expected.x+320)&&near(world.z,expected.z-180));
+        f.yaw()=1.57079632679f;
+        CameraInput::Callback(f.camera());assert(re4::view_transform_point(native_basis,camera_collision_input.eye0,world));
+        assert(std::fabs(world.x+932)<.001f&&std::fabs(world.z-668)<.001f);
+    }
+    for(unsigned gate=0;gate<12;++gate){
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        if(gate==0)settings.first_person=true;
+        if(gate==1)settings.re6_response=false;
+        if(gate==2)settings.unified_controls=false;
+        if(gate==3)f.input_state[0x503C]=1;
+        if(gate==4)f.actor[0x115]=5;
+        if(gate==5)f.camera()[0x222]=1;
+        if(gate==6)f.camera()[0x26C]=0;
+        if(gate==7)f.input_state[0x5092]=4;
+        if(gate==8)sensor_attributes=0;
+        if(gate==9)*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=1;
+        if(gate==10)std::memset(f.actor+0x18,0,sizeof(re4::ViewMatrix3x4));
+        if(gate==11)f.yaw()=std::numeric_limits<float>::quiet_NaN();
+        publish_view_settings();unified_pitch_actor=reinterpret_cast<std::uintptr_t>(f.actor);unified_pitch=0;
+        CameraInput::Callback(f.camera());
+        if(gate==0){
+            assert(near(camera_collision_input.eye0.x,100)&&near(camera_collision_input.eye0.y,1900)&&near(camera_collision_input.eye0.z,300));
+            assert(first_person_frame.load()==view_frame.load());
+        }else if(gate==1||gate==2||gate==3||gate==8||gate==9){
+            re4::ViewQfpsOutput original;assert(re4::third_person_view(native_profile,1.15f,original));
+            assert(std::memcmp(&camera_collision_input,&original,sizeof(original))==0);
+        }else assert(std::memcmp(&camera_collision_input,&native_profile,sizeof(native_profile))==0);
+    }
     for(unsigned sub=0;sub<4;++sub){
         Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.move_while_reloading=true;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;

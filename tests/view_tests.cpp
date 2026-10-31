@@ -89,6 +89,43 @@ int main(){
     }
 
     const ViewMatrix3x4 identity{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
+    ViewQfpsOutput locked;
+    CHECK(re6_shoulder_view(native,identity,{100,200,300},0,0,1.15f,locked));
+    same(locked.eye0,{-448,1974.75f,-1052});same(locked.eye1,native.eye1);
+    CHECK(locked.roll==native.roll&&locked.fov==native.fov);
+    for(float heading:{-3.14f,-1.57f,0.f,1.57f,3.14f})for(float pitch:{-1.5707963f,-.6f,0.f,.6f,1.5707963f}){
+        CHECK(re6_shoulder_view(native,basis,{100,200,300},heading,pitch,1.15f,locked));
+        ViewVec3 e,t;CHECK(view_transform_point(basis,locked.eye0,e)&&view_transform_point(basis,locked.target,t));
+        const float sh=std::sin(heading),ch=std::cos(heading),sp=std::sin(pitch),cp=std::cos(pitch);
+        const ViewVec3 forward{sh*cp,sp,ch*cp},up{-sh*sp,cp,-ch*sp},right{-ch,0,sh};
+        const ViewVec3 relative{100-e.x,1900-e.y,300-e.z};
+        const auto dot=[](ViewVec3 a,ViewVec3 b){return a.x*b.x+a.y*b.y+a.z*b.z;};
+        // Same torso position in camera coordinates through turns and pitch,
+        // including the poles. No time history is needed to keep the anchor.
+        CHECK(close(dot(relative,right),-548)&&close(dot(relative,up),-74.75f)&&close(dot(relative,forward),1352));
+        const float length=std::hypot(t.x-e.x,t.y-e.y,t.z-e.z);
+        CHECK(close((t.x-e.x)/length,forward.x)&&close((t.y-e.y)/length,forward.y)&&close((t.z-e.z)/length,forward.z));
+        same(locked.eye1,native.eye1);
+    }
+    auto alias_locked=native;
+    CHECK(re6_shoulder_view(alias_locked,identity,{},0,0,1,alias_locked));same(alias_locked.eye0,native.eye0);
+    const auto locked_saved=locked;
+    for(unsigned invalid=0;invalid<12;++invalid){
+        auto n=native;auto m=identity;ViewVec3 root{};float h=0,p=0,d=1.15f;
+        if(invalid==0)n.eye0.x=nan;
+        if(invalid==1)n.eye1.y=nan;
+        if(invalid==2)n.target.z=nan;
+        if(invalid==3)n.fov=nan;
+        if(invalid==4)n.target=n.eye0;
+        if(invalid==5)m.m[2][2]=0;
+        if(invalid==6)root.x=nan;
+        if(invalid==7)h=nan;
+        if(invalid==8)p=1.58f;
+        if(invalid==9)d=.99f;
+        if(invalid==10)d=2.01f;
+        if(invalid==11)m.m[1][1]=nan;
+        CHECK(!re6_shoulder_view(n,m,root,h,p,d,locked));CHECK(std::memcmp(&locked,&locked_saved,sizeof(locked))==0);
+    }
     // Native row-major perspective: cot(fov/2)/aspect, cot, depth, -z clip w.
     const ViewMatrix4x4 projection{{{0.75f,0,0,0},{0,1,0,0},{0,0,-0.001001f,-100.1001f},{0,0,-1,0}}};
     ViewHudPoint point{91,92};
