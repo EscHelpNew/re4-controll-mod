@@ -15,6 +15,7 @@
 #include "re4/modern_move.hpp"
 #include "re4/unified.hpp"
 #include "re4/reticle_draw.hpp"
+#include "re6/journal.hpp"
 #include <atomic>
 
 namespace {
@@ -54,6 +55,37 @@ struct SensorBackend {
 
 __attribute__((used, section(".data.re4control")))
 volatile re4::SharedControl control = re4::initial_shared_control();
+__attribute__((used)) re6::ProducerRing<1024> telemetry_ring;
+struct TelemetryInput {NpadState pad{};std::uint64_t tick=0;std::uint32_t id=0,style=0;};
+static_assert(sizeof(TelemetryInput)==56);
+std::atomic<std::uint64_t> telemetry_input_sequence{0},telemetry_input_words[7]{};
+std::atomic_flag telemetry_input_writer=ATOMIC_FLAG_INIT;
+std::uint32_t telemetry_input_id=UINT32_MAX,telemetry_input_style=0;
+std::uint64_t telemetry_last_frame=0;
+void telemetry_write_input(const NpadState& pad,std::uint32_t id,std::uint32_t style){
+    if((id!=0&&id!=0x20)||telemetry_input_writer.test_and_set(std::memory_order_acquire))return;
+    if(!(pad.attributes&1)&&(id!=telemetry_input_id||style!=telemetry_input_style)){
+        telemetry_input_writer.clear(std::memory_order_release);return;
+    }
+    telemetry_input_id=id;telemetry_input_style=style;
+    const TelemetryInput value{pad,svcGetSystemTick(),id,style};std::uint64_t words[7];std::memcpy(words,&value,sizeof(value));
+    const auto before=telemetry_input_sequence.fetch_add(1,std::memory_order_acq_rel);
+    for(unsigned i=0;i<7;++i)telemetry_input_words[i].store(words[i],std::memory_order_relaxed);
+    telemetry_input_sequence.store(before+2,std::memory_order_release);
+    telemetry_input_writer.clear(std::memory_order_release);
+}
+bool telemetry_read_input(std::uint64_t tick,re6::Record& out){
+    const auto before=telemetry_input_sequence.load(std::memory_order_acquire);if(!before||(before&1))return false;
+    std::uint64_t words[7];for(unsigned i=0;i<7;++i)words[i]=telemetry_input_words[i].load(std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_acquire);
+    if(before!=telemetry_input_sequence.load(std::memory_order_acquire))return false;
+    TelemetryInput value{};std::memcpy(&value,words,sizeof(value));
+    if(!(value.pad.attributes&1)||!value.tick||tick<value.tick||tick-value.tick>re6::kTickHz/10)return false;
+    out.input_tick=value.tick;out.sample_id=value.pad.sample;out.buttons=value.pad.buttons;
+    out.controller_id=value.id;out.controller_style=value.style;
+    out.sticks[0]=value.pad.lx;out.sticks[1]=value.pad.ly;out.sticks[2]=value.pad.rx;out.sticks[3]=value.pad.ry;
+    out.validity|=re6::InputValid;return true;
+}
 re4::Settings settings;
 float raw_left_x = 0;
 bool dpad_turn = false;
@@ -550,6 +582,7 @@ void poll_settings() {
     re4::acknowledge_settings(control, settings, before);
 }
 void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
+    telemetry_write_input(pad,id,style); // Exact original SDK state, before remapping.
     // Transform the original SDK state once, including menu and QTE input.
     // Overlay/HOME controls belong to other processes and remain physical.
     pad.buttons=re4::remap_buttons(pad.buttons,settings.button_map,settings.remap_enabled);
@@ -886,6 +919,21 @@ HOOK_DEFINE_TRAMPOLINE(CameraCalculate) {
     static void Callback(){
         const bool previous=unified_camera_calculation;unified_camera_calculation=true;
         Orig();unified_camera_calculation=previous;
+        const auto frame=view_frame.load(std::memory_order_acquire);
+        if(frame==telemetry_last_frame)return;
+        telemetry_last_frame=frame;
+        re6::Record record{};record.frame=frame;record.tick=svcGetSystemTick();
+        telemetry_read_input(record.tick,record);
+        auto* actor=*reinterpret_cast<const std::uint8_t**>(main_base+re4::profile::player_slot);
+        const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+        if(view_scene(const_cast<std::uint8_t*>(actor))){
+            record.actor=reinterpret_cast<std::uintptr_t>(actor);record.camera=main_base+0x11319C0;
+            std::memcpy(record.player,actor+0x18,sizeof(record.player));
+            std::memcpy(record.view,state+0xD8,sizeof(record.view));
+            std::memcpy(record.projection,state+0x10C,sizeof(record.projection));
+            record.validity|=re6::PlayerValid|re6::CameraValid|re6::ProjectionValid;
+        }
+        telemetry_ring.capture(record);
     }
 };
 HOOK_DEFINE_TRAMPOLINE(FinalLookAt) {
@@ -1060,6 +1108,8 @@ extern "C" void exl_main(void*, void*) {
     }
     if (main.m_Total.m_Size < 0x1273300) { control.status = 2; return; }
     main_base = reinterpret_cast<std::uintptr_t>(memory);
+    re6::BuildId telemetry_build{};std::memcpy(telemetry_build.data(),re4::profile::build_id,32);
+    telemetry_ring.initialize(svcGetSystemTick(),telemetry_build,re4::profile::title_id);
     aiming_predicate = reinterpret_cast<int (*)(void*)>(main_base + 0x317630);
     native_ortho=reinterpret_cast<decltype(native_ortho)>(main_base+0x27A0D0);
     native_projection=reinterpret_cast<decltype(native_projection)>(main_base+0x2515E0);

@@ -1,5 +1,9 @@
 # Installation and updates
 
+The separate read-only RE6 observer/recording overlay supports update v131072.
+See the [measurement procedure](measurement-ru.md); it preserves native RE6
+controls. Hardware capture is still an experimental validation step.
+
 RE4 Controls supports the original Switch port of Resident Evil4,
 Title ID `010099A00BC1E000`, main Build ID
 `82C2A04A21D3E0B850F273D4149C900300000000000000000000000000000000`.

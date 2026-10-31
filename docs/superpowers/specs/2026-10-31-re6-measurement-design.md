@@ -32,7 +32,7 @@ Git, packaged assets or reports.
 
 Implement page/model/renderer independently from native address research. Native
 telemetry installation is enabled only after its actual payload/profile exists.
-Archive reads are paused at the user's request until the download completes.
+The user confirmed the download complete; hash-checked local extraction resumed.
 Follow tests-first, full build, independent review and secret audit. Source main
 push remains authorized, but GitHub release/tag hold remains in force. Console
 NRO delivery uses the pinned switch-monitor client exclusively.

@@ -5,6 +5,7 @@
 #include "re4/calibration.hpp"
 #include "re4/home_launcher.hpp"
 #include "re4/version.hpp"
+#include "re6/log_server.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -185,6 +186,11 @@ void configure_reload(int argc, char** argv) {
     std::memset(token, 0, sizeof(token));
     std::memset(argument, 0, sizeof(argument));
 }
+void start_telemetry_downloads(){
+    char token[65]{};
+    if(re6::load_log_token(NXDK_SD_ROOT "/token.txt",token))re6::start_log_server(token);
+    std::memset(token,0,sizeof(token));
+}
 struct Sensors {
     HidSixAxisSensorHandle handles[2]{};
     bool running[2]{};
@@ -285,6 +291,7 @@ int main(int argc, char** argv) {
         char instance[24];
         std::snprintf(instance, sizeof(instance), "%s-p%llX",re4::kVersion, (unsigned long long)process_id);
         game_reload_start(NXDK_APP_NAME, instance);
+        start_telemetry_downloads();
     }
     PadState pad;
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
@@ -447,6 +454,7 @@ int main(int argc, char** argv) {
     renderer.close();
     if(R_SUCCEEDED(font_service))plExit();
     if(!graphics)consoleExit(nullptr);
+    re6::stop_log_server();
     game_reload_main_finish();
     if(R_SUCCEEDED(sockets))socketExit();
     return 0;

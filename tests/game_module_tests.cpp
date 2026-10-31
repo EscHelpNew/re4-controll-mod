@@ -324,6 +324,29 @@ struct Fixture {
 };
 }
 int main(){
+    {
+        Fixture f;f.view_mode();
+        re6::BuildId id{};std::memcpy(id.data(),re4::profile::build_id,32);
+        assert(telemetry_ring.initialize(100,id,re6::kRe4TitleId));
+        telemetry_last_frame=0;
+        settings.remap_enabled=true;settings.button_map[0]=1;
+        NpadState pad{};pad.sample=53;pad.buttons=1;pad.lx=-32768;pad.ly=321;pad.rx=17321;pad.ry=-12345;pad.attributes=1;
+        game_test::tick=192000;capture(pad,0,4);assert(pad.buttons!=1);
+        game_test::tick+=640000;CameraCalculate::Callback();
+        re6::Record r{};std::uint64_t words[32]{};
+        for(unsigned i=0;i<32;++i)words[i]=telemetry_ring.storage.slots[0].words[i].load();
+        std::memcpy(&r,words,sizeof(r));
+        assert(r.validity==15&&r.buttons==1&&r.sample_id==53&&r.input_tick==192000);
+        assert(r.tick==832000&&r.frame==view_frame&&r.sticks[0]==-32768&&r.sticks[2]==17321);
+        assert(r.player[3]==100&&r.player[7]==200&&r.player[11]==300&&r.view[0]==1&&r.projection[0]==.75f);
+        CameraCalculate::Callback();assert(telemetry_ring.storage.header.sequence.load()==4); // No duplicate simulation frame.
+        view_frame.fetch_add(1);game_test::tick+=1920001;CameraCalculate::Callback();
+        for(unsigned i=0;i<32;++i)words[i]=telemetry_ring.storage.slots[1].words[i].load();
+        std::memcpy(&r,words,sizeof(r));assert(!(r.validity&re6::InputValid));
+        NpadState other=pad;other.rx=-99;other.attributes=1;capture(other,1,1);
+        re6::Record input{};assert(!telemetry_read_input(game_test::tick,input)); // Secondary pad cannot replace primary snapshot.
+        pad.attributes=0;capture(pad,0,4);assert(!telemetry_read_input(game_test::tick,input));
+    }
     for(bool aim:{false,true}){
         Fixture f;f.view_mode();if(aim)f.aim();settings.unified_controls=true;settings.analog_enabled=false;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;

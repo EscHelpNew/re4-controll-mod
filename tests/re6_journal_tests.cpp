@@ -24,7 +24,7 @@ struct Memory {
  RemoteReader reader(){return {this,read};}
  static BuildId build(){BuildId id{};id[0]=0xA1;id[31]=0xF2;return id;}
  static Record sample(std::uint64_t n){
-  Record r{};r.frame=n;r.tick=n*640000;r.sample_id=n*2;r.buttons=0x8000000000000010ULL;r.actor=0x123456789ABCULL;r.camera=0xFEDCBA987654ULL;
+  Record r{};r.frame=n;r.tick=n*640000;r.input_tick=r.tick-123;r.sample_id=n*2;r.buttons=0x8000000000000010ULL;r.actor=0x123456789ABCULL;r.camera=0xFEDCBA987654ULL;
   r.controller_id=32;r.controller_style=4;r.validity=InputValid|PlayerValid|CameraValid|ProjectionValid;
   r.sticks[0]=-32768;r.sticks[1]=32767;r.sticks[2]=-123;r.sticks[3]=456;
   r.player[0]=r.player[5]=r.player[10]=1;r.player[3]=12.25f;r.player[7]=-30.5f;r.player[11]=99;
@@ -88,4 +88,18 @@ void invalid_and_csv(){
  out.record=Memory::sample(2);out.record.projection[0]=std::numeric_limits<float>::quiet_NaN();CHECK(csv_row(c.header(),out,text,sizeof(text))>0);CHECK(std::strstr(text,"nan")==nullptr);
  CHECK(std::strstr(text,"-32768,32767,-123,456")!=nullptr); // Valid raw input remains exact.
 }
-int main(){static_assert(sizeof(Record)==256&&sizeof(Header)==128&&sizeof(AtomicSlot)==264);wrap_without_loss();loss_and_attach();interleaving();bounds_and_identity();invalid_and_csv();std::puts("RE6 bounded journal tests passed");}
+void shared_titles_and_record_start(){
+ Memory m;CHECK(!m.ring.initialize(8,Memory::build(),42));
+ CHECK(m.ring.initialize(8,Memory::build(),kRe4TitleId));
+ for(unsigned i=1;i<=700;++i)CHECK(m.ring.capture(Memory::sample(i)));
+ Cursor c;Sample out{};
+ CHECK(c.attach(m.reader(),m.base,Memory::build())==ReadStatus::Unsupported);
+ CHECK(c.attach(m.reader(),m.base,Memory::build(),kRe4TitleId,true)==ReadStatus::Empty);
+ CHECK(c.read_next(m.reader(),out)==ReadStatus::Empty&&c.missed()==0);
+ CHECK(m.ring.capture(Memory::sample(701)));
+ CHECK(c.read_next(m.reader(),out)==ReadStatus::Record);
+ CHECK(out.sequence==701&&out.record.frame==701&&out.record.input_tick==701*640000-123&&out.missed==0&&out.title_id==kRe4TitleId);
+ char text[kCsvBufferBytes];CHECK(csv_row(c.header(),out,text,sizeof(text))>0);
+ out.title_id=kTitleId;CHECK(csv_row(c.header(),out,text,sizeof(text))==0);
+}
+int main(){static_assert(sizeof(Record)==256&&sizeof(Header)==128&&sizeof(AtomicSlot)==264);wrap_without_loss();loss_and_attach();interleaving();bounds_and_identity();invalid_and_csv();shared_titles_and_record_start();std::puts("RE6 bounded journal tests passed");}

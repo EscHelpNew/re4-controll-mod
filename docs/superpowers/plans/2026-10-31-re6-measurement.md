@@ -26,19 +26,19 @@ the existing initialize arguments. Root wires pad events/build/install dispatch.
 
 ### Task2: identify native measurements
 
-- [ ] Extract small RE6 update ExeFS locally using existing private tooling.
-- [ ] Verify title/Build ID, input consumers, player/camera pointers and per-frame order.
+- [x] Extract completed RE6 update ExeFS locally; verify container, ExeFS and NSO hashes.
+- [x] Verify title/Build ID, SDK6 loader/imports, input consumers, player/camera pointers and post-camera sample point.
 - [x] Verify hidden overlay lifetime and choose its writer thread; no native game SDK filesystem/thread injection.
 - [ ] Confirm installed console Build ID through own installer inspection.
 
 ### Task3: telemetry and installation
 
 - [x] TDD bounded record/ring/cursor/CSV encoding, timestamps, torn reads, invalid groups and real sample gaps.
-- [ ] Implement overlay writer lifetime, SD persistence and write-failure reporting.
-- [ ] Implement verified RE6 observer/profile and overlay with no control modifications.
+- [x] Implement overlay writer lifetime, SD persistence and write-failure reporting.
+- [x] Implement verified RE6 observer/profile and overlay with no control modifications.
 - [x] TDD isolated RE6 installer receipts, conflicts, missing payloads and target separation.
 - [x] Wire both logos, L/R input and installed-version inspection; reject partial future payload groups.
-- [ ] Wire verified native RE6 artifacts into build/RomFS/package once the observer exists.
+- [x] Wire verified native RE6 artifacts into build/RomFS/package.
 
 ### Task4: delivery and measurement
 
@@ -46,3 +46,13 @@ the existing initialize arguments. Root wires pad events/build/install dispatch.
 - [ ] Commit preparation source to main, verify CI and deliver installer pages.
 - [ ] Library-only console delivery, install/profile validation, real measurement-log capture.
 - [ ] Analyze displacement and camera angular response against raw stick/time records; no invented measurements.
+
+### Task5: explicit capture and cross-game comparison
+
+- [x] Generic journal identity guards for RE4 and RE6; tail-only Start never records pre-start history as loss.
+- [x] Same guarded RE4 producer, original integer input before remapping, separate input/frame clocks.
+- [x] Start/Stop recorder with bounded polling, stop snapshot, buffered SD sink and hidden-overlay lifetime.
+- [x] Own-app authenticated, fixed-folder completed-CSV download with size/hash checking.
+- [x] Offline native-time motion analysis with synthetic known-angle/motion regression tests.
+- [x] Repeatable Russian hardware protocol in `docs/measurement-ru.md`.
+- [ ] Actual console capture, three repeats per condition, RE6/RE4 analysis and tuning.

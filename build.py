@@ -65,6 +65,18 @@ def tests():
          '-Itests/game_stubs', '-Iinclude', 'tests/game_module_tests.cpp',
          'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'game_module_tests.exe'])
     native('game_module_tests.exe')
+    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static',
+         '-Itests/game_stubs','-Iinclude','tests/re6_module_tests.cpp',
+         '-o',OUT/'re6_module_tests.exe'])
+    native('re6_module_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static',
+         '-Iinclude','-Isource/re6_overlay','tests/re6_recorder_tests.cpp',
+         '-o',OUT/'re6_recorder_tests.exe'])
+    native('re6_recorder_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/telemetry_transfer_tests.cpp','source/re6/log_server.cpp',
+         '-ladvapi32','-lws2_32','-o',OUT/'telemetry_transfer_tests.exe'])
+    native('telemetry_transfer_tests.exe')
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/modern_move_tests.cpp','source/input.cpp','-o',OUT/'modern_move_tests.exe'])
     native('modern_move_tests.exe')
@@ -165,7 +177,7 @@ def diagnostic():
                    'source/overlay/storage.cpp',
                    'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
                    'source/diagnostic/home_policy.cpp','source/diagnostic/home_launcher.cpp',
-                   'source/diagnostic/update_worker.cpp',
+                   'source/diagnostic/update_worker.cpp','source/re6/log_server.cpp',
                    'source/diagnostic/main.cpp'):
         dest = OUT / (Path(source).stem + '.o')
         run([tool('g++'), '-std=gnu++17', '-fno-exceptions', '-fno-rtti', *common,
@@ -185,8 +197,9 @@ def diagnostic():
     payload_files={'app-logo.bmp':OUT/'app-logo.bmp','app-logo-re6.bmp':OUT/'app-logo-re6.bmp',
         'home-launcher.bin':ROOT/'assets/home-launcher.bin','subsdk9':base/'subsdk9','main.npdm':base/'main.npdm',
         're4-controls.ovl':OUT/'experimental/switch/.overlays/re4-controls.ovl'}
-    # RE6 native files require a verified profile/builder. Do not discover or
-    # package arbitrary pre-existing build files while that work is pending.
+    re6_base=OUT/'experimental/atmosphere/contents/01002A000CD48000/exefs'
+    payload_files.update({'re6-subsdk9':re6_base/'subsdk9','re6-main.npdm':re6_base/'main.npdm',
+        're6-telemetry.ovl':OUT/'experimental/switch/.overlays/re6-telemetry.ovl'})
     payload=stage_payload(ROOT,payload_files)
     icon = prepare_app_icon(ROOT / 'assets/icon-original.png', OUT / 'icon.jpg')
     run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp), '--icon=' + str(icon),
@@ -289,6 +302,24 @@ def overlay():
     print('Built EXPERIMENTAL overlay:', output)
 
 
+def telemetry_overlay():
+    includes=['-I'+str(ROOT/'include'),'-I'+str(ROOT/'source/re6_overlay'),
+              '-isystem',str(ROOT/'third_party/libtesla/include'),'-isystem',str(SDK/'libnx/include')]
+    flags=['-std=gnu++20','-O2','-g','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
+           '-fno-exceptions','-ffixed-x18','-march=armv8-a+crc+crypto','-mtune=cortex-a57',
+           '-mtp=soft','-fPIE','-D__SWITCH__',*includes]
+    elf=OUT/'re6-telemetry-overlay.elf'
+    env=os.environ.copy();env['DEVKITPRO']=SDK.as_posix()
+    run([tool('g++'),*flags,'source/re6_overlay/main.cpp','source/re6_overlay/worker.cpp',
+         '-specs='+str(SDK/'libnx/switch.specs'),'-L'+str(SDK/'libnx/lib'),'-lnx','-lm','-o',elf],env=env)
+    output=OUT/'experimental/switch/.overlays/re6-telemetry.ovl';output.parent.mkdir(parents=True,exist_ok=True)
+    nacp=OUT/'re6-telemetry-overlay.nacp'
+    run([sdk_tool('nacptool'),'--create','RE4 / RE6 Telemetry','re4-controls',VERSION,nacp])
+    icon=prepare_app_icon(ROOT/'assets/icon-re6.png',OUT/'icon-re6.jpg')
+    run([sdk_tool('elf2nro'),elf,output,'--nacp='+str(nacp),'--icon='+str(icon)])
+    print('Built read-only telemetry overlay:',output)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--test', action='store_true')
@@ -301,8 +332,11 @@ if __name__ == '__main__':
         tests()
     if args.module:
         module()
+        from tools.re6_module import build as build_re6
+        build_re6(ROOT,SDK,run)
     if args.overlay:
         overlay()
+        telemetry_overlay()
     if args.nro:
         diagnostic()
     if not (args.test or args.nro or args.module or args.overlay):

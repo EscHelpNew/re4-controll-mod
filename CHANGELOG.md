@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0 (unreleased, measurement instrumentation)
+
+- Add a Build-ID/SDK/instruction-guarded read-only RE6 observer for update v131072.
+- Capture exact original input and separate poll/frame timestamps in both RE4 and RE6.
+- Add a bilingual telemetry overlay with tail-only Start, finite Stop snapshot,
+  buffered SD persistence, drop counters and explicit capture failures.
+- Keep recording while hidden; join and flush the writer before overlay unload.
+- Download completed CSVs through the own installer with local authentication,
+  bounded fixed-folder access and streamed SHA256 validation.
+- Add native-time motion analysis and a repeatable measurement protocol.
+- Actual console recordings and control-feel fitting are pending; no measured
+  RE6 response or transferred calibration is claimed by this build.
+
 ## 0.10.0 (unreleased, RE6 measurement preparation)
 
 - Add L/R game pages with a violet RE6 emblem and four RE6 home actions.
