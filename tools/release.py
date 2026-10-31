@@ -18,7 +18,7 @@ PUBLIC_FILES={
     'switch/.overlays/re4-controls.ovl','switch/re4-controls/bridge.nro','switch/re4-controls/game.nro',
     'atmosphere/contents/01002A000CD48000/exefs/subsdk9',
     'atmosphere/contents/01002A000CD48000/exefs/main.npdm',
-    'switch/.overlays/re6-telemetry.ovl','README-measurement-ru.md',
+    'switch/.overlays/re6-telemetry.ovl','switch/.overlays/re6-controls.ovl','README-measurement-ru.md','README-re6-graphics.md',
     'install/re4-controls-forwarder.nsp','README-install.md',
     'licenses/MIT.txt','licenses/exlaunch-GPL2.txt','licenses/libtesla-GPL2.txt',
     'licenses/Switch-Debug-Kit-MIT.txt','licenses/nx-ovlloader-GPL2.txt','licenses/graphics-NOTICES.txt','licenses/NTON-GPL3.txt'

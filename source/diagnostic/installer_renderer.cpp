@@ -260,9 +260,9 @@ void InstallerRenderer::draw(const InstallerModel& m){
     }
     p.text(m.selected_help(),862,185,19,cream,344,true,5);
     if(re6){
-        p.text(tr(m,"MEASUREMENT","ИЗМЕРЕНИЯ"),862,360,16,muted);
-        p.text(tr(m,"Original controls and camera.\nNo control tuning on this page.",
-                    "Штатное управление и камера.\nБез настройки управления."),862,399,19,cream,344,true,4);
+        p.text(tr(m,"GRAPHICS AND MEASUREMENT","ГРАФИКА И ЖУРНАЛ"),862,360,16,muted);
+        p.text(tr(m,"In Uberhand: RE6 Graphics.\nFiltering and anti-aliasing.\nNative gyro is retained.",
+                    "В Uberhand: RE6 Graphics.\nФильтрация и сглаживание.\nШтатный гироскоп."),862,399,19,cream,344,true,4);
         if(!m.detail.empty())p.text(m.detail,862,486,16,cream,344,true,4);
     }else if(m.page==InstallerPage::Updates){
         p.text(tr(m,"BEFORE YOU UPDATE","ПЕРЕД ОБНОВЛЕНИЕМ"),862,360,16,muted);

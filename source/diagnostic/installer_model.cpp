@@ -4,11 +4,11 @@ namespace re4 {
 namespace {
 const std::array<HomeItem,4> re6_home_items{{
     {{"Install RE6 module","Установить модуль RE6"},
-     {"Install the RE6 measurement module.\nClose Resident Evil 6 before installing.",
-      "Установить модуль измерений RE6.\nПеред установкой закройте Resident Evil 6."}},
+     {"Install RE6 graphics and measurement modules.\nClose Resident Evil 6 before installing.",
+      "Установить графику и журнал RE6.\nПеред установкой закройте Resident Evil 6."}},
     {{"Install RE6 overlay","Установить оверлей RE6"},
-     {"Install the RE6 measurement overlay.\nKeeps the existing Uberhand installation.",
-      "Установить оверлей измерений RE6.\nСуществующий Uberhand сохраняется."}},
+     {"Install RE6 Graphics and the measurement menu.\nKeeps the existing Uberhand installation.",
+      "Установить графику и меню измерений RE6.\nСуществующий Uberhand сохраняется."}},
     {{"Language","Язык"},
      {"Choose English or Russian for both games.\nUse LEFT/RIGHT or A to change.",
       "Русский или английский для обеих игр.\nСмена: влево/вправо или A."}},

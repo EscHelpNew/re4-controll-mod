@@ -12,7 +12,12 @@ TITLE = '01002A000CD48000'
 # Generated locally with hactool -t npdm --json from hash-checked update v131072.
 SOURCE_NPDM_SHA256 = '2d9c805a64bd0a4b585082084e667920064da22715d2a15fb8ea379580c05c65'
 SDK_IMPORTS = {'_ZN2nn2ro6detail15g_pAutoLoadListE',
-               '_ZN2nn2ro6detail36g_pLookupGlobalManualFunctionPointerE'}
+               '_ZN2nn2ro6detail36g_pLookupGlobalManualFunctionPointerE',
+               '_ZN2nn2fs11GetFileSizeEPlNS0_10FileHandleE',
+               '_ZN2nn2fs19MountSdCardForDebugEPKc',
+               '_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci',
+               '_ZN2nn2fs8ReadFileENS0_10FileHandleElPvm',
+               '_ZN2nn2fs9CloseFileENS0_10FileHandleE'}
 
 
 def sdk6_header(original):
@@ -54,6 +59,14 @@ def _msys(path):
     value = Path(path).resolve().as_posix()
     return '/' + value[0].lower() + value[2:] if len(value) > 1 and value[1] == ':' else value
 
+def graphics_permissions(original):
+    """Retain native services and add only SD access for the mod's settings."""
+    result=observer_permissions(original)
+    permissions=int(result['filesystem_access']['permissions'],16)
+    # Atmosphere AccessControlBits::Bits::SdCard is bit21. No save/system expansion.
+    result['filesystem_access']['permissions']=hex(permissions|(1<<21))
+    return result
+
 
 def build(root, sdk, run):
     """Entry point for build.py module_re6(); return the generated ExeFS path."""
@@ -69,8 +82,11 @@ def build(root, sdk, run):
     permissions = json.loads(profile.read_text(encoding='utf-8'))
     if int(permissions['program_id'], 16) != int(TITLE, 16):
         raise ValueError('Invalid RE6 module profile')
-    shutil.copy2(profile, stage / 'config.json')
+    build_profile=stage/'config.json'
+    build_profile.write_text(json.dumps(graphics_permissions(permissions),indent=2)+'\n',encoding='utf-8')
     shutil.copy2(root / 'source/re6/module.cpp', stage / 'source/program/main.cpp')
+    core=stage/'source/re6-core';core.mkdir(exist_ok=True)
+    shutil.copy2(root/'source/re6/settings.cpp',core/'settings.cpp')
     # SDK6.6 uses the upstream0xD0 ModuleObject with soname+B8/NROsize+C0.
     # Retain manual lookup, unlike the isolated RE4 SDK5 staging compatibility.
     loader = (stage / 'source/rtld/ModuleObject.hpp').read_text(encoding='utf-8')
@@ -84,7 +100,7 @@ def build(root, sdk, run):
     if hook.count('if(i > HookMax)') != 1:
         raise ValueError('Unexpected exlaunch trampoline allocator revision')
     hook_source.write_text(hook.replace('if(i > HookMax)', 'if(i >= HookMax)'), encoding='utf-8')
-    # Four hooks fit the default4096-byte pool (20 slots). No RE4 modules or
+    # Six hooks fit the default4096-byte pool (20 slots). No RE4 modules or
     # RE4 hook-count/pool substitutions are staged into this build.
     temporary = root / 'build/re6-tmp'
     temporary.mkdir(exist_ok=True)
@@ -112,9 +128,9 @@ def build(root, sdk, run):
     package = root / ('build/experimental/atmosphere/contents/' + TITLE + '/exefs')
     package.mkdir(parents=True, exist_ok=True)
     shutil.copy2(stage / 'deploy/subsdk9', package / 'subsdk9')
-    result = subprocess.run([str(sdk / 'tools/bin/npdmtool.exe'), str(profile), str(package / 'main.npdm')],
+    result = subprocess.run([str(sdk / 'tools/bin/npdmtool.exe'), str(build_profile), str(package / 'main.npdm')],
                             capture_output=True, text=True, check=True)
     if 'Failed' in result.stdout + result.stderr:
         raise RuntimeError('RE6 NPDM generation rejected fields: ' + result.stdout + result.stderr)
-    print('Built guarded RE6 observer:', package)
+    print('Built guarded RE6 observer and graphics:', package)
     return package

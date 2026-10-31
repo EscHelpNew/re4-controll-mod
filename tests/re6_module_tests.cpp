@@ -17,6 +17,8 @@ void test_Re6FullPad(Re6NpadState*,const std::uint32_t&);
 void test_Re6HandheldPad(Re6NpadState*,const std::uint32_t&);
 void test_Re6DualPad(Re6NpadState*,const std::uint32_t&);
 void test_Re6CameraUpdate(void*);
+void test_Re6SamplerCreate(void*,const std::uint8_t*);
+void test_Re6AaRender(void*,void*,std::uint32_t,const char*);
 }
 #include "../source/re6/module.cpp"
 #undef assert
@@ -24,6 +26,13 @@ void test_Re6CameraUpdate(void*);
 namespace {
 Re6NpadState supplied{};
 unsigned pad_calls=0,camera_calls=0;
+std::array<std::uint8_t,0x38> sampler_seen{};
+void test_Re6SamplerCreate(void*,const std::uint8_t* descriptor){if(descriptor)std::memcpy(sampler_seen.data(),descriptor,sampler_seen.size());}
+unsigned aa_seen=0,aa_calls=0;bool aa_native_edit=false;
+void test_Re6AaRender(void*,void* scene,std::uint32_t,const char*){
+ ++aa_calls;std::memcpy(&aa_seen,static_cast<std::uint8_t*>(scene)+0x5E4,4);
+ if(aa_native_edit){const unsigned changed=3;std::memcpy(static_cast<std::uint8_t*>(scene)+0x5E4,&changed,4);}
+}
 bool change_view=false;
 void test_Re6FullPad(Re6NpadState* out,const std::uint32_t&){++pad_calls;if(out)*out=supplied;}
 void test_Re6HandheldPad(Re6NpadState* out,const std::uint32_t& id){test_Re6FullPad(out,id);}
@@ -50,7 +59,8 @@ int main(){
  game_test::program=re6::profile::title_id;
  sdk[re6::profile::sdk_sites[0].offset]^=1;exl_main(nullptr,nullptr);assert(game_test::installed==0);sdk[re6::profile::sdk_sites[0].offset]^=1;
  game_test::program=0;exl_main(nullptr,nullptr);assert(game_test::installed==0);game_test::program=re6::profile::title_id;
- exl_main(nullptr,nullptr);assert(game_test::installed==4&&game_test::initialized==1);
+ exl_main(nullptr,nullptr);assert(game_test::installed==6&&game_test::initialized==1);
+ assert(graphics_control.status==0); // Bootstrap owns the settings wire until ready.
  for(auto* region:{&main,&sdk,&manager,&players,&actor,&camera})game_test::memory_maps.push_back({reinterpret_cast<std::uintptr_t>(region->data()),region->size(),3});
  const auto actor_ptr=reinterpret_cast<std::uintptr_t>(actor.data()),camera_ptr=reinterpret_cast<std::uintptr_t>(camera.data());
  put(main,re6::profile::camera_singleton,reinterpret_cast<std::uintptr_t>(manager.data()));
@@ -94,5 +104,71 @@ int main(){
  // A concurrent/reentrant update cannot turn the journal into a multi-producer ring.
  observer_capture.test_and_set(std::memory_order_acquire);Re6CameraUpdate::Callback(manager.data());
  assert(cursor.read_next(reader,sample)==re6::ReadStatus::Empty);observer_capture.clear(std::memory_order_release);
- std::puts("RE6 native observer tests passed");
+ // The actual constructor adapter must receive a private native descriptor,
+ // preserving the game's original buffer and its nonfilter fields.
+ auto control=re6::initial_shared_control();control.status=1;control.capabilities=re6::kCapabilityFiltering;
+ std::memcpy(const_cast<re6::SharedControl*>(&graphics_control),&control,sizeof(control));
+ re6::Settings settings;settings.texture_filtering=re6::TextureFilter::Af8x;std::uint32_t sequence=0;
+ assert(re6::publish_settings(graphics_control,settings,sequence));
+ std::array<std::uint8_t,0x38> descriptor{};descriptor[0]=7;descriptor[0x20]=91;
+ const auto original=descriptor;Re6SamplerCreate::Callback(nullptr,descriptor.data());
+ std::uint32_t flags=0;std::memcpy(&flags,sampler_seen.data(),4);
+ assert((flags&0xff)==8&&((flags>>17)&31)==9&&sampler_seen[0x20]==91);
+ assert(descriptor==original);
+ settings.texture_filtering=re6::TextureFilter::Af16x;
+ assert(re6::publish_settings(graphics_control,settings,sequence));Re6SamplerCreate::Callback(nullptr,descriptor.data());
+ std::memcpy(&flags,sampler_seen.data(),4);assert(((flags>>17)&31)==9); // A live edit waits for the next process.
+ std::vector<std::uint8_t> renderer(0x1099770),scene(0x600);
+ for(auto* region:{&renderer,&scene})game_test::memory_maps.push_back({reinterpret_cast<std::uintptr_t>(region->data()),region->size(),3});
+ put(main,0x2A5FD90,reinterpret_cast<std::uintptr_t>(renderer.data()));
+ put(renderer,0,std::uintptr_t(observer_main+0x25B66A8));
+ put(renderer,0x1099768,reinterpret_cast<std::uintptr_t>(scene.data()));
+ put(scene,0,std::uintptr_t(observer_main+0x28B1378));
+ for(unsigned mode=0;mode<5;++mode){
+  put(scene,0x5E4,std::uint32_t(2));settings.anti_aliasing=re6::AntiAliasing(mode);
+  assert(re6::publish_settings(graphics_control,settings,sequence));
+  Re6AaRender::Callback(nullptr,scene.data(),0,"test");
+  std::uint32_t restored=0;std::memcpy(&restored,scene.data()+0x5E4,4);
+  assert(aa_seen==(mode?mode-1:2)&&restored==2); // Apply only inside the native render call.
+ }
+ settings.anti_aliasing=re6::AntiAliasing::Fxaa3;assert(re6::publish_settings(graphics_control,settings,sequence));
+ for(unsigned native:{0u,1u,3u}){
+  put(scene,0x5E4,native);Re6AaRender::Callback(nullptr,scene.data(),0,"native-scope");
+  std::uint32_t restored=0;std::memcpy(&restored,scene.data()+0x5E4,4);
+  assert(aa_seen==(native?2u:0u)&&restored==native); // Never require FXAA buffers in a native-off scene.
+ }
+ settings.anti_aliasing=re6::AntiAliasing::Off;assert(re6::publish_settings(graphics_control,settings,sequence));
+ for(unsigned gate=0;gate<7;++gate){
+  put(scene,0,std::uintptr_t(observer_main+0x28B1378));put(scene,0x5E4,std::uint32_t(2));
+  put(renderer,0,std::uintptr_t(observer_main+0x25B66A8));put(renderer,0x1099768,reinterpret_cast<std::uintptr_t>(scene.data()));
+  if(gate==0)put(scene,0,std::uintptr_t(0));
+  if(gate==1)put(renderer,0,std::uintptr_t(0));
+  if(gate==2)put(renderer,0x1099768,std::uintptr_t(0));
+  if(gate==3)put(scene,0x5E4,std::uint32_t(4)); // SMAA owns extra resources; leave native path alone.
+  if(gate==4)aa_render_guard.test_and_set();
+  if(gate==5)game_test::memory_maps.back().perm=1;
+  if(gate==6)observer_active.store(false);
+  Re6AaRender::Callback(nullptr,scene.data(),0,"guard");
+  assert(aa_seen==(gate==3?4u:2u));
+  aa_render_guard.clear();game_test::memory_maps.back().perm=3;observer_active.store(true);
+ }
+ put(renderer,0,std::uintptr_t(observer_main+0x25B66A8));put(renderer,0x1099768,reinterpret_cast<std::uintptr_t>(scene.data()));
+ aa_native_edit=true;Re6AaRender::Callback(nullptr,scene.data(),0,"native-edit");aa_native_edit=false;
+ std::uint32_t changed=0;std::memcpy(&changed,scene.data()+0x5E4,4);assert(aa_seen==0&&changed==3);
+ // Cold launch loads the separate RE6 file before latching sampler policy.
+ for(bool backup:{false,true}){
+  control=re6::initial_shared_control();control.capabilities=re6::kCapabilityFiltering;
+  std::memcpy(const_cast<re6::SharedControl*>(&graphics_control),&control,sizeof(control));
+  graphics_settings={};graphics_sequence=0;graphics_loaded.store(false);graphics_latched.store(255);
+  graphics_mounted=false;graphics_retry=0;graphics_attempts=0;game_test::mount_result=0;
+  re6::Settings saved;saved.texture_filtering=re6::TextureFilter::Af4x;saved.anti_aliasing=re6::AntiAliasing::Fxaa3High;
+  game_test::settings_primary.resize(re6::kSettingsBytes);assert(re6::encode_settings(saved,game_test::settings_primary.data(),re6::kSettingsBytes));
+  game_test::settings_backup=backup?game_test::settings_primary:std::vector<std::uint8_t>{};
+  if(backup)game_test::settings_primary[0]^=1;
+  Re6SamplerCreate::Callback(nullptr,descriptor.data());std::memcpy(&flags,sampler_seen.data(),4);
+  assert(((flags>>17)&31)==4&&graphics_loaded.load()&&graphics_control.settings_source==(backup?2u:1u));
+  assert(graphics_control.status==1);
+  assert(graphics_control.applied_sequence==graphics_control.sequence&&graphics_aa_request.load()==4);
+ }
+ std::puts("RE6 native observer and graphics adapter tests passed");
 }

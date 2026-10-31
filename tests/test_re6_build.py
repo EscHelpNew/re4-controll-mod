@@ -1,9 +1,18 @@
 import copy
 import unittest
-from tools.re6_module import observer_permissions, sdk6_header
+from tools.re6_module import observer_permissions, graphics_permissions, sdk6_header
 
 
 class Re6BuildTests(unittest.TestCase):
+    def test_graphics_adds_only_sd_access_for_its_separate_settings(self):
+        original={'title_id':'0x01002a000cd48000','filesystem_access':{'permissions':'0x4000000000000000'},
+                  'service_access':['hid','fsp-srv'],'kernel_capabilities':[
+                      {'type':'syscalls','value':{'svcQueryMemory':'0x06'}},
+                      {'type':'debug_flags','value':{}}]}
+        before=copy.deepcopy(original);result=graphics_permissions(original)
+        self.assertEqual(original,before)
+        self.assertEqual(int(result['filesystem_access']['permissions'],16),0x4000000000200000)
+        self.assertEqual(result['service_access'],original['service_access'])
     def test_sdk6_manual_lookup_uses_the_actual_export_spelling(self):
         original = 'namespace nn::ro::detail {\n    extern rtld::lookup_global_t g_LookupGlobalManualFunctionPointer;\n}\n'
         fixed = sdk6_header(original)

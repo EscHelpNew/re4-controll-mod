@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.14.0 (unreleased, separate RE6 graphics overlay)
+
+- Add a separate bilingual RE6 Graphics overlay with Native defaults, focused
+  help, AF2x–16x filtering and Off/FXAA/FXAA3/FXAA3HQ anti-aliasing choices.
+- Preserve native RE6 controls and gyro; the requested custom gyro work was
+  cancelled after the existing native motion setting was found.
+- Clone eligible native sampler descriptors, keeping point/comparison modes and
+  other flags intact. Filtering changes take effect after restarting RE6.
+- Apply AA transiently to the verified primary render resource; preserve its
+  previous native mode and leave SMAA/resource allocation unchanged.
+- Add separate64-byte settings,128-byte live protocol, safe startup publication
+  and saved startup settings without opening the overlay.
+- Install both graphics and measurement menus; migrate owned three-file RE6
+  receipts while preserving foreign files and the separate RE4 installation.
+- Do not expose unverified shadow or draw-distance controls.
+
 ## 0.13.0 (unreleased, controls and gyro polish)
 
 - Put the controls profile first, cycling with A or Left/Right between Default,

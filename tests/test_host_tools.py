@@ -40,9 +40,10 @@ class PackageTests(unittest.TestCase):
                      'experimental/atmosphere/contents/01002A000CD48000/exefs/subsdk9',
                      'experimental/atmosphere/contents/01002A000CD48000/exefs/main.npdm',
                      'experimental/switch/.overlays/re6-telemetry.ovl',
+                     'experimental/switch/.overlays/re6-controls.ovl',
                      'experimental/switch/.overlays/re4-controls.ovl'):
             self.write('build/' + name, ('OWN_BINARY_' + name).encode())
-        for name in ('docs/installation.md','docs/measurement-ru.md', 'LICENSE', 'third_party/exlaunch/LICENSE',
+        for name in ('docs/installation.md','docs/measurement-ru.md','docs/re6-graphics.md', 'LICENSE', 'third_party/exlaunch/LICENSE',
                      'third_party/libtesla/LICENSE', 'third_party/switch-debug-kit/LICENSE',
                      'third_party/nx-ovlloader/LICENSE.md','third_party/graphics-NOTICES.txt','third_party/NTON-GPL3.txt'):
             self.write(name, ('PUBLIC_' + name).encode())

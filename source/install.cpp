@@ -22,11 +22,11 @@ constexpr const char* destinations[] = {
     "/atmosphere/contents/010099A00BC1E000/exefs/subsdk9",
     "/atmosphere/contents/010099A00BC1E000/exefs/main.npdm",
     "/switch/.overlays/re4-controls.ovl"};
-constexpr const char* re6_names[] = {"re6-subsdk9", "re6-main.npdm", "re6-telemetry.ovl"};
+constexpr const char* re6_names[] = {"re6-subsdk9", "re6-main.npdm", "re6-telemetry.ovl", "re6-controls.ovl"};
 constexpr const char* re6_destinations[] = {
     "/atmosphere/contents/01002A000CD48000/exefs/subsdk9",
     "/atmosphere/contents/01002A000CD48000/exefs/main.npdm",
-    "/switch/.overlays/re6-telemetry.ovl"};
+    "/switch/.overlays/re6-telemetry.ovl", "/switch/.overlays/re6-controls.ovl"};
 constexpr const char* loader_names[] = {"nx-ovlloader.nsp", "re4-controls.ovl", "boot2.flag"};
 constexpr const char* loader_destinations[] = {
     "/atmosphere/contents/420000000007E51A/exefs.nsp",
@@ -100,36 +100,40 @@ static const char* install_bundle(const char* payload_root, const char* sd_root,
     const bool re6=game==GameTarget::RE6&&!loader;
     const auto* file_names=loader?loader_names:re6?re6_names:names;
     const auto* file_destinations=loader?loader_destinations:re6?re6_destinations:destinations;
-    const auto receipt_tag=re6?"RE6INST1":"RE4INST1";
-    std::array<Bytes, 3> payload;
-    std::array<std::string, 3> paths;
+    const auto receipt_tag=re6?"RE6INST2":"RE4INST1";
+    const unsigned count=re6?4:3;
+    std::array<Bytes, 4> payload;
+    std::array<std::string, 4> paths;
     Bytes receipt;
     const auto receipt_path = std::string(sd_root) + (loader ? "/switch/re4-controls/installed-loader.bin" : re6?"/switch/re4-controls/installed-re6-files.bin":"/switch/re4-controls/installed-files.bin");
-    const bool ours = read(receipt_path, receipt) && receipt.size() == 32 && !std::memcmp(receipt.data(), receipt_tag, 8);
-    for (unsigned i = 0; i < 3; ++i) {
+    const bool had_receipt=read(receipt_path,receipt);
+    const bool ours=had_receipt&&((receipt.size()==8+count*8&&!std::memcmp(receipt.data(),receipt_tag,8))
+        ||(re6&&receipt.size()==32&&!std::memcmp(receipt.data(),"RE6INST1",8)));
+    const unsigned owned_count=ours?unsigned((receipt.size()-8)/8):0;
+    for (unsigned i = 0; i < count; ++i) {
         if (!read(std::string(payload_root) + '/' + file_names[i], payload[i])) return "Payload missing";
-        const size_t offset = loader ? (i == 1 ? 16 : 0) : (i == 2 ? 16 : 0);
+        const size_t offset = loader ? (i == 1 ? 16 : 0) : (i >= 2 ? 16 : 0);
         const char* magic = loader ? (i == 0 ? "PFS0" : "NRO0") : (i == 0 ? "NSO0" : i == 1 ? "META" : "NRO0");
         if (loader && i == 2) {
             if (!payload[i].empty()) return "Invalid boot flag payload";
         } else if (payload[i].size() < 128 || std::memcmp(payload[i].data() + offset, magic, 4)) return "Invalid payload";
         paths[i] = std::string(sd_root) + file_destinations[i];
-        if ((!only_overlay || i == 2) && exists(paths[i])) {
+        if ((!only_overlay || i >= 2) && exists(paths[i])) {
             Bytes current;
             if (!read(paths[i], current)) return "Cannot read existing file";
             if (current == payload[i]) continue;
             std::uint64_t expected = 0;
-            if (ours) std::memcpy(&expected, receipt.data() + 8 + 8 * i, 8);
-            if (!ours || hash(current) != expected) return "Conflict: existing files belong to another mod";
+            if (i<owned_count) std::memcpy(&expected, receipt.data() + 8 + 8 * i, 8);
+            if (i>=owned_count || hash(current) != expected) return "Conflict: existing files belong to another mod";
         }
     }
-    for (unsigned i = 0; i < 3; ++i)
-        if ((!only_overlay || i == 2) && !publish(paths[i], payload[i])) return "SD write failed; close the target game until installation succeeds";
-    if (!ours) receipt.assign(32, 0);
-    else receipt.resize(32);
+    for (unsigned i = 0; i < count; ++i)
+        if ((!only_overlay || i >= 2) && !publish(paths[i], payload[i])) return "SD write failed; close the target game until installation succeeds";
+    if (!ours) receipt.assign(8+count*8, 0);
+    else receipt.resize(8+count*8,0);
     std::memcpy(receipt.data(), receipt_tag, 8);
-    for (unsigned i = 0; i < 3; ++i) {
-        if (only_overlay && i != 2) continue;
+    for (unsigned i = 0; i < count; ++i) {
+        if (only_overlay && i < 2) continue;
         const auto digest = hash(payload[i]);
         std::memcpy(receipt.data() + 8 + 8 * i, &digest, 8);
     }
@@ -145,11 +149,13 @@ static const char* disable_bundle(const char* sd_root, bool loader, GameTarget g
     const bool re6=game==GameTarget::RE6&&!loader;
     Bytes receipt;
     if (!read(std::string(sd_root) + (loader ? "/switch/re4-controls/installed-loader.bin" : re6?"/switch/re4-controls/installed-re6-files.bin":"/switch/re4-controls/installed-files.bin"), receipt)
-        || receipt.size() != 32 || std::memcmp(receipt.data(), re6?"RE6INST1":"RE4INST1", 8))
+        || !((receipt.size()==32&&!std::memcmp(receipt.data(),re6?"RE6INST1":"RE4INST1",8))
+            ||(re6&&receipt.size()==40&&!std::memcmp(receipt.data(),"RE6INST2",8))))
         return "Conflict: installation receipt unavailable";
-    std::array<std::string, 3> paths;
-    std::array<std::string, 3> backups;
-    for (unsigned i = 0; i < 3; ++i) {
+    const unsigned count=unsigned((receipt.size()-8)/8);
+    std::array<std::string, 4> paths;
+    std::array<std::string, 4> backups;
+    for (unsigned i = 0; i < count; ++i) {
         paths[i] = std::string(sd_root) + (loader ? loader_destinations[i] : re6?re6_destinations[i]:destinations[i]);
         if (!exists(paths[i])) continue;
         Bytes current, disabled;
@@ -166,7 +172,7 @@ static const char* disable_bundle(const char* sd_root, bool loader, GameTarget g
                 return "Conflict: disabled backup differs";
         }
     }
-    for (unsigned i = 0; i < 3; ++i) {
+    for (unsigned i = 0; i < count; ++i) {
         const auto& path = paths[i];
         if (!exists(path)) continue;
         const auto& backup = backups[i];
@@ -174,7 +180,7 @@ static const char* disable_bundle(const char* sd_root, bool loader, GameTarget g
             if (std::remove(path.c_str())) return "SD error while disabling patch";
         } else if (std::rename(path.c_str(), backup.c_str())) return "SD error while disabling patch";
     }
-    return loader ? "Disabled overlay loader. Reboot CFW to stop the menu." : re6?"Disabled RE6 telemetry. Restart RE6.":"Disabled RE4 patch. Original game files will load at next start.";
+    return loader ? "Disabled overlay loader. Reboot CFW to stop the menu." : re6?"Disabled RE6 mod. Restart RE6.":"Disabled RE4 patch. Original game files will load at next start.";
 }
 const char* install_game_files(const char* payload, const char* sd, GameTarget game) { return install_bundle(payload, sd, false, false, game); }
 const char* disable_game_files(const char* sd, GameTarget game) { return disable_bundle(sd, false, game); }
