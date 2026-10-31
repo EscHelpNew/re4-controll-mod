@@ -89,6 +89,20 @@ int main(){
         tsl::goBack();assert(tsl::navigation.empty());
     }
     assert(displayed.size()==unsigned(ControlId::Count)-1);
+    for(auto lang:{Language::English,Language::Russian}){
+        settings=re6_profile();settings.language=lang;
+        for(auto group:{ControlGroup::Camera,ControlGroup::Aiming}){
+            ControlsPageGui page(group);
+            auto* content=static_cast<tsl::elm::OverlayFrame*>(page.createUI());content->layout(0,0,448,720);
+            for(auto id:{ControlId::Camera,ControlId::RightAimX,ControlId::RightAimY}){
+                auto* item=find(content,control_spec(id).label.get(lang));if(!item)continue;
+                page.focused=item;page.update();tsl::gfx::Renderer render;content->draw(&render);
+                assert(render.text.back().value==control_help_text(control_spec(id),settings));
+            }
+            delete content;
+        }
+    }
+    settings={};
     assert(language->click(HidNpadButton_Right) && settings.language==Language::Russian);
     main.update();groups.update();assert(language->label=="Язык" && language->value=="Русский");
     assert(find(frame,"Гироскоп") && !find(frame,"Язык"));

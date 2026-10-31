@@ -325,6 +325,26 @@ struct Fixture {
 }
 int main(){
     {
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.re6_response=true;settings.analog_enabled=false;
+        settings.camera_gain=0;settings.right_aim_gain_x=1;settings.right_aim_gain_y=0;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        control.raw_rx=1;control.raw_ry=1;modern_probe=true;
+        ModernPlayerUpdate::Callback(f.actor);
+        for(unsigned n=0;n<40;++n){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);}
+        assert(f.yaw()<-1.5f&&near(unified_pitch,0)); // RE6 aim gain is independent of overview gain.
+        const float before=f.yaw();settings.right_aim_gain_x=0;settings.right_aim_gain_y=1;
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),before));
+        for(unsigned n=0;n<10;++n){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);}
+        assert(near(f.yaw(),before)&&unified_pitch>.1f); // Gain0 drains its axis without freezing the other.
+        modern_probe=false;game_test::native_aim=0;f.actor[0x115]=1;f.flags()=1;
+        const float walking_before=f.yaw();
+        for(unsigned n=0;n<10;++n){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);}
+        assert(near(f.yaw(),walking_before)); // Overview still follows its own zero gain.
+        settings.camera_gain=1;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        for(unsigned n=0;n<10;++n){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);}
+        assert(f.yaw()<walking_before-1.f);
+    }
+    {
         Fixture f;f.view_mode();
         re6::BuildId id{};std::memcpy(id.data(),re4::profile::build_id,32);
         assert(telemetry_ring.initialize(100,id,re6::kRe4TitleId));

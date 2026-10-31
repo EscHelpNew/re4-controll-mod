@@ -271,12 +271,71 @@ void re9_canonical_identity() {
     CHECK(!fs::exists(path("builtin-only.bin") + ".controls-custom"));
     CHECK(!fs::exists(path("builtin-only.bin") + ".graphics-custom"));
 }
+void re6_recipe_and_custom_restore() {
+    const auto re6 = ProfileKind::RE6;
+    CHECK(static_cast<unsigned>(re6)==3 && static_cast<unsigned>(ProfileKind::RE9)==2);
+    CHECK(!Settings{}.re6_response && !re9_profile().re6_response && re6_profile().re6_response);
+    auto scoped = re6_profile();
+    copy_profile(scoped, custom(), ProfileDomain::Graphics);
+    CHECK(scoped.re6_response && profile_kind(scoped, ProfileDomain::Controls)==re6);
+    const auto file = path("re6.bin");
+    auto active = custom();
+    CHECK(save_settings_file(file.c_str(), active)); // Migrate a pre-preset install.
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Controls, re6) == ProfileResult::Applied);
+    CHECK(profile_kind(active, ProfileDomain::Controls) == re6);
+    CHECK(active.analog_enabled && active.gyro_enabled && active.free_camera && active.unified_controls);
+    CHECK(active.re6_response);
+    CHECK(active.move_while_aiming && active.move_while_knife && !active.first_person);
+    CHECK(active.camera_return_speed == 0 && active.third_person_distance == 1.15f);
+    CHECK(active.reticle == ReticleStyle::Crosshair && active.reticle_size == ReticleSize::Small);
+    CHECK(active.turn_gain == 1 && active.camera_gain == 1 && active.aim_gain_x == 1 && active.aim_gain_y == 1);
+    CHECK(active.right_aim_gain_x == 1 && active.right_aim_gain_y == 1 && active.gyro_gain_x == 1 && active.gyro_gain_y == 1);
+    CHECK(active.gyro_speed == 0.8f && active.invert_x && active.invert_y);
+    CHECK(active.left_deadzone == 0.05f && active.right_deadzone == 0.05f);
+    const ButtonMap expected{0,1,2,3,1,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
+    CHECK(active.remap_enabled && active.button_map == expected);
+    CHECK(active.texture_filtering == TextureFilter::Aniso4 && active.draw_distance_scale == 1.5f);
+    CHECK(active.language == Language::Russian && active.calibration_request == 17);
+    CHECK(active.gyro_bias_x == 1.2f && active.gyro_bias_y == -2.1f);
+    std::array<std::uint8_t, kSettingsBytes> wire{};
+    CHECK(encode_settings(active, wire.data(), wire.size()) && wire[97] == 30);
+    const auto controls = bytes(file + ".controls-custom");
+    Settings restarted;
+    CHECK(load_settings_file(file.c_str(), restarted));
+    CHECK(profile_kind(restarted, ProfileDomain::Controls) == re6);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, re6) == ProfileResult::Unchanged);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, ProfileKind::RE9) == ProfileResult::Applied);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, ProfileKind::Default) == ProfileResult::Applied);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, re6) == ProfileResult::Applied);
+    CHECK(bytes(file + ".controls-custom") == controls);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, ProfileKind::Custom) == ProfileResult::Applied);
+    CHECK(restarted.turn_gain == 0.43f && restarted.button_map[0] == kUnboundButton);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, re6) == ProfileResult::Applied);
+    restarted.camera_gain = 0.64f; restarted.right_aim_gain_x = 0.32f;
+    CHECK(profile_kind(restarted, ProfileDomain::Controls) == ProfileKind::Custom);
+    CHECK(save_profiled_settings(file.c_str(), restarted));
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, ProfileKind::Default) == ProfileResult::Applied);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, ProfileKind::Custom) == ProfileResult::Applied);
+    CHECK(restarted.camera_gain == 0.64f && restarted.right_aim_gain_x == 0.32f);
+    CHECK(encode_settings(restarted, wire.data(), wire.size()) && (wire[97] & 16));
+    const auto before = restarted;
+    const auto saved = bytes(file);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Graphics, re6) == ProfileResult::SaveFailed);
+    CHECK(encoded_equal(restarted, before) && bytes(file) == saved);
+    const auto builtin_file = path("re6-only.bin");
+    CHECK(save_profiled_settings(builtin_file.c_str(), re6_profile()));
+    CHECK(!fs::exists(builtin_file + ".controls-custom"));
+    CHECK(save_settings_file((builtin_file + ".controls-custom").c_str(), re6_profile()));
+    CHECK(!load_custom_profile(builtin_file.c_str(), ProfileDomain::Controls, restarted));
+    CHECK(encoded_equal(restarted, before));
+}
 }
 int main() {
     fs::remove_all(root); fs::create_directories(root);
     domain_copy_and_identity(); migration_and_restore(); snapshots_survive_default_preferences();
     invalid_custom_is_unchanged(); recovery(); failed_snapshot_preserves_active();
     re9_recipe_switch_and_restart(); builtin_saves_preserve_existing_custom(); re9_rejection_and_failed_save(); re9_canonical_identity();
+    re6_recipe_and_custom_restore();
     fs::remove_all(root);
     if (failures) { std::fprintf(stderr, "%d profile checks failed\n", failures); return 1; }
     std::puts("profiles: independent domains, canonical identity, migration, recovery and failed writes PASS");

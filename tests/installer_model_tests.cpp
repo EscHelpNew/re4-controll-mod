@@ -145,7 +145,8 @@ int main(){
     m.selected=0;assert(m.handle(UiEvent::Confirm)==InstallerAction::DefaultControls);
     assert(m.settings.turn_gain==0.5f); // Application performs profile persistence.
     m.settings={};
-    m.selected=2;assert(m.handle(UiEvent::Confirm)==InstallerAction::CustomControls);
+    m.selected=2;assert(m.handle(UiEvent::Confirm)==InstallerAction::RE6Controls);
+    m.selected=3;assert(m.handle(UiEvent::Confirm)==InstallerAction::CustomControls);
     m.settings.shadow_mode=ShadowMode::Off;
     assert(m.item_value(0)=="Active" && m.handle(UiEvent::Left)==InstallerAction::None);
     assert(m.handle(UiEvent::Back)==InstallerAction::None && m.selected_control()==ControlId::Profile);

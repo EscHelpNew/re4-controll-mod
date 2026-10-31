@@ -68,7 +68,7 @@ public:
 };
 class ControlsProfilesGui : public tsl::Gui {
     DescriptionFrame* frame_=nullptr;
-    std::array<tsl::elm::ListItem*,3> rows_{};
+    std::array<tsl::elm::ListItem*,re4::kControlProfiles.size()> rows_{};
     re4::ProfileKind last_action_=re4::ProfileKind::Default;
 public:
     tsl::elm::Element* createUI()override{
@@ -249,7 +249,7 @@ public:
             }
             list->addItem(item);bindings_.push_back({item,entry});
         }
-        if(re4::control_group_count(group_))frame->set_help(re4::control_spec(re4::control_group_item(group_,0)).help.get(settings.language));
+        if(re4::control_group_count(group_))frame->set_help(re4::control_help_text(re4::control_spec(re4::control_group_item(group_,0)),settings));
         frame->setContent(list);refresh();return frame;
     }
     void update()override{
@@ -259,7 +259,7 @@ public:
         if(description_frame_){
             for(const auto& binding:bindings_)if(binding.item==getFocusedElement()){
                 description_frame_->set_help(binding.spec->id==re4::ControlId::Profile && !note.empty()?
-                    note.c_str():binding.spec->help.get(settings.language));break;
+                    note.c_str():re4::control_help_text(*binding.spec,settings));break;
             }
         }
     }

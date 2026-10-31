@@ -34,6 +34,13 @@ Settings re9_profile() {
     settings.button_map[4] = 1;   // L3 -> B: hold run.
     return settings;
 }
+Settings re6_profile() {
+    Settings settings = re9_profile();
+    settings.re6_response = true;
+    settings.aim_gain_x = 1;
+    settings.aim_gain_y = 1;
+    return settings;
+}
 void copy_profile(Settings& destination, const Settings& source, ProfileDomain domain) {
     if (domain == ProfileDomain::Graphics) {
         copy_graphics(destination, source);
@@ -61,6 +68,7 @@ bool same_profile(const Settings& first, const Settings& second, ProfileDomain d
 ProfileKind profile_kind(const Settings& settings, ProfileDomain domain) {
     if (same_profile(settings, Settings{}, domain)) return ProfileKind::Default;
     if (domain == ProfileDomain::Controls && same_profile(settings, re9_profile(), domain)) return ProfileKind::RE9;
+    if (domain == ProfileDomain::Controls && same_profile(settings, re6_profile(), domain)) return ProfileKind::RE6;
     return ProfileKind::Custom;
 }
 bool save_profiled_settings(const char* path, const Settings& settings) {
@@ -92,12 +100,13 @@ bool load_custom_profile(const char* path, ProfileDomain domain, Settings& out) 
 }
 ProfileResult switch_profile(const char* path, Settings& active, ProfileDomain domain, ProfileKind kind) {
     if (!valid_domain(domain)
-        || (kind != ProfileKind::Default && kind != ProfileKind::Custom && kind != ProfileKind::RE9)
-        || (kind == ProfileKind::RE9 && domain != ProfileDomain::Controls))
+        || (kind != ProfileKind::Default && kind != ProfileKind::Custom && kind != ProfileKind::RE9 && kind != ProfileKind::RE6)
+        || ((kind == ProfileKind::RE9 || kind == ProfileKind::RE6) && domain != ProfileDomain::Controls))
         return ProfileResult::SaveFailed;
     Settings next = active;
     if (kind == ProfileKind::Default) copy_profile(next, Settings{}, domain);
     else if (kind == ProfileKind::RE9) copy_profile(next, re9_profile(), domain);
+    else if (kind == ProfileKind::RE6) copy_profile(next, re6_profile(), domain);
     else if (!load_custom_profile(path, domain, next)) return ProfileResult::MissingCustom;
     if (same_profile(active, next, domain)) return ProfileResult::Unchanged;
     if (!save_profiled_settings(path, next)) return ProfileResult::SaveFailed;

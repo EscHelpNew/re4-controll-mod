@@ -125,6 +125,7 @@ InstallerAction InstallerModel::handle(UiEvent event){
         if(event!=UiEvent::Confirm || selected>=kControlProfiles.size())return InstallerAction::None;
         const auto kind=kControlProfiles[selected];
         return kind==ProfileKind::RE9?InstallerAction::RE9Controls:
+            kind==ProfileKind::RE6?InstallerAction::RE6Controls:
             kind==ProfileKind::Custom?InstallerAction::CustomControls:InstallerAction::DefaultControls;
     }
     if(page==InstallerPage::Updates){
@@ -271,7 +272,7 @@ const char* InstallerModel::selected_help()const{
     if(page==InstallerPage::Controls)return control_group_spec(static_cast<ControlGroup>(selected)).help.get(settings.language);
     if(page==InstallerPage::ControlGroup){
         const auto id=selected_control();
-        return id==ControlId::Count?"":control_spec(id).help.get(settings.language);
+        return id==ControlId::Count?"":control_help_text(control_spec(id),settings);
     }
     return Bilingual{"ZL: gyro preview  A: gyro on/off\nY: calibrate  X: reset preview",
                      "ZL: проверка  A: гироскоп вкл./выкл.\nY: калибровать  X: сбросить прицел"}.get(settings.language);

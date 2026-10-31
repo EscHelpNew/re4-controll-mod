@@ -175,7 +175,7 @@ void (*native_gx_position)(float,float,float)=nullptr;
 void (*native_gx_color)(unsigned,unsigned,unsigned,unsigned)=nullptr;
 void (*native_gx_end)(unsigned)=nullptr;
 re4::UnifiedLook unified_look;
-float unified_look_gain=-1,unified_look_deadzone=-1;
+float unified_look_gain=-1,unified_look_deadzone=-1,unified_aim_gain_x=-1,unified_aim_gain_y=-1;
 re4::StickCurve unified_look_curve=re4::StickCurve::Linear;
 struct UnifiedUpdate {
     void* actor=nullptr;
@@ -351,20 +351,25 @@ void unified_player_update(void* actor,void (*original)(void*)){
     publish_view_settings();
     // A live tuning edit drains old velocity. Gain0 is an immediate stop,
     // including an already accelerated stick; orientation itself is retained.
-    if(settings.camera_gain<=0||settings.camera_gain!=unified_look_gain||settings.right_deadzone!=unified_look_deadzone
+    if(settings.camera_gain!=unified_look_gain||settings.right_deadzone!=unified_look_deadzone
+        ||(settings.re6_response&&(settings.right_aim_gain_x!=unified_aim_gain_x||settings.right_aim_gain_y!=unified_aim_gain_y))
         ||settings.stick_curve!=unified_look_curve)unified_look.reset();
     unified_look_gain=settings.camera_gain;unified_look_deadzone=settings.right_deadzone;unified_look_curve=settings.stick_curve;
+    unified_aim_gain_x=settings.right_aim_gain_x;unified_aim_gain_y=settings.right_aim_gain_y;
     const bool scene=unified_scene(actor);
     const auto* b=static_cast<const std::uint8_t*>(actor);
     const bool walking=scene&&b[0x115]<=4;
     const bool aiming=unified_aim_allowed(actor,true);
     const bool handoff=aiming&&(unified_new_aim||unified_pitch_route!=2)&&unified_pitch_actor==reinterpret_cast<std::uintptr_t>(actor);
     const unsigned route=walking?1:aiming?2:0;
-    float x=re4::shape_axis(control.raw_rx,settings.right_deadzone,settings.camera_gain,settings.stick_curve);
-    float y=re4::shape_axis(control.raw_ry,settings.right_deadzone,settings.camera_gain,settings.stick_curve);
+    const bool measured_aim=settings.re6_response&&aiming;
+    const float gain_x=measured_aim?settings.right_aim_gain_x:settings.camera_gain;
+    const float gain_y=measured_aim?settings.right_aim_gain_y:settings.camera_gain;
+    float x=re4::shape_axis(control.raw_rx,settings.right_deadzone,gain_x,settings.stick_curve);
+    float y=re4::shape_axis(control.raw_ry,settings.right_deadzone,gain_y,settings.stick_curve);
     const auto* type=*reinterpret_cast<const int**>(main_base+0xB1AE10);
     if(type&&*type<0)y=-y;
-    UnifiedUpdate context{actor,unified_look.update(reinterpret_cast<std::uintptr_t>(actor),route,svcGetSystemTick(),route!=0,x,y),walking,false,handoff};
+    UnifiedUpdate context{actor,unified_look.update(reinterpret_cast<std::uintptr_t>(actor),route,svcGetSystemTick(),route!=0,x,y,settings.re6_response),walking,false,handoff};
     auto* prior=unified_update;unified_update=&context;
     auto* directions=reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags);
     const auto old_direction=*directions&15u;

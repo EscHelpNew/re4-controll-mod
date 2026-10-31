@@ -6,6 +6,23 @@
 using namespace re4;
 bool near(float a,float b){return std::fabs(a-b)<1e-4f;}
 int main(){
+ for(unsigned hz:{30u,60u,120u}){
+  UnifiedLook measured;measured.update(9,1,1,true,1,1,true);
+  UnifiedDelta step;
+  for(unsigned n=1;n<=hz*2;++n)step=measured.update(9,1,1+19200000ull*n/hz,true,1,1,true);
+  constexpr float to_degrees=57.2957795131f;
+  assert(std::fabs(-step.yaw*hz*to_degrees-171.6f)<.03f);
+  assert(std::fabs(step.pitch*hz*to_degrees-90.f)<.03f);
+  assert(measured.update(9,2,38400001,true,1,1,true).yaw==0); // Raising/route change drains overview speed.
+  for(unsigned n=1;n<=hz*2;++n)step=measured.update(9,2,38400001+19200000ull*n/hz,true,1,1,true);
+  assert(std::fabs(-step.yaw*hz*to_degrees-57.3f)<.03f);
+  assert(std::fabs(step.pitch*hz*to_degrees-53.f)<.03f);
+  float coast=0;
+  for(unsigned n=1;n<=hz/5;++n)coast-=measured.update(9,2,76800001+19200000ull*n/hz,true,0,0,true).yaw;
+  const float expected=(57.3f/to_degrees)*.047f*(1-std::exp(-.2f/.047f));
+  assert(std::fabs(coast-expected)<.00002f);
+  assert(measured.update(9,2,80640001,true,1,1,false).yaw==0); // Live preset change never replays old velocity.
+ }
  UnifiedLook look;auto d=look.update(1,1,1,true,1,1);assert(d.yaw==0&&d.pitch==0);
  // A50ms step must ease into motion instead of instantly taking full speed.
  d=look.update(1,1,960001,true,1,1);assert(near(d.yaw,-.038524245f));assert(near(d.pitch,.028893184f));

@@ -9,15 +9,19 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.11.2, unreleased**. Published Releases may
+The current source/local build is **0.12.0, unreleased**. Published Releases may
 contain an earlier version while new features are being tested.
 
 ## Features
 
+- A separate [RE6 controls profile](docs/re6-profile.md), based on synchronized
+  console measurements: faster overview, slower aiming and a softer stop.
+  Its first approximation awaits comparison inside RE4.
+
 - Read-only RE6 reference observer and the same synchronized journal in RE4.
   A separate [measurement overlay](docs/measurement-ru.md) records raw sticks,
   player/camera matrices and native timestamps with explicit Start/Stop actions.
-  Hardware capture and numerical tuning are still pending.
+  Handheld capture is verified; the first RE6 response fit awaits comparison in RE4.
 
 - Proportional turning, walking, camera and firearm aiming.
 - Separate left/right aiming sensitivities and adjustable stick deadzones.
@@ -165,5 +169,6 @@ python tools/telemetry_analyze.py build/telemetry/FILE.csv --output build/teleme
 
 These commands use the existing ignored local credential. The separate read-only
 log service exposes only completed telemetry basenames, never arbitrary SD paths.
-Actual console hook coverage and sustained capture remain hardware checks; no
-RE6-derived calibration has been claimed before collecting real logs.
+The first single-player handheld capture was verified with1437 valid samples
+and no lost records. Other controller styles, extended sessions and comparison
+of the new RE6 preset inside RE4 remain hardware checks.

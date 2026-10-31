@@ -55,6 +55,16 @@ int main(){
         mapping|=std::strcmp(spec.label.english,"Button mapping")==0;
     }
     assert(camera_return && free_camera && mapping);
+    for(auto language:{Language::English,Language::Russian}){
+        assert(std::strcmp(profile_name(ProfileKind::RE6,language),"RE6")==0);
+        Settings original=re9_profile();original.language=language;
+        Settings reference=re6_profile();reference.language=language;
+        for(auto id:{ControlId::Camera,ControlId::RightAimX,ControlId::RightAimY,ControlId::UnifiedControls}){
+            assert(std::strcmp(control_help_text(control_spec(id),original),control_spec(id).help.get(language))==0);
+            assert(std::strcmp(control_help_text(control_spec(id),reference),control_spec(id).help.get(language))!=0);
+        }
+        assert(std::strcmp(control_help_text(control_spec(ControlId::Gyro),reference),control_spec(ControlId::Gyro).help.get(language))==0);
+    }
     Settings unified;
     assert(change_control(unified,ControlId::UnifiedControls,1) && unified.unified_controls);
     assert(change_control(unified,ControlId::UnifiedControls,-1) && !unified.unified_controls);

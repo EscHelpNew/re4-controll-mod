@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.0 (unreleased, RE6 controls profile)
+
+- Add a separate RE6 controls preset to the installer and overlay.
+- Use reference-based yaw rates of171.6degrees/s for overview and57.3 for aiming,
+  a slower220ms aiming rise and47ms braking. Overview rise remains50ms; aiming
+  pitch is provisionally53degrees/s, overview pitch90degrees/s.
+- Give the RE6 response independent overview and right-stick aiming gains,
+  including immediate zero-gain cancellation and safe route/profile transitions.
+- Preserve existing Default/RE9 behavior and scoped Custom snapshots.
+- Migrate settings1..11 to wire12 with classic response; use shared ABI16 without
+  changing the400-byte layout. Install the new module and overlay together.
+- RE6 capture on console is now verified:1437 valid samples without lost records.
+  Matching the new preset inside RE4 remains a hardware validation step.
+
 ## 0.11.2 (unreleased, capture buffer discovery fix)
 
 - Identify the public telemetry ring by its committed slot sequences, rather

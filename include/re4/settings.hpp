@@ -48,6 +48,7 @@ struct Settings {
     bool move_while_aiming = false;
     bool move_while_knife = false;
     bool unified_controls = false;
+    bool re6_response = false;
     ReticleStyle reticle = ReticleStyle::Off;
     ReticleSize reticle_size = ReticleSize::Small;
 };

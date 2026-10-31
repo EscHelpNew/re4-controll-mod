@@ -36,6 +36,7 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs();
 const ControlSpec& control_spec(ControlId id);
 const char* curve_name(StickCurve curve,Language language);
 std::string control_value_text(const ControlSpec&,const Settings&);
+const char* control_help_text(const ControlSpec&,const Settings&);
 bool change_control(Settings&,ControlId,int direction);
 enum class GraphicsId : unsigned { TextureFiltering, AntiAliasing, DrawDistance, Shadows, Profile, Reset, Count };
 struct GraphicsSpec {
@@ -49,7 +50,7 @@ std::string graphics_value_text(const GraphicsSpec&,const Settings&);
 bool change_graphics(Settings&,GraphicsId,int direction);
 bool reset_graphics(Settings&);
 const char* profile_name(ProfileKind,Language);
-inline constexpr std::array<ProfileKind,3> kControlProfiles{{ProfileKind::Default,ProfileKind::RE9,ProfileKind::Custom}};
+inline constexpr std::array<ProfileKind,4> kControlProfiles{{ProfileKind::Default,ProfileKind::RE9,ProfileKind::RE6,ProfileKind::Custom}};
 const char* control_profile_help(ProfileKind,Language);
 const char* profile_result_text(ProfileResult,Language);
 constexpr unsigned kMappingRowCount=kButtonCount+2;
