@@ -24,7 +24,21 @@ inline std::uint64_t find_journal(re6::RemoteReader reader,std::uint64_t base,st
    re6::Header h{};
    if(re6::read_header(reader,base+offset+j,h)!=re6::ReadStatus::Empty||h.build_id!=build||h.title_id!=title)continue;
    const auto ring_size=sizeof(h)+std::uint64_t(h.capacity)*sizeof(re6::AtomicSlot);
-   if(ring_size<=size-offset-j)return base+offset+j;
+   if(ring_size>size-offset-j)continue;
+   // ProducerRing also contains a private Header-shaped state before storage.
+   // Header metadata alone therefore cannot identify the remotely readable
+   // ring. Verify committed slot sequence words in the declared storage layout.
+   const auto address=base+offset+j;
+   bool slots_match=true;
+   const auto probes=h.published>=2?2u:1u;
+   for(unsigned depth=0;depth<probes;++depth){
+    const auto serial=h.published-depth;
+    const auto index=serial?(serial-1)%h.capacity:0;
+    std::uint64_t sequence=0;
+    if(!reader.read(reader.context,address+sizeof(h)+index*sizeof(re6::AtomicSlot),&sequence,8)
+       ||sequence!=serial*2){slots_match=false;break;}
+   }
+   if(slots_match)return address;
   }
  }
  return 0;

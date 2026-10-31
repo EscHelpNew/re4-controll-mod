@@ -6,6 +6,7 @@
 #include "re4/home_launcher.hpp"
 #include "re4/version.hpp"
 #include "re6/log_server.hpp"
+#include "re4/support_report.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -258,6 +259,8 @@ int main(int argc, char** argv) {
         if (report) {
             std::fprintf(report, "RE4 inspection HOS=%08X applet=%u\n%s\n", hosversionGet(),
                 unsigned(appletGetAppletType()), game.details.c_str());
+            inspect_installed_game(report,re4::GameTarget::RE6);
+            inspect_installed_game(report,re4::GameTarget::RE4);
             if (overlay_storage::mount()) {
                 mkdir("r4ovl:/config", 0777); mkdir("r4ovl:/config/re4-controls", 0777);
                 re4::Settings check;
@@ -277,12 +280,16 @@ int main(int argc, char** argv) {
                 std::fprintf(report, "last_overlay_inspection:\n%.*s\n", int(count), text);
             }
             inspect_overlay_loader(report);
-            inspect_installed_game(report,re4::GameTarget::RE4);
-            inspect_installed_game(report,re4::GameTarget::RE6);
             std::fclose(report);
         }
         game.close(); pmdmntExit();
     }
+    mkdir(NXDK_SD_ROOT "/telemetry",0777);
+    char support_path[256];u64 support_pid=0;svcGetProcessId(&support_pid,CUR_PROCESS_HANDLE);
+    std::snprintf(support_path,sizeof(support_path),NXDK_SD_ROOT "/telemetry/support-%llX-%llu.csv",
+        (unsigned long long)support_pid,(unsigned long long)armGetSystemTick());
+    if(!re4::write_support_report("sdmc:",support_path,re4::kVersion))
+        std::fprintf(stderr,"[support] Could not save diagnostic report\n");
     const Result sockets = socketInitializeDefault();
     if (R_SUCCEEDED(sockets)) {
         nxlinkStdioForDebug();

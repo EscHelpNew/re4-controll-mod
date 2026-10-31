@@ -77,6 +77,12 @@ def tests():
          'tests/telemetry_transfer_tests.cpp','source/re6/log_server.cpp',
          '-ladvapi32','-lws2_32','-o',OUT/'telemetry_transfer_tests.exe'])
     native('telemetry_transfer_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-static','-Iinclude',
+         'tests/support_report_tests.cpp','source/diagnostic/support_report.cpp','-o',OUT/'support_report_tests.exe'])
+    native('support_report_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/re6_capture_status_tests.cpp','-o',OUT/'re6_capture_status_tests.exe'])
+    native('re6_capture_status_tests.exe')
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/modern_move_tests.cpp','source/input.cpp','-o',OUT/'modern_move_tests.exe'])
     native('modern_move_tests.exe')
@@ -177,7 +183,7 @@ def diagnostic():
                    'source/overlay/storage.cpp',
                    'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
                    'source/diagnostic/home_policy.cpp','source/diagnostic/home_launcher.cpp',
-                   'source/diagnostic/update_worker.cpp','source/re6/log_server.cpp',
+                   'source/diagnostic/update_worker.cpp','source/re6/log_server.cpp','source/diagnostic/support_report.cpp',
                    'source/diagnostic/main.cpp'):
         dest = OUT / (Path(source).stem + '.o')
         run([tool('g++'), '-std=gnu++17', '-fno-exceptions', '-fno-rtti', *common,

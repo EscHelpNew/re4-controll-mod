@@ -51,3 +51,16 @@ C:/msys64/mingw64/bin/g++.exe -std=c++20 -Wall -Wextra -Werror -static -Iinclude
 Host tests and an actual devkitA64 compile/link verify the collector logic and
 Tesla integration. Console validation is still required for dmnt permissions,
 game-specific hook coverage, SD behavior, and sustained recording performance.
+
+`telemetry-status.csv` is a separate diagnostic schema, not a game journal. It
+retains the target/actual build, operation phase, IPC result and recorder error,
+including connection failures before a sample file exists. It is updated on
+state/error transitions instead of every frame. On Switch, filename replacement
+uses a complete `.previous` recovery copy because Horizon cannot replace an
+existing file with one atomic rename. A diagnostic write failure is shown
+separately and never changes the recorder's failure reason.
+
+Discovery checks committed slot sequences as well as header metadata. The
+producer's private state contains another valid-looking Header before public
+storage; accepting that copy produced zero-record incomplete captures in 0.11.0.
+The updated overlay can discover the already-installed native module correctly.

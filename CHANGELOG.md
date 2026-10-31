@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.11.2 (unreleased, capture buffer discovery fix)
+
+- Identify the public telemetry ring by its committed slot sequences, rather
+  than accepting the producer's private copy of its header. The wrong address
+  caused capture to stop with zero records and an incomplete `.csv.part` file.
+- Add whole-producer-memory regression tests, including wrapped buffers and
+  compatibility with the already-installed 0.11.0 game modules.
+- The fix requires the updated telemetry overlay; native RE6 behavior and the
+  existing game module remain unchanged.
+
+## 0.11.1 (unreleased, capture diagnostics)
+
+- Persist the telemetry overlay's target/build identity, capture phase, IPC result
+  and recorder failure, including failures before a game journal is found.
+- Generate bounded own-app support reports with installed-game metadata and
+  diagnostic file inventories; download them through the existing authenticated
+  read-only service. Credential files are excluded.
+- Keep RE6 metadata at the start of the legacy truncated inspection report.
+- This build gathers the failed-capture evidence; it does not claim the
+  underlying console capture error has been diagnosed or fixed.
+
 ## 0.11.0 (unreleased, measurement instrumentation)
 
 - Add a Build-ID/SDK/instruction-guarded read-only RE6 observer for update v131072.

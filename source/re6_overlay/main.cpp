@@ -68,6 +68,7 @@ public:
   renderer->drawString(text,false,22,492,16,color);
   std::snprintf(text,sizeof(text),tr("Errors: %u  IPC: %08X","Ошибок: %u  IPC: %08X"),state.errors,state.result);
   renderer->drawString(text,false,22,516,15,color);
+  if(state.diagnostic_failed)renderer->drawString(tr("Could not save error report to SD","Не удалось сохранить отчёт об ошибке на SD"),false,22,538,13,color);
   renderer->drawString(tr("File (sdmc:/switch/re4-controls/telemetry):","Файл (sdmc:/switch/re4-controls/telemetry):"),false,22,548,13,color);
   const auto length=std::strlen(state.filename);char line[40]{};
   std::memcpy(line,state.filename,std::min<std::size_t>(length,38));renderer->drawString(line,false,22,571,14,color);

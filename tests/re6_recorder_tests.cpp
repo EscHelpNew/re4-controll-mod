@@ -68,4 +68,23 @@ void discovery_scans_bss_past_128k_and_across_chunk_boundary(){
  CHECK(examined>0x20000);auto wrong=Fixture::build();wrong[0]=3;examined=0;CHECK(!telemetry::find_journal({&r,Region::read},0x1000,r.bytes.size(),wrong,kTitleId,examined));
  examined=telemetry::kScanLimit;CHECK(!telemetry::find_journal({&r,Region::read},0x1000,r.bytes.size(),Fixture::build(),kTitleId,examined));
 }
-int main(){starts_at_tail_and_saves_only_new_frames();stop_is_a_finite_snapshot_while_producer_continues();ring_loss_is_counted_and_stop_does_not_export_future_frames();disk_failure_never_claims_saved();restart_and_torn_headers_do_not_export_unverified_data();discovery_scans_bss_past_128k_and_across_chunk_boundary();std::puts("Telemetry recorder tests passed");}
+template<std::size_t Capacity> void discovery_rejects_the_producers_private_header_copy(){
+ for(const unsigned published:{1u,300u,700u,24583u}){
+ struct Region{std::vector<unsigned char> bytes;static bool read(void* p,std::uint64_t addr,void* dst,std::size_t size){auto& v=static_cast<Region*>(p)->bytes;if(addr<0x1000||size>v.size()||addr-0x1000>v.size()-size)return false;std::memcpy(dst,v.data()+addr-0x1000,size);return true;}};
+ ProducerRing<Capacity> ring;CHECK(ring.initialize(7,Fixture::build()));
+ for(unsigned i=1;i<=published;++i){Record record{};record.frame=i;CHECK(ring.capture(record));}
+ Region region;region.bytes.resize(0x100000);constexpr std::size_t offset=0x30FF8;
+ std::memcpy(region.bytes.data()+offset,&ring,sizeof(ring));
+ const auto delta=reinterpret_cast<const unsigned char*>(&ring.storage)-reinterpret_cast<const unsigned char*>(&ring);
+ // Reproduce deployed 0.11.0: a private wire-shaped Header precedes storage,
+ // followed by initialized_=true. Its metadata passes all header-only checks.
+ std::memcpy(region.bytes.data()+offset,&ring.storage.header,sizeof(Header));
+ const std::uint64_t initialized=1;std::memcpy(region.bytes.data()+offset+sizeof(Header),&initialized,8);
+ std::uint64_t examined=0;
+ const auto found=telemetry::find_journal({&region,Region::read},0x1000,region.bytes.size(),Fixture::build(),kTitleId,examined);
+ CHECK(found==0x1000+offset+delta);
+ Cursor cursor;Sample sample{};CHECK(cursor.attach({&region,Region::read},found,Fixture::build())==ReadStatus::Empty);
+ CHECK(cursor.read_next({&region,Region::read},sample)==ReadStatus::Record&&sample.sequence==(published>Capacity?published-Capacity+1:1));
+ }
+}
+int main(){starts_at_tail_and_saves_only_new_frames();stop_is_a_finite_snapshot_while_producer_continues();ring_loss_is_counted_and_stop_does_not_export_future_frames();disk_failure_never_claims_saved();restart_and_torn_headers_do_not_export_unverified_data();discovery_scans_bss_past_128k_and_across_chunk_boundary();discovery_rejects_the_producers_private_header_copy<256>();discovery_rejects_the_producers_private_header_copy<1024>();std::puts("Telemetry recorder tests passed");}
