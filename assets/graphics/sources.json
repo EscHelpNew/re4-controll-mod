@@ -1,0 +1,24 @@
+{
+  "re4": {
+    "game": "resident evil 4 (original game, Nintendo Switch port)",
+    "release_date": "2019-05-21",
+    "source_page": "https://www.nintendo.com/us/store/products/resident-evil-4-switch/",
+    "image_url": "https://assets.nintendo.com/image/upload/store/software/switch/70010000012858/3d15e1e1ba3eab561172e2ec7c2e5fc31803654ff417d842145e110a98bdc41e.jpg",
+    "sha256": "3d15e1e1ba3eab561172e2ec7c2e5fc31803654ff417d842145e110a98bdc41e",
+    "width": 1280,
+    "height": 720,
+    "copyright": "CAPCOM CO., LTD. All rights reserved.",
+    "description": "Official gameplay screenshot: Leon aiming in the village, ground, fence, buildings and distant roofs."
+  },
+  "re6": {
+    "game": "Resident Evil 6 (Nintendo Switch port)",
+    "release_date": "2019-10-29",
+    "source_page": "https://www.nintendo.com/us/store/products/resident-evil-6-switch/",
+    "image_url": "https://assets.nintendo.com/image/upload/store/software/switch/70010000015880/e8a61f6b586aaa05eb0bb95daab16adbaf861a9d752ac29d17b4c12e31bad1dc.jpg",
+    "sha256": "e8a61f6b586aaa05eb0bb95daab16adbaf861a9d752ac29d17b4c12e31bad1dc",
+    "width": 1280,
+    "height": 720,
+    "copyright": "CAPCOM CO., LTD. All rights reserved.",
+    "description": "Official gameplay screenshot: Leon aiming at a creature in a street with angled ground and building edges."
+  }
+}

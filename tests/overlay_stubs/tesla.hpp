@@ -4,9 +4,28 @@
 #include <cstdio>
 #include <functional>
 #include <memory>
+#include <new>
+#include <cstdlib>
 #include <string>
+#include <stdexcept>
 #include <utility>
 #include <vector>
+#ifdef OVERLAY_TEST_TRACK_ALLOCATIONS
+namespace overlay_test_allocations {
+inline bool track=false;
+inline std::size_t largest=0;
+}
+void* operator new(std::size_t size){
+    if(overlay_test_allocations::track)overlay_test_allocations::largest=std::max(overlay_test_allocations::largest,size);
+    if(void* memory=std::malloc(size?size:1))return memory;
+    throw std::bad_alloc();
+}
+void* operator new[](std::size_t size){return ::operator new(size);}
+void operator delete(void* memory)noexcept{std::free(memory);}
+void operator delete[](void* memory)noexcept{std::free(memory);}
+void operator delete(void* memory,std::size_t)noexcept{std::free(memory);}
+void operator delete[](void* memory,std::size_t)noexcept{std::free(memory);}
+#endif
 namespace tsl {
 namespace cfg {constexpr unsigned FramebufferWidth=448,FramebufferHeight=720;}
 namespace style::color {constexpr unsigned ColorDescription=1,ColorText=2;}
@@ -14,10 +33,21 @@ namespace gfx {
 struct Renderer {
     struct Text {std::string value;int x,y;};
     struct Rect {int x,y,w,h;unsigned color;};
+    struct Bitmap {int x,y,w,h;const void* source;unsigned first,distinct;};
     std::vector<Text> text;
     std::vector<Rect> rects;
+    std::vector<Bitmap> bitmaps;
     static unsigned a(unsigned c){return c;}
     void drawRect(int x,int y,int w,int h,unsigned color){rects.push_back({x,y,w,h,color});}
+    void drawBitmap(int x,int y,int w,int h,const u8* pixels){
+        unsigned first=pixels[0]|unsigned(pixels[1])<<8|unsigned(pixels[2])<<16,distinct=0;
+        for(int i=0;i<w*h;++i) {
+            const auto rgb=pixels[i*4]|unsigned(pixels[i*4+1])<<8|unsigned(pixels[i*4+2])<<16;
+            if(rgb!=first)++distinct;
+            if(pixels[i*4+3]!=255)throw std::runtime_error("nonopaque game illustration");
+        }
+        bitmaps.push_back({x,y,w,h,pixels,first,distinct});
+    }
     std::pair<unsigned,unsigned> drawString(const char* s,bool,int x,int y,float,unsigned,int=0) {
         text.push_back({s,x,y});return {0,0};
     }

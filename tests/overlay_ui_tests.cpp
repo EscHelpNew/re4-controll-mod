@@ -1,3 +1,4 @@
+#define OVERLAY_TEST_TRACK_ALLOCATIONS
 #define main re4_overlay_entry
 #include "../source/overlay/main.cpp"
 #undef main
@@ -14,6 +15,42 @@ tsl::elm::ListItem* find(tsl::elm::OverlayFrame* f,const std::string& label){
     return nullptr;
 }
 unsigned markers(const tsl::gfx::Renderer& r){unsigned n=0;for(const auto& rect:r.rects)if(rect.color==0x8fff)++n;return n;}
+void graphics_illustrations(){
+    settings={};note.clear();GraphicsGui gui;
+    auto* frame=static_cast<tsl::elm::OverlayFrame*>(gui.createUI());frame->layout(0,0,448,720);
+    assert(list(frame)->y+list(frame)->height<=322 && list(frame)->children.size()==6);
+    const int regions[][4]={{179,147,51,29},{241,77,72,44},{174,0,76,46},{193,151,40,26},{0,0,0,0},{0,0,0,0}};
+    std::set<std::string> captions;
+    const auto old_saves=saves,old_sends=sends;
+    for(auto language:{re4::Language::English,re4::Language::Russian}){
+        settings.language=language;
+        for(unsigned row=0;row<6;++row){
+            gui.focused=list(frame)->children[row];gui.update();tsl::gfx::Renderer render;
+            overlay_test_allocations::largest=0;overlay_test_allocations::track=true;
+            frame->draw(&render);overlay_test_allocations::track=false;
+            assert(overlay_test_allocations::largest<65536);
+            assert(render.bitmaps.size()==180 && render.text.size()==2);
+            assert(render.text[0].x==20 && render.text[0].y==353 && render.text.back().y==635);
+            assert(!render.text[0].value.empty() && !render.text.back().value.empty());
+            captions.insert(render.text.back().value);
+            unsigned varied=0;
+            for(unsigned line=0;line<180;++line){const auto& b=render.bitmaps[line];
+                assert(b.x==64 && b.y==443+int(line) && b.w==320 && b.h==1);
+                assert(b.source==render.bitmaps.front().source);varied+=b.distinct;
+            }
+            assert(varied>10000);
+            assert(render.rects.size()==(row<4?5u:1u));
+            if(row<4){const auto& outline=render.rects[1];
+                assert(outline.x==64+regions[row][0] && outline.y==443+regions[row][1]);
+                assert(outline.w==regions[row][2] && outline.h==2 && outline.color==0xF93B);
+                for(unsigned i=1;i<render.rects.size();++i){const auto& r=render.rects[i];
+                    assert(r.x>=64 && r.y>=443 && r.x+r.w<=384 && r.y+r.h<=623);
+                }
+            }
+        }
+    }
+    assert(captions.size()==10 && saves==old_saves && sends==old_sends);delete frame;
+}
 }
 namespace overlay_storage {bool ready(){return storage_available;}bool mount(){return storage_available;}void close(){}}
 namespace re4 {
@@ -24,6 +61,7 @@ void GameLink::initialize(){}void GameLink::close(){}bool GameLink::connect(){re
 bool GameLink::apply(const re4::Settings& s){++sends;last_sent_gyro=s.gyro_enabled;return re4::valid_settings(s);}
 int main(){
     using namespace re4;
+    graphics_illustrations();settings={};
     {
         ControlsOverlay overlay;tsl::Overlay& lifecycle=overlay;have_saved=true;
         for(bool enabled:{false,true}){settings={};saved_gyro=enabled;const auto before=sends;
@@ -68,6 +106,7 @@ int main(){
                 auto* row=static_cast<tsl::elm::ListItem*>(list(content)->children[i]);
                 assert(row->label==control_spec(id).label.english);
                 page->focused=row;page->update();tsl::gfx::Renderer help;content->draw(&help);
+                assert(help.bitmaps.empty());
                 assert(!help.text.empty() && help.text.back().value.size()>20);
                 assert(saves==old_saves && sends==old_sends);
                 if(group.id!=ControlGroup::Reticle)assert(markers(help)==0);

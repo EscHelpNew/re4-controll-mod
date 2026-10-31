@@ -1,4 +1,5 @@
 #include "re4/installer_ui.hpp"
+#include "re4/graphics_preview.hpp"
 #include <cassert>
 #include <cstdio>
 #include <fstream>
@@ -57,6 +58,16 @@ void check_game_frame(const char* path,bool re6){
     }
     SDL_FreeSurface(image);
 }
+#undef assert
+#define assert(c) do{if(!(c)){std::fprintf(stderr,"installer preview line %d: %s\n",__LINE__,#c);std::exit(1);}}while(false)
+void check_graphics_picture(const char* path){
+    auto* image=SDL_LoadBMP(path);assert(image);
+    unsigned varied=0;const auto base=pixel_at(image,870,350);
+    for(int y=345;y<530;y+=3)for(int x=866;x<1202;x+=3){const auto c=pixel_at(image,x,y);
+        if(std::abs(int(c.r)-base.r)+std::abs(int(c.g)-base.g)+std::abs(int(c.b)-base.b)>45)++varied;}
+    assert(varied>1000); // Actual textured scene, not a placeholder/solid panel.
+    SDL_FreeSurface(image);
+}
 int main(){
     std::ifstream stream("C:/Windows/Fonts/segoeui.ttf",std::ios::binary);
     std::vector<unsigned char> font((std::istreambuf_iterator<char>(stream)),{});
@@ -74,6 +85,10 @@ int main(){
         model.page=re4::InstallerPage::Graphics;model.selected=0;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-graphics-en.bmp":"build/installer-graphics-ru.bmp"));
+        check_graphics_picture(language==re4::Language::English?"build/installer-graphics-en.bmp":"build/installer-graphics-ru.bmp");
+        for(unsigned row=0;row<6;++row){model.selected=row;renderer.draw(model);
+            const auto file="build/installer-graphics-"+std::string(language==re4::Language::English?"en":"ru")+"-"+std::to_string(row)+".bmp";
+            assert(renderer.save_preview(file.c_str()));check_graphics_picture(file.c_str());}
         model.settings.texture_filtering=re4::TextureFilter::Aniso4;
         model.selected=unsigned(re4::GraphicsId::Profile);
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
@@ -144,6 +159,12 @@ int main(){
         renderer.draw(model);
         const auto* path=language==re4::Language::English?"build/installer-re6-home-en.bmp":"build/installer-re6-home-ru.bmp";
         assert(renderer.save_preview(path));check_game_frame(path,true);
+        model.selected=2;assert(model.item_count()==5&&model.handle(re4::UiEvent::Confirm)==re4::InstallerAction::None);
+        assert(model.page==re4::InstallerPage::Graphics&&model.item_count()==3);
+        for(unsigned row=0;row<3;++row){model.selected=row;renderer.draw(model);
+            const auto file="build/installer-re6-graphics-"+std::string(language==re4::Language::English?"en":"ru")+"-"+std::to_string(row)+".bmp";
+            assert(renderer.save_preview(file.c_str()));check_graphics_picture(file.c_str());}
+        assert(model.handle(re4::UiEvent::Back)==re4::InstallerAction::None&&model.page==re4::InstallerPage::Home&&model.selected==2);
     }
     renderer.close();renderer.close();
     assert(SDL_WasInit(SDL_INIT_VIDEO)==0 && !renderer.save_preview("build/installer-closed.bmp"));

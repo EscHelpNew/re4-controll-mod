@@ -2,6 +2,7 @@
 #include "control_menu.hpp"
 #include "update.hpp"
 #include "game_target.hpp"
+#include "re6/settings.hpp"
 #include <cstddef>
 #include <string>
 
@@ -9,7 +10,7 @@ namespace re4 {
 enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup };
 enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview,PreviousGame,NextGame };
 enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate,
-    DefaultControls,CustomControls,DefaultGraphics,CustomGraphics,RE6Controls };
+    DefaultControls,CustomControls,DefaultGraphics,CustomGraphics,RE6Controls,SaveRe6Graphics };
 enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
 struct DiagnosticSnapshot {
     bool connected=false,network=false;
@@ -28,6 +29,7 @@ class InstallerModel {
 public:
     GameTarget game=GameTarget::RE4;
     Settings settings=default_controls_profile();
+    re6::Settings re6_settings;
     InstallerPage page=InstallerPage::Home;
     unsigned selected=0,home_selected=0;
     unsigned controls_selected=0,mapping_source=0;
@@ -48,6 +50,7 @@ public:
     std::string item_value(unsigned index)const;
     void installation_result(const char* result);
     bool allow_installation(bool process_identified,bool re4_running);
+    bool save_re6_graphics(const char* path=re6::kSettingsPath);
 };
 
 class InstallerRenderer {

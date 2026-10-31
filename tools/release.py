@@ -21,7 +21,7 @@ PUBLIC_FILES={
     'switch/.overlays/re6-telemetry.ovl','switch/.overlays/re6-controls.ovl','README-measurement-ru.md','README-re6-graphics.md',
     'install/re4-controls-forwarder.nsp','README-install.md',
     'licenses/MIT.txt','licenses/exlaunch-GPL2.txt','licenses/libtesla-GPL2.txt',
-    'licenses/Switch-Debug-Kit-MIT.txt','licenses/nx-ovlloader-GPL2.txt','licenses/graphics-NOTICES.txt','licenses/NTON-GPL3.txt'
+    'licenses/Switch-Debug-Kit-MIT.txt','licenses/nx-ovlloader-GPL2.txt','licenses/graphics-NOTICES.txt','licenses/graphics-preview-NOTICES.md','licenses/NTON-GPL3.txt'
 }
 ASSETS={'re4-controls.nro','re4-controls-sd.zip','re4-controls-update.txt','SHA256SUMS'}
 

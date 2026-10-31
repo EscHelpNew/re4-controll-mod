@@ -2,18 +2,32 @@
 #include <cstring>
 namespace re4 {
 namespace {
-const std::array<HomeItem,4> re6_home_items{{
+const std::array<HomeItem,5> re6_home_items{{
     {{"Install RE6 module","Установить модуль RE6"},
      {"Install RE6 graphics and measurement modules.\nClose Resident Evil 6 before installing.",
       "Установить графику и журнал RE6.\nПеред установкой закройте Resident Evil 6."}},
     {{"Install RE6 overlay","Установить оверлей RE6"},
      {"Install RE6 Graphics and the measurement menu.\nKeeps the existing Uberhand installation.",
       "Установить графику и меню измерений RE6.\nСуществующий Uberhand сохраняется."}},
+    {{"Graphics","Графика"},
+     {"Save separate RE6 graphics settings.\nChanges apply on the next RE6 launch.\nA: open. B: return.",
+      "Отдельные настройки графики RE6.\nПрименятся при следующем запуске RE6.\nA: открыть. B: назад."}},
     {{"Language","Язык"},
      {"Choose English or Russian for both games.\nUse LEFT/RIGHT or A to change.",
       "Русский или английский для обеих игр.\nСмена: влево/вправо или A."}},
     {{"Exit","Выход"},
      {"Return to the HOME menu.","Вернуться на главный экран консоли."}}
+}};
+const std::array<HomeItem,3> re6_graphics_items{{
+    {{"Texture filtering","Фильтрация текстур"},
+     {"Native preserves the game's filtering.\nAF improves textures at an angle.\nChanges require a game restart.",
+      "Штатная: исходная фильтрация игры.\nAF улучшает текстуры под углом.\nПосле изменения перезапустите игру."}},
+    {{"Anti-aliasing","Сглаживание"},
+     {"Native preserves the game's setting.\nApplied on the next RE6 launch.\nA / Left / Right: choose an AA mode.",
+      "Штатное: исходное сглаживание игры.\nПрименится при следующем запуске RE6.\nA / влево / вправо: выбрать режим."}},
+    {{"Reset graphics","Сброс графики"},
+     {"Restore native filtering and AA.\nApplied on the next RE6 launch.\nThe selected language is kept. A: reset.",
+      "Вернуть штатные фильтрацию и сглаживание.\nПри следующем запуске RE6.\nЯзык сохранится. A: сбросить."}}
 }};
 }
 const std::array<HomeItem,9>& installer_home_items(){
@@ -49,7 +63,7 @@ const std::array<HomeItem,9>& installer_home_items(){
     return items;
 }
 unsigned InstallerModel::item_count()const{
-    if(game==GameTarget::RE6)return page==InstallerPage::Home?4:0;
+    if(game==GameTarget::RE6)return page==InstallerPage::Home?5:page==InstallerPage::Graphics?3:0;
     if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
     if(page==InstallerPage::ControlGroup)return control_group_count(control_group);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
@@ -68,21 +82,46 @@ InstallerAction InstallerModel::handle(UiEvent event){
         old.status=status;old.detail=detail;
         game=game==GameTarget::RE4?GameTarget::RE6:GameTarget::RE4;
         const auto& next=game_home_[game==GameTarget::RE6?1:0];
-        page=InstallerPage::Home;selected=next.selected;
+        page=InstallerPage::Home;selected=next.selected;home_selected=selected;
         status=next.status;detail=next.detail;profile_note.clear();
         return InstallerAction::None;
     }
     if(game==GameTarget::RE6){
-        page=InstallerPage::Home;
-        if(event==UiEvent::Exit || event==UiEvent::Back)return InstallerAction::Exit;
-        if(event==UiEvent::Up || event==UiEvent::Down){
-            selected=(selected+(event==UiEvent::Down?1:3))%4;return InstallerAction::None;
+        if(event==UiEvent::Exit)return InstallerAction::Exit;
+        if(page!=InstallerPage::Home && page!=InstallerPage::Graphics){
+            page=InstallerPage::Home;selected=home_selected;
+            return InstallerAction::None;
         }
-        if(selected>=4)return InstallerAction::None;
-        if(selected==2 && (event==UiEvent::Confirm || event==UiEvent::Left || event==UiEvent::Right)){
+        if(event==UiEvent::Back){
+            if(page==InstallerPage::Home)return InstallerAction::Exit;
+            page=InstallerPage::Home;selected=2;return InstallerAction::None;
+        }
+        const auto count=item_count();
+        if(event==UiEvent::Up || event==UiEvent::Down){
+            selected=(selected+(event==UiEvent::Down?1:count-1))%count;return InstallerAction::None;
+        }
+        if(selected>=count)return InstallerAction::None;
+        if(page==InstallerPage::Graphics){
+            if(selected==2){
+                if(event!=UiEvent::Confirm || (re6_settings.texture_filtering==re6::TextureFilter::Native
+                    && re6_settings.anti_aliasing==re6::AntiAliasing::Native))return InstallerAction::None;
+                re6_settings.texture_filtering=re6::TextureFilter::Native;
+                re6_settings.anti_aliasing=re6::AntiAliasing::Native;
+                return InstallerAction::SaveRe6Graphics;
+            }
+            if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
+            const int direction=event==UiEvent::Left?-1:1;
+            if(selected==0)re6_settings.texture_filtering=static_cast<re6::TextureFilter>(
+                (int(re6_settings.texture_filtering)+direction+5)%5);
+            else re6_settings.anti_aliasing=static_cast<re6::AntiAliasing>(
+                (int(re6_settings.anti_aliasing)+direction+5)%5);
+            return InstallerAction::SaveRe6Graphics;
+        }
+        if(selected==3 && (event==UiEvent::Confirm || event==UiEvent::Left || event==UiEvent::Right)){
             change_control(settings,ControlId::Language,1);return InstallerAction::SaveSettings;
         }
         if(event!=UiEvent::Confirm)return InstallerAction::None;
+        if(selected==2){home_selected=2;page=InstallerPage::Graphics;selected=0;return InstallerAction::None;}
         return selected==0?InstallerAction::InstallGame:selected==1?InstallerAction::InstallOverlay:InstallerAction::Exit;
     }
     profile_note.clear();
@@ -195,6 +234,8 @@ InstallerAction InstallerModel::handle(UiEvent event){
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
+    if(game==GameTarget::RE6 && page!=InstallerPage::Graphics)
+        return Bilingual{"MOD INSTALLER","УСТАНОВКА МОДА"}.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_group_spec(control_group).label.get(settings.language);
     if(page==InstallerPage::Graphics)return Bilingual{"GRAPHICS","ГРАФИКА"}.get(settings.language);
     if(page==InstallerPage::Mapping)return Bilingual{"BUTTON MAPPING","НАЗНАЧЕНИЕ КНОПОК"}.get(settings.language);
@@ -243,7 +284,10 @@ const char* InstallerModel::status_text()const{
     return messages[index<sizeof(messages)/sizeof(*messages)?index:unsigned(InstallerStatus::Failed)].get(settings.language);
 }
 const char* InstallerModel::selected_help()const{
-    if(game==GameTarget::RE6)return re6_home_items[selected<4?selected:0].help.get(settings.language);
+    if(game==GameTarget::RE6){
+        if(page==InstallerPage::Graphics)return re6_graphics_items[selected<3?selected:0].help.get(settings.language);
+        return page==InstallerPage::Home?re6_home_items[selected<5?selected:0].help.get(settings.language):"";
+    }
     if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
         || selected_control()==ControlId::Profile))return profile_note.c_str();
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
@@ -267,7 +311,7 @@ const char* InstallerModel::selected_help()const{
 }
 std::string InstallerModel::item_label(unsigned index)const{
     if(index>=item_count())return "";
-    if(game==GameTarget::RE6)return re6_home_items[index].label.get(settings.language);
+    if(game==GameTarget::RE6)return (page==InstallerPage::Graphics?re6_graphics_items[index]:re6_home_items[index]).label.get(settings.language);
     if(page==InstallerPage::Controls)return index==0?control_spec(ControlId::Profile).label.get(settings.language):control_group_spec(static_cast<ControlGroup>(index-1)).label.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_spec(control_group_item(control_group,index)).label.get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
@@ -280,7 +324,20 @@ std::string InstallerModel::item_label(unsigned index)const{
 }
 std::string InstallerModel::item_value(unsigned index)const{
     if(index>=item_count())return "";
-    if(game==GameTarget::RE6)return index==2?(settings.language==Language::Russian?"Русский":"English"):"";
+    if(game==GameTarget::RE6){
+        if(page==InstallerPage::Home)return index==3?(settings.language==Language::Russian?"Русский":"English"):"";
+        if(index==2)return "A";
+        if(index==0){
+            constexpr const char* values[]={"Native","AF 2x","AF 4x","AF 8x","AF 16x"};
+            const auto mode=unsigned(re6_settings.texture_filtering);
+            return !mode?Bilingual{"Native","Штатная"}.get(settings.language):mode<5?values[mode]:"";
+        }
+        constexpr const char* values[]={"Native","Off","FXAA","FXAA3","FXAA3HQ"};
+        const auto mode=unsigned(re6_settings.anti_aliasing);
+        if(!mode)return Bilingual{"Native","Штатное"}.get(settings.language);
+        if(mode==1)return Bilingual{"Off","Выкл."}.get(settings.language);
+        return mode<5?values[mode]:"";
+    }
     if(page==InstallerPage::Controls)return index==0?profile_name(profile_kind(settings,ProfileDomain::Controls),settings.language):"";
     if(page==InstallerPage::ControlGroup)return control_value_text(control_spec(control_group_item(control_group,index)),settings);
     if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);
@@ -304,5 +361,10 @@ bool InstallerModel::allow_installation(bool identified,bool running){
     if(!identified){status=InstallerStatus::Failed;detail="Could not identify the active application";return false;}
     if(running){status=InstallerStatus::GameRunning;return false;}
     return true;
+}
+bool InstallerModel::save_re6_graphics(const char* path){
+    const bool saved=re6::save_settings_file(path,re6_settings);
+    status=saved?InstallerStatus::Saved:InstallerStatus::Failed;
+    return saved;
 }
 }

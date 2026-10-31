@@ -1,3 +1,4 @@
+#define OVERLAY_TEST_TRACK_ALLOCATIONS
 #define main re6_overlay_entry
 #include "../source/re6_controls/main.cpp"
 #undef main
@@ -14,9 +15,45 @@ std::vector<std::string> events;
 tsl::elm::List* list(tsl::elm::OverlayFrame* f){return static_cast<tsl::elm::List*>(f->content());}
 tsl::elm::ListItem* find(tsl::elm::OverlayFrame* f,const std::string& text){for(auto* e:list(f)->children)if(auto* r=dynamic_cast<tsl::elm::ListItem*>(e))if(r->label==text)return r;return nullptr;}
 std::string help(tsl::Gui& gui,tsl::elm::OverlayFrame* f,tsl::elm::ListItem* row){
-    gui.focused=row;gui.update();tsl::gfx::Renderer r;f->draw(&r);assert(!r.text.empty());
+    gui.focused=row;gui.update();f->layout(0,0,448,720);tsl::gfx::Renderer r;f->draw(&r);assert(!r.text.empty());
+    if(!r.bitmaps.empty()){
+        assert(r.text.front().x==20 && r.text.front().y==353 && r.text.back().y==635);
+        return r.text.front().value;
+    }
     assert(r.text.back().x==20 && r.text.back().y==568);assert(!r.rects.empty() && r.rects.back().y==547 && r.rects.back().color==0xF93B);
     return r.text.back().value;
+}
+void graphics_illustrations(){
+    settings={};note.clear();GraphicsGui gui;
+    auto* f=static_cast<tsl::elm::OverlayFrame*>(gui.createUI());f->layout(0,0,448,720);
+    assert(list(f)->y+list(f)->height<=322);
+    const int regions[][4]={{284,137,34,31},{252,12,62,80},{0,0,0,0}};
+    std::set<std::string> captions;const auto old_saves=saves,old_sends=sends;
+    for(auto language:{re6::Language::English,re6::Language::Russian}){
+        settings.language=language;
+        for(unsigned row=0;row<3;++row){
+            gui.focused=list(f)->children[row];gui.update();tsl::gfx::Renderer render;
+            overlay_test_allocations::largest=0;overlay_test_allocations::track=true;
+            f->draw(&render);overlay_test_allocations::track=false;
+            assert(overlay_test_allocations::largest<65536);
+            assert(render.bitmaps.size()==180 && render.text.size()==2);
+            assert(render.text.front().x==20 && render.text.front().y==353 && render.text.back().y==635);
+            captions.insert(render.text.back().value);unsigned varied=0;
+            for(unsigned line=0;line<180;++line){const auto& b=render.bitmaps[line];
+                assert(b.x==64 && b.y==443+int(line) && b.w==320 && b.h==1);
+                assert(b.source==render.bitmaps.front().source);varied+=b.distinct;
+            }
+            assert(varied>10000 && render.rects.size()==(row<2?5u:1u));
+            if(row<2){const auto& outline=render.rects[1];
+                assert(outline.x==64+regions[row][0] && outline.y==443+regions[row][1]);
+                assert(outline.w==regions[row][2] && outline.h==2 && outline.color==0xF93B);
+                for(unsigned i=1;i<render.rects.size();++i){const auto& r=render.rects[i];
+                    assert(r.x>=64 && r.y>=443 && r.x+r.w<=384 && r.y+r.h<=623);
+                }
+            }
+        }
+    }
+    assert(captions.size()==6 && saves==old_saves && sends==old_sends);delete f;settings={};
 }
 void navigation_and_languages(){
     settings={};note.clear();MainGui gui;auto* f=static_cast<tsl::elm::OverlayFrame*>(gui.createUI());f->layout(0,0,448,720);
@@ -92,4 +129,4 @@ bool load_settings_file(const char* p,Settings& s){assert(std::string(p)=="r6ovl
 void Re6GameLink::initialize(){++initializes;}void Re6GameLink::close(){++closes;}
 bool Re6GameLink::connect(){++connects;message=connect_success?"Connected to RE6":"Start RE6";return connect_success;}
 bool Re6GameLink::apply(const re6::Settings& s){++sends;sent=s;events.push_back("apply");message="Applied";return true;}
-int main(){navigation_and_languages();filtering_reset_and_save_failure();startup_and_mount_failure();std::puts("RE6 graphics UI:root/groups, Cyrillic help, all filter/AA modes, transactional saves and native startup PASS");}
+int main(){graphics_illustrations();navigation_and_languages();filtering_reset_and_save_failure();startup_and_mount_failure();std::puts("RE6 graphics UI:root/groups, Cyrillic help, all filter/AA modes, transactional saves and native startup PASS");}

@@ -2,6 +2,7 @@
 #include <tesla.hpp>
 #include "game_link.hpp"
 #include "storage.hpp"
+#include "re4/graphics_preview_image.hpp"
 #include <array>
 #include <sys/stat.h>
 
@@ -28,14 +29,20 @@ bool change(const re6::Settings& candidate) {
 class DescriptionFrame : public tsl::elm::OverlayFrame {
     std::string description_;
     unsigned help_y_ = tsl::cfg::FramebufferHeight - 152;
+    bool graphics_preview_ = false;
+    graphics_preview::Topic graphics_topic_ = graphics_preview::Topic::Filtering;
+    int graphics_x_ = 64;
 public:
     DescriptionFrame() : OverlayFrame(tr("RE6 Graphics", "Графика RE6"), "") {}
     void set_help(const char* value) { description_ = value; }
+    void set_graphics_preview(bool enabled) { graphics_preview_ = enabled; }
+    void set_graphics_topic(graphics_preview::Topic topic) { graphics_topic_ = topic; }
     void layout(u16 x, u16 y, u16 width, u16 height) override {
         OverlayFrame::layout(x, y, width, height);
-        help_y_ = y + height - 152;
+        help_y_ = y + height - (graphics_preview_ ? 367 : 152);
+        graphics_x_ = int(x) + (int(width) - 320) / 2;
         if (m_contentElement) {
-            m_contentElement->setBoundaries(x + 35, y + 125, width - 85, height - 73 - 125 - 110);
+            m_contentElement->setBoundaries(x + 35, y + 125, width - 85, height - 73 - 125 - (graphics_preview_ ? 325 : 110));
             m_contentElement->invalidate();
         }
     }
@@ -43,6 +50,19 @@ public:
         OverlayFrame::draw(renderer);
         renderer->drawRect(20, help_y_ - 21, tsl::cfg::FramebufferWidth - 40, 1, a(0xF93B));
         renderer->drawString(description_.c_str(), false, 20, help_y_, 16, a(tsl::style::color::ColorDescription));
+        if (graphics_preview_) {
+            const int image_y = int(help_y_) + 90;
+            graphics_preview::draw_rows(graphics_preview::image(re4::GameTarget::RE6), graphics_x_, image_y,
+                [&](int x, int y, int w, int h, const std::uint8_t* rgba) { renderer->drawBitmap(x, y, w, h, rgba); });
+            const auto roi = graphics_preview::focus(re4::GameTarget::RE6, graphics_topic_);
+            if (roi.width && roi.height) {
+                const int x = graphics_x_ + int(roi.x), y = image_y + int(roi.y), w = int(roi.width), h = int(roi.height);
+                renderer->drawRect(x, y, w, 2, a(0xF93B)); renderer->drawRect(x, y+h-2, w, 2, a(0xF93B));
+                renderer->drawRect(x, y, 2, h, a(0xF93B)); renderer->drawRect(x+w-2, y, 2, h, a(0xF93B));
+            }
+            renderer->drawString(graphics_preview::caption(graphics_topic_, settings.language == re6::Language::Russian),
+                false, 20, help_y_ + 282, 16, a(tsl::style::color::ColorDescription));
+        }
     }
 };
 enum class GraphicsRow { Filter, AntiAliasing, Reset };
@@ -75,6 +95,7 @@ class GraphicsGui : public tsl::Gui {
 public:
     tsl::elm::Element* createUI() override {
         frame_ = new DescriptionFrame;
+        frame_->set_graphics_preview(true);
         auto* list = new tsl::elm::List;
         for (unsigned row = 0; row < rows_.size(); ++row) {
             const auto& entry = graphics_specs[row];
@@ -112,6 +133,7 @@ public:
             if (getFocusedElement() == rows_[row]) focused = row;
         }
         frame_->set_help(tr(graphics_specs[focused].help_en, graphics_specs[focused].help_ru));
+        frame_->set_graphics_topic(graphics_preview::topic_for(re4::GameTarget::RE6, focused));
     }
 };
 class MainGui : public tsl::Gui {

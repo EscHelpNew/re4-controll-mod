@@ -6,6 +6,7 @@
 #include "re4/reticle_preview.hpp"
 #include "re4/version.hpp"
 #include "re4/input.hpp"
+#include "re4/graphics_preview_image.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -43,6 +44,7 @@ struct InstallerRenderer::Impl {
     SDL_Texture* background=nullptr;
     SDL_Texture* logo=nullptr;
     SDL_Texture* re6_logo=nullptr;
+    SDL_Texture* graphics_images[2]{};
     stbtt_fontinfo font{};
     std::map<std::uint64_t,Glyph> glyphs;
     std::vector<std::uint32_t> preview;
@@ -54,6 +56,28 @@ struct InstallerRenderer::Impl {
     }
     void border(SDL_Rect rect,SDL_Color c){
         SDL_SetRenderDrawColor(renderer,c.r,c.g,c.b,c.a);SDL_RenderDrawRect(renderer,&rect);
+    }
+    void graphics_picture(const InstallerModel& m){
+        const unsigned index=m.game==GameTarget::RE6?1:0;
+        const auto image=graphics_preview::image(m.game);
+        if(!graphics_images[index]&&graphics_preview::valid_image(image)){
+            auto* surface=SDL_CreateRGBSurfaceWithFormatFrom(const_cast<std::uint16_t*>(image.pixels),
+                int(image.width),int(image.height),16,int(image.width*2),SDL_PIXELFORMAT_RGB565);
+            if(surface){graphics_images[index]=SDL_CreateTextureFromSurface(renderer,surface);SDL_FreeSurface(surface);}
+        }
+        if(!graphics_images[index]){
+            text(tr(m,"Illustration unavailable","Иллюстрация недоступна"),862,360,18,muted,344);return;
+        }
+        const SDL_Rect destination{862,341,344,194};SDL_RenderCopy(renderer,graphics_images[index],nullptr,&destination);
+        const auto topic=graphics_preview::topic_for(m.game,m.selected);
+        const auto region=graphics_preview::scaled_focus(m.game,topic,344,194);
+        if(region.width&&region.height){
+            const SDL_Color gold{245,204,89,255};
+            border({862+int(region.x),341+int(region.y),int(region.width),int(region.height)},gold);
+            if(region.width>2&&region.height>2)border({863+int(region.x),342+int(region.y),int(region.width)-2,int(region.height)-2},gold);
+        }
+        text(graphics_preview::caption(topic,m.settings.language==Language::Russian),862,553,17,cream,344,true,2);
+        text(tr(m,"Illustration from the game","Иллюстрация из игры"),862,592,14,muted,344);
     }
     Glyph& glyph(std::uint32_t code,unsigned size){
         const auto key=(std::uint64_t(size)<<32)|code;
@@ -259,7 +283,9 @@ void InstallerRenderer::draw(const InstallerModel& m){
         }
     }
     p.text(m.selected_help(),862,185,19,cream,344,true,5);
-    if(re6){
+    if(m.page==InstallerPage::Graphics){
+        p.graphics_picture(m);
+    }else if(re6){
         p.text(tr(m,"GRAPHICS AND MEASUREMENT","ГРАФИКА И ЖУРНАЛ"),862,360,16,muted);
         p.text(tr(m,"In Uberhand: RE6 Graphics.\nFiltering and anti-aliasing.\nNative gyro is retained.",
                     "В Uberhand: RE6 Graphics.\nФильтрация и сглаживание.\nШтатный гироскоп."),862,399,19,cream,344,true,4);
@@ -269,10 +295,6 @@ void InstallerRenderer::draw(const InstallerModel& m){
         p.text(tr(m,"Keep Wi-Fi connected.\nReopen the app after installation.\nYour settings are preserved.",
                     "Не отключайте Wi-Fi.\nПосле установки откройте\nприложение заново. Ваши\nнастройки сохраняются."),862,399,19,cream,344,true,6);
         p.text(tr(m,"Wi-Fi connection required","Требуется подключение Wi-Fi"),862,585,15,muted,344);
-    }else if(m.page==InstallerPage::Graphics){
-        p.text(tr(m,"NATIVE BY DEFAULT","ШТАТНАЯ ПО УМОЛЧАНИЮ"),862,386,16,muted,344);
-        p.text(tr(m,"Change settings manually.\nReset restores graphics alone.\n\nFiltering and AA take effect\nafter restarting Resident Evil 4.",
-                    "Изменяйте параметры вручную.\nСброс затрагивает только графику.\n\nФильтрация и AA применяются после\nперезапуска Resident Evil 4."),862,420,19,cream,344,true,6);
     }else if(m.page==InstallerPage::ControlGroup && (m.selected_control()==ControlId::Reticle || m.selected_control()==ControlId::ReticleSize)){
         p.text(tr(m,"RETICLE PREVIEW","ОБРАЗЕЦ ПРИЦЕЛА"),862,360,16,muted);
         p.text(tr(m,"Enlarged x2","Увеличено x2"),862,386,18,cream);
@@ -314,6 +336,7 @@ void InstallerRenderer::close(){
     for(auto& entry:impl_->glyphs)if(entry.second.texture)SDL_DestroyTexture(entry.second.texture);
     if(impl_->logo)SDL_DestroyTexture(impl_->logo);
     if(impl_->re6_logo)SDL_DestroyTexture(impl_->re6_logo);
+    for(auto* texture:impl_->graphics_images)if(texture)SDL_DestroyTexture(texture);
     if(impl_->background)SDL_DestroyTexture(impl_->background);
     if(impl_->renderer)SDL_DestroyRenderer(impl_->renderer);
     if(impl_->window)SDL_DestroyWindow(impl_->window);

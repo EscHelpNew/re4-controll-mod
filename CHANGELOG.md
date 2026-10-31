@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0 (unreleased, illustrated graphics menus)
+
+- Add a Graphics page to the standalone installer's RE6 tab, with filtering,
+  AA and reset backed by the separate RE6 settings file.
+- Add official original-game screenshot illustrations to both games' installer
+  graphics pages and overlays. A focused outline identifies textures, edges,
+  distant objects or shadows; reset/profile rows show the whole example scene.
+- Preserve English/Russian help, reticle preview and separate game settings.
+- Render overlay pictures one scanline at a time with a1280-byte conversion
+  buffer. Source images, attribution and reproducible bounded conversion are
+  included in the repository; pictures are illustrative, not measured mode comparisons.
+
 ## 0.14.0 (unreleased, separate RE6 graphics overlay)
 
 - Add a separate bilingual RE6 Graphics overlay with Native defaults, focused

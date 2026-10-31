@@ -46,6 +46,7 @@ def package() -> None:
         'licenses/Switch-Debug-Kit-MIT.txt': ROOT / 'third_party/switch-debug-kit/LICENSE',
         'licenses/nx-ovlloader-GPL2.txt': ROOT / 'third_party/nx-ovlloader/LICENSE.md',
         'licenses/graphics-NOTICES.txt': ROOT / 'third_party/graphics-NOTICES.txt',
+        'licenses/graphics-preview-NOTICES.md':ROOT/'assets/graphics/SOURCES.md',
         'licenses/NTON-GPL3.txt': ROOT / 'third_party/NTON-GPL3.txt',
     }
     manifest = {'status': 'experimental; core controls and updated gyro/HOME confirmed on hardware',
@@ -64,6 +65,7 @@ def package() -> None:
                              'frame-clock gyro interpolation and guarded native raise pitch continuity',
                              'grouped settings and root-only language selection',
                              'live reticle shape and size picture preview',
+                             'illustrated RE4/RE6 graphics settings in installer and both overlays',
                              'read-only guarded RE6 observer and synchronized RE4/RE6 journals',
                              'separate RE6 Graphics overlay with Native defaults, AF2x-16x and native FXAA variants',
                              'explicit Start/Stop recording, hidden overlay SD writer and verified CSV download'],

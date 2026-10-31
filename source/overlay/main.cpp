@@ -7,6 +7,7 @@
 #include "re4/control_menu.hpp"
 #include "re4/version.hpp"
 #include "re4/reticle_preview.hpp"
+#include "re4/graphics_preview_image.hpp"
 
 namespace {
 GameLink link;
@@ -40,20 +41,41 @@ class DescriptionFrame : public tsl::elm::OverlayFrame {
     const char* description_="Select a setting to see its description.";
     unsigned help_y_=tsl::cfg::FramebufferHeight-152;
     bool preview_=false;
+    bool graphics_preview_=false;
+    graphics_preview::Topic graphics_topic_=graphics_preview::Topic::Filtering;
+    int graphics_x_=64;
 public:
     DescriptionFrame():OverlayFrame("RE4 Controls",std::string(re4::kVersion)+" - Control settings"){}
     void set_help(const char* text){description_=text;}
     void set_preview(bool enabled){preview_=enabled;}
+    void set_graphics_preview(bool enabled){graphics_preview_=enabled;}
+    void set_graphics_topic(graphics_preview::Topic topic){graphics_topic_=topic;}
     void layout(u16 x,u16 y,u16 width,u16 height)override{
-        OverlayFrame::layout(x,y,width,height);help_y_=y+height-(preview_?310:152);
+        OverlayFrame::layout(x,y,width,height);help_y_=y+height-(graphics_preview_?367:preview_?310:152);
+        graphics_x_=int(x)+(int(width)-320)/2;
         if(m_contentElement){
-            m_contentElement->setBoundaries(x+35,y+125,width-85,height-73-125-(preview_?268:110));
+            m_contentElement->setBoundaries(x+35,y+125,width-85,height-73-125-(graphics_preview_?325:preview_?268:110));
             m_contentElement->invalidate();
         }
     }
     void draw(tsl::gfx::Renderer* renderer)override{
         OverlayFrame::draw(renderer);
         renderer->drawRect(20,help_y_-21,tsl::cfg::FramebufferWidth-40,1,a(tsl::style::color::ColorDescription));
+        if(graphics_preview_){
+            renderer->drawString(description_,false,20,help_y_,16,a(tsl::style::color::ColorDescription));
+            const int image_y=int(help_y_)+90;
+            graphics_preview::draw_rows(graphics_preview::image(re4::GameTarget::RE4),graphics_x_,image_y,
+                [&](int x,int y,int w,int h,const std::uint8_t* rgba){renderer->drawBitmap(x,y,w,h,rgba);});
+            const auto roi=graphics_preview::focus(re4::GameTarget::RE4,graphics_topic_);
+            if(roi.width && roi.height){
+                const int x=graphics_x_+int(roi.x),y=image_y+int(roi.y),w=int(roi.width),h=int(roi.height);
+                renderer->drawRect(x,y,w,2,a(0xF93B));renderer->drawRect(x,y+h-2,w,2,a(0xF93B));
+                renderer->drawRect(x,y,2,h,a(0xF93B));renderer->drawRect(x+w-2,y,2,h,a(0xF93B));
+            }
+            renderer->drawString(graphics_preview::caption(graphics_topic_,settings.language==re4::Language::Russian),
+                false,20,help_y_+282,16,a(tsl::style::color::ColorDescription));
+            return;
+        }
         if(preview_){
             renderer->drawString(tr("Reticle preview (x2)","Образец прицела (x2)"),false,20,help_y_+78,16,a(tsl::style::color::ColorDescription));
             re4::draw_reticle_preview(settings,20,help_y_+105,tsl::cfg::FramebufferWidth-40,130,
@@ -127,7 +149,7 @@ class GraphicsGui : public tsl::Gui {
     std::vector<tsl::elm::ListItem*> rows_;
 public:
     tsl::elm::Element* createUI()override{
-        rows_.clear();frame_=new DescriptionFrame;
+        rows_.clear();frame_=new DescriptionFrame;frame_->set_graphics_preview(true);
         auto* list=new tsl::elm::List;
         for(const auto& spec:re4::graphics_specs()){
             const auto id=spec.id;
@@ -155,8 +177,10 @@ public:
             const auto& spec=re4::graphics_specs()[row];
             rows_[row]->setText(spec.label.get(settings.language));
             rows_[row]->setValue(re4::graphics_value_text(spec,settings));
-            if(getFocusedElement()==rows_[row])frame_->set_help(spec.id==re4::GraphicsId::Profile && !note.empty()?
-                note.c_str():spec.help.get(settings.language));
+            if(getFocusedElement()==rows_[row]){
+                frame_->set_help(spec.id==re4::GraphicsId::Profile && !note.empty()?note.c_str():spec.help.get(settings.language));
+                frame_->set_graphics_topic(graphics_preview::topic_for(re4::GameTarget::RE4,row));
+            }
         }
     }
 };

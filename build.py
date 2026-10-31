@@ -15,6 +15,7 @@ sys.path.insert(0, str(KIT / 'host'))
 from sdk import SDK, tool, sdk_tool
 from project import load, header, prepare
 from tools.prepare_icon import prepare as prepare_app_icon, prepare_bitmap
+from tools.prepare_graphics import prepare as prepare_graphics
 from tools.payload import stage_payload
 from tools.hook_pool import stage_hook_pool
 
@@ -27,6 +28,7 @@ def run(args, **kwargs):
 
 
 def tests():
+    prepare_graphics(ROOT)
     def native(name):
         # Windows CRT assertion dialogs must not leave an unattended test run
         # hanging indefinitely. Successful native cases finish in milliseconds.
@@ -83,7 +85,7 @@ def tests():
          '-o',OUT/'re6_game_link_tests.exe'])
     native('re6_game_link_tests.exe')
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Itests/overlay_stubs',
-         '-Iinclude','-Isource/re6_controls','tests/re6_overlay_ui_tests.cpp','source/re6/settings.cpp',
+         '-Iinclude','-Ibuild/graphics','-Isource/re6_controls','tests/re6_overlay_ui_tests.cpp','source/re6/settings.cpp',
          '-o',OUT/'re6_overlay_ui_tests.exe'])
     native('re6_overlay_ui_tests.exe')
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Itests/stubs',
@@ -93,6 +95,9 @@ def tests():
     run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/re6_graphics_tests.cpp','-o',OUT/'re6_graphics_tests.exe'])
     native('re6_graphics_tests.exe')
+    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
+         'tests/graphics_preview_tests.cpp','-o',OUT/'graphics_preview_tests.exe'])
+    native('graphics_preview_tests.exe')
     run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static',
          '-Iinclude','-Isource/re6_overlay','tests/re6_recorder_tests.cpp',
          '-o',OUT/'re6_recorder_tests.exe'])
@@ -115,12 +120,13 @@ def tests():
              'tests/'+name+'.cpp','source/input.cpp','-o',OUT/(name+'.exe')])
         native(name+'.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
-         '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
+         '-Itests/overlay_stubs', '-Iinclude','-Ibuild/graphics', '-Isource/overlay',
          'tests/overlay_ui_tests.cpp', 'source/settings.cpp', 'source/control_menu.cpp','source/profiles.cpp', '-o', OUT / 'overlay_ui_tests.exe'])
     native('overlay_ui_tests.exe')
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static',
-         '-Itests/overlay_stubs','-Iinclude','-Isource/overlay','tests/profile_ui_tests.cpp',
+         '-Itests/overlay_stubs','-Iinclude','-Ibuild/graphics','-Isource/overlay','tests/profile_ui_tests.cpp',
          'source/settings.cpp','source/control_menu.cpp','source/profiles.cpp','source/diagnostic/installer_model.cpp',
+         'source/re6/settings.cpp',
          '-o',OUT/'profile_ui_tests.exe'])
     native('profile_ui_tests.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
@@ -158,7 +164,8 @@ def tests():
     native('control_menu_tests.exe')
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/installer_model_tests.cpp', 'source/diagnostic/installer_model.cpp',
-         'source/control_menu.cpp', 'source/settings.cpp','source/profiles.cpp','source/settings_file.cpp', '-o', OUT / 'installer_model_tests.exe'])
+         'source/control_menu.cpp', 'source/settings.cpp','source/profiles.cpp','source/settings_file.cpp',
+         'source/re6/settings.cpp','source/re6/settings_file.cpp', '-o', OUT / 'installer_model_tests.exe'])
     native('installer_model_tests.exe')
     run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/calibration_tests.cpp','-o',OUT/'calibration_tests.exe'])
@@ -166,9 +173,10 @@ def tests():
     prepare_bitmap(ROOT / 'assets/icon-original.png',OUT / 'app-logo.bmp')
     prepare_bitmap(ROOT / 'assets/icon-re6.png',OUT / 'app-logo-re6.bmp')
     run([host,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static-libgcc','-static-libstdc++',
-         '-Iinclude','-IC:/msys64/mingw64/include/SDL2','-isystem','third_party/libtesla/include',
+         '-Iinclude','-Ibuild/graphics','-IC:/msys64/mingw64/include/SDL2','-isystem','third_party/libtesla/include',
          'tests/installer_preview.cpp','source/diagnostic/installer_renderer.cpp',
          'source/diagnostic/installer_model.cpp','source/control_menu.cpp','source/settings.cpp','source/input.cpp','source/profiles.cpp','source/settings_file.cpp',
+         'source/re6/settings.cpp','source/re6/settings_file.cpp',
          '-LC:/msys64/mingw64/lib','-lSDL2','-o',OUT/'installer_preview.exe'])
     preview_env=os.environ.copy()
     preview_env['PATH']='C:/msys64/mingw64/bin'+os.pathsep+preview_env.get('PATH','')
@@ -183,12 +191,13 @@ def tests():
 
 
 def diagnostic():
+    prepare_graphics(ROOT)
     cfg = prepare(ROOT)
     config = OUT / 'config'
     config.mkdir(exist_ok=True)
     (config / 'reload_project.h').write_text(header(cfg), encoding='utf-8')
     receiver = KIT / 'receiver'
-    includes = ['-I' + str(p) for p in (ROOT / 'include', ROOT / 'source/overlay', receiver, config)]
+    includes = ['-I' + str(p) for p in (ROOT / 'include', ROOT / 'source/overlay', receiver, config,ROOT/'build/graphics')]
     includes += ['-isystem', str(SDK / 'libnx/include')]
     includes += ['-isystem',str(SDK/'portlibs/switch/include/SDL2'),
                  '-isystem',str(SDK/'portlibs/switch/include'),
@@ -208,8 +217,8 @@ def diagnostic():
                    'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
                    'source/diagnostic/home_policy.cpp','source/diagnostic/home_launcher.cpp',
                    'source/diagnostic/update_worker.cpp','source/re6/log_server.cpp','source/diagnostic/support_report.cpp',
-                   'source/diagnostic/main.cpp'):
-        dest = OUT / (Path(source).stem + '.o')
+                   'source/diagnostic/main.cpp','source/re6/settings.cpp','source/re6/settings_file.cpp'):
+        dest = OUT / (source.removesuffix('.cpp').replace('/','_') + '.o')
         run([tool('g++'), '-std=gnu++17', '-fno-exceptions', '-fno-rtti', *common,
              '-c', source, '-o', dest])
         objects.append(dest)
@@ -311,7 +320,8 @@ def module():
 
 
 def overlay():
-    includes = ['-I' + str(ROOT / 'include'), '-I' + str(ROOT / 'source/overlay'),
+    prepare_graphics(ROOT)
+    includes = ['-I' + str(ROOT / 'include'), '-I' + str(ROOT/'build/graphics'), '-I' + str(ROOT / 'source/overlay'),
                 '-isystem', str(ROOT / 'third_party/libtesla/include'),
                 '-isystem', str(SDK / 'libnx/include')]
     flags = ['-std=gnu++20', '-O2', '-g', '-Wall', '-Wextra', '-Werror',
@@ -353,7 +363,8 @@ def telemetry_overlay():
 
 
 def re6_graphics_overlay():
-    includes=['-I'+str(ROOT/'include'),'-I'+str(ROOT/'source/re6_controls'),
+    prepare_graphics(ROOT)
+    includes=['-I'+str(ROOT/'include'),'-I'+str(ROOT/'build/graphics'),'-I'+str(ROOT/'source/re6_controls'),
               '-isystem',str(ROOT/'third_party/libtesla/include'),'-isystem',str(SDK/'libnx/include')]
     flags=['-std=gnu++20','-O2','-g','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
            '-fno-exceptions','-ffixed-x18','-march=armv8-a+crc+crypto','-mtune=cortex-a57',

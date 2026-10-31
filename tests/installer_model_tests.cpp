@@ -1,4 +1,8 @@
 #include "re4/installer_ui.hpp"
+#include "re4/settings_file.hpp"
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -22,30 +26,30 @@ int main(){
         navigation.status=InstallerStatus::Installed;navigation.detail="RE4 install detail";
         assert(navigation.handle(UiEvent::NextGame)==InstallerAction::None);
         assert(navigation.game==GameTarget::RE6);
-        assert(navigation.page==InstallerPage::Home && navigation.item_count()==4);
+        assert(navigation.page==InstallerPage::Home && navigation.item_count()==5);
         assert(navigation.status==InstallerStatus::Ready && navigation.detail.empty());
-        const char* labels[]={"Install RE6 module","Install RE6 overlay","Language","Exit"};
-        for(unsigned row=0;row<4;++row){
+        const char* labels[]={"Install RE6 module","Install RE6 overlay","Graphics","Language","Exit"};
+        for(unsigned row=0;row<5;++row){
             navigation.selected=row;
             assert(navigation.item_label(row)==labels[row]);
             assert(std::strlen(navigation.selected_help())>20);
         }
-        assert(navigation.item_label(4).empty() && navigation.item_value(4).empty());
+        assert(navigation.item_label(5).empty() && navigation.item_value(5).empty());
         assert(navigation.selected_control()==ControlId::Count);
         navigation.selected=0;
         assert(navigation.handle(UiEvent::Confirm)==InstallerAction::InstallGame);
         navigation.selected=1;
         assert(navigation.handle(UiEvent::Confirm)==InstallerAction::InstallOverlay);
-        navigation.selected=2;
+        navigation.selected=3;
         for(auto event:{UiEvent::QuickInstall,UiEvent::QuickOverlay,UiEvent::QuickDisable,UiEvent::Calibrate,UiEvent::ResetPreview})
             assert(navigation.handle(event)==InstallerAction::None);
         assert(navigation.handle(UiEvent::Confirm)==InstallerAction::SaveSettings);
-        assert(navigation.settings.language==Language::Russian && navigation.item_label(2)=="Язык");
+        assert(navigation.settings.language==Language::Russian && navigation.item_label(3)=="Язык");
         assert(navigation.item_label(0)=="Установить модуль RE6" && navigation.item_label(1)=="Установить оверлей RE6");
-        assert(navigation.item_label(3)=="Выход" && navigation.item_value(2)=="Русский");
+        assert(navigation.item_label(2)=="Графика" && navigation.item_label(4)=="Выход" && navigation.item_value(3)=="Русский");
         assert(navigation.handle(UiEvent::Right)==InstallerAction::SaveSettings && navigation.settings.language==Language::English);
         assert(navigation.handle(UiEvent::Left)==InstallerAction::SaveSettings && navigation.settings.language==Language::Russian);
-        navigation.selected=0;navigation.handle(UiEvent::Up);assert(navigation.selected==3);
+        navigation.selected=0;navigation.handle(UiEvent::Up);assert(navigation.selected==4);
         assert(navigation.handle(UiEvent::Confirm)==InstallerAction::Exit);
         navigation.handle(UiEvent::Down);assert(navigation.selected==0);
         assert(navigation.handle(UiEvent::Back)==InstallerAction::Exit);
@@ -60,7 +64,7 @@ int main(){
         assert(navigation.settings.gyro_bias_x==1.25f);
         assert(navigation.status==InstallerStatus::Installed && navigation.detail=="RE4 install detail");
         assert(navigation.handle(UiEvent::PreviousGame)==InstallerAction::None);
-        assert(navigation.game==GameTarget::RE6 && navigation.selected==2 && navigation.item_count()==4);
+        assert(navigation.game==GameTarget::RE6 && navigation.selected==2 && navigation.item_count()==5);
         assert(navigation.status==InstallerStatus::Failed && navigation.detail=="Missing RE6 module");
         navigation.installation_result("Installed RE4 Controls. Restart RE4.");
         assert(navigation.status==InstallerStatus::Failed);
@@ -73,6 +77,129 @@ int main(){
         assert(navigation.handle(UiEvent::Calibrate)==InstallerAction::None);
         assert(navigation.page==InstallerPage::Home && !navigation.settings.gyro_enabled);
         assert(navigation.handle(UiEvent::NextGame)==InstallerAction::None && navigation.game==GameTarget::RE4);
+    }
+    // RE6 graphics edit their own settings and expose only RE6's supported modes.
+    {
+        InstallerModel graphics;
+        graphics.settings.turn_gain=0.4f;graphics.settings.gyro_bias_x=1.25f;
+        graphics.settings.texture_filtering=TextureFilter::Aniso4;
+        graphics.settings.anti_aliasing=AntiAliasing::HandheldSsaa;
+        graphics.settings.button_map[0]=255;
+        const auto re4_before=graphics.settings;
+        graphics.re6_settings.language=re6::Language::Russian;
+        assert(graphics.handle(UiEvent::NextGame)==InstallerAction::None);
+        graphics.selected=2;
+        assert(graphics.handle(UiEvent::Left)==InstallerAction::None);
+        assert(graphics.handle(UiEvent::Right)==InstallerAction::None);
+        assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None);
+        assert(graphics.page==InstallerPage::Graphics && graphics.item_count()==3 && graphics.selected==0);
+        assert(graphics.item_label(0)=="Texture filtering" && graphics.item_value(0)=="Native");
+        assert(graphics.item_label(1)=="Anti-aliasing" && graphics.item_value(1)=="Native");
+        assert(graphics.item_label(2)=="Reset graphics" && graphics.item_value(2)=="A");
+        assert(graphics.item_label(3).empty() && graphics.item_value(3).empty());
+        assert(graphics.selected_control()==ControlId::Count);
+        assert(std::strstr(graphics.selected_help(),"restart"));
+        for(auto event:{UiEvent::QuickInstall,UiEvent::QuickOverlay,UiEvent::QuickDisable,UiEvent::Calibrate,UiEvent::ResetPreview})
+            assert(graphics.handle(event)==InstallerAction::None);
+        const char* filters[]={"Native","AF 2x","AF 4x","AF 8x","AF 16x"};
+        for(unsigned step=0;step<5;++step){
+            assert(graphics.item_value(0)==filters[step]);
+            assert(graphics.handle(UiEvent::Right)==InstallerAction::SaveRe6Graphics);
+        }
+        assert(graphics.re6_settings.texture_filtering==re6::TextureFilter::Native);
+        assert(graphics.handle(UiEvent::Left)==InstallerAction::SaveRe6Graphics && graphics.item_value(0)=="AF 16x");
+        assert(graphics.handle(UiEvent::Confirm)==InstallerAction::SaveRe6Graphics && graphics.item_value(0)=="Native");
+        graphics.handle(UiEvent::Down);assert(graphics.selected==1);
+        assert(std::strstr(graphics.selected_help(),"next RE6 launch")&&!std::strstr(graphics.selected_help(),"live"));
+        const char* aa[]={"Native","Off","FXAA","FXAA3","FXAA3HQ"};
+        for(unsigned step=0;step<5;++step){
+            assert(graphics.item_value(1)==aa[step]);
+            assert(graphics.handle(UiEvent::Confirm)==InstallerAction::SaveRe6Graphics);
+        }
+        assert(graphics.handle(UiEvent::Left)==InstallerAction::SaveRe6Graphics && graphics.item_value(1)=="FXAA3HQ");
+        graphics.selected=0;
+        assert(graphics.handle(UiEvent::Right)==InstallerAction::SaveRe6Graphics && graphics.item_value(0)=="AF 2x");
+        graphics.selected=2;
+        assert(std::strstr(graphics.selected_help(),"language"));
+        assert(graphics.handle(UiEvent::Left)==InstallerAction::None);
+        assert(graphics.handle(UiEvent::Right)==InstallerAction::None);
+        assert(graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Fxaa3High);
+        assert(graphics.handle(UiEvent::Confirm)==InstallerAction::SaveRe6Graphics);
+        assert(graphics.re6_settings.texture_filtering==re6::TextureFilter::Native && graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Native);
+        assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None);
+        assert(graphics.re6_settings.language==re6::Language::Russian);
+        assert(graphics.settings.language==Language::English);
+        graphics.settings.language=Language::Russian;
+        assert(std::strcmp(graphics.page_title(),"ГРАФИКА")==0);
+        const char* russian_labels[]={"Фильтрация текстур","Сглаживание","Сброс графики"};
+        for(unsigned row=0;row<3;++row){
+            graphics.selected=row;
+            assert(graphics.item_label(row)==russian_labels[row]);
+            assert(std::strlen(graphics.selected_help())>40);
+        }
+        assert(graphics.item_value(0)=="Штатная" && graphics.item_value(1)=="Штатное");
+        graphics.selected=1;
+        assert(graphics.handle(UiEvent::Right)==InstallerAction::SaveRe6Graphics && graphics.item_value(1)=="Выкл.");
+        graphics.selected=0;graphics.handle(UiEvent::Up);assert(graphics.selected==2);
+        graphics.handle(UiEvent::Down);assert(graphics.selected==0);
+        assert(graphics.handle(UiEvent::Back)==InstallerAction::None && graphics.page==InstallerPage::Home && graphics.selected==2);
+        graphics.handle(UiEvent::Confirm);graphics.selected=1;
+        assert(graphics.handle(UiEvent::PreviousGame)==InstallerAction::None && graphics.game==GameTarget::RE4);
+        assert(graphics.page==InstallerPage::Home && graphics.selected==0);
+        assert(graphics.handle(UiEvent::NextGame)==InstallerAction::None && graphics.game==GameTarget::RE6);
+        assert(graphics.page==InstallerPage::Home && graphics.selected==2);
+        assert(graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Off);
+        assert(same_profile(graphics.settings,re4_before,ProfileDomain::Controls));
+        assert(same_profile(graphics.settings,re4_before,ProfileDomain::Graphics));
+        assert(graphics.settings.gyro_bias_x==1.25f && graphics.settings.button_map[0]==255);
+        graphics.handle(UiEvent::Confirm);graphics.selected=999;
+        assert(graphics.item_label(999).empty() && graphics.item_value(999).empty());
+        assert(std::strlen(graphics.selected_help())>20);
+        assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None); // Invalid rows cannot mutate a valid row.
+        for(auto stale:{InstallerPage::Controls,InstallerPage::ControlGroup,InstallerPage::Diagnostics,
+            InstallerPage::Mapping,InstallerPage::MappingTargets,InstallerPage::Updates}){
+            graphics.page=stale;graphics.selected=0;
+            assert(graphics.item_count()==0 && graphics.item_label(0).empty() && graphics.item_value(0).empty());
+            assert(std::strlen(graphics.selected_help())==0);
+            assert(std::strcmp(graphics.page_title(),"УСТАНОВКА МОДА")==0);
+            assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None && graphics.page==InstallerPage::Home);
+            assert(same_profile(graphics.settings,re4_before,ProfileDomain::Controls));
+            assert(same_profile(graphics.settings,re4_before,ProfileDomain::Graphics));
+        }
+    }
+    // The action backend persists RE6 separately, including save failures and reload.
+    {
+        namespace fs=std::filesystem;
+        const char* root="build/installer-re6-graphics-test";
+        const char* re4_path="build/installer-re6-graphics-test/re4.bin";
+        const char* re6_path="build/installer-re6-graphics-test/re6.bin";
+        const char* blocked="build/installer-re6-graphics-test/re6.bin.incoming";
+        fs::create_directories(root);
+        for(const auto* path:{re4_path,re6_path,blocked,"build/installer-re6-graphics-test/re6.bin.previous"})fs::remove(path);
+        InstallerModel disk;
+        disk.settings.turn_gain=0.3f;disk.settings.texture_filtering=TextureFilter::Aniso16;
+        assert(re4::save_settings_file(re4_path,disk.settings));
+        std::ifstream before_file(re4_path,std::ios::binary);
+        const std::string re4_bytes((std::istreambuf_iterator<char>(before_file)),{});before_file.close();
+        disk.game=GameTarget::RE6;disk.page=InstallerPage::Graphics;
+        disk.re6_settings.language=re6::Language::Russian;
+        disk.re6_settings.texture_filtering=re6::TextureFilter::Af8x;
+        disk.re6_settings.anti_aliasing=re6::AntiAliasing::Fxaa3;
+        assert(disk.save_re6_graphics(re6_path) && disk.status==InstallerStatus::Saved);
+        InstallerModel loaded;
+        assert(re6::load_settings_file(re6_path,loaded.re6_settings));
+        assert(loaded.re6_settings.texture_filtering==re6::TextureFilter::Af8x);
+        assert(loaded.re6_settings.anti_aliasing==re6::AntiAliasing::Fxaa3 && loaded.re6_settings.language==re6::Language::Russian);
+        disk.re6_settings.texture_filtering=re6::TextureFilter::Af16x;
+        assert(fs::create_directory(blocked));
+        assert(!disk.save_re6_graphics(re6_path) && disk.status==InstallerStatus::Failed);
+        assert(re6::load_settings_file(re6_path,loaded.re6_settings));
+        assert(loaded.re6_settings.texture_filtering==re6::TextureFilter::Af8x && loaded.re6_settings.anti_aliasing==re6::AntiAliasing::Fxaa3);
+        std::ifstream after_file(re4_path,std::ios::binary);
+        const std::string after((std::istreambuf_iterator<char>(after_file)),{});after_file.close();
+        assert(after==re4_bytes && !fs::exists(std::string(re4_path)+".previous"));
+        for(const auto* path:{re4_path,re6_path,blocked,"build/installer-re6-graphics-test/re6.bin.previous"})fs::remove(path);
+        fs::remove(root);
     }
     assert(m.settings.language==Language::English && m.page==InstallerPage::Home && m.item_count()==9);
     for(unsigned i=0;i<9;++i)assert(!m.item_label(i).empty());

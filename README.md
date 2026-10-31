@@ -9,13 +9,16 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.14.0, unreleased**. Published Releases may
+The current source/local build is **0.15.0, unreleased**. Published Releases may
 contain an earlier version while new features are being tested.
 
 ## Features
 
 - A separate [RE6 Graphics overlay](docs/re6-graphics.md) with native defaults,
   anisotropic filtering and the game's FXAA variants. Native RE6 gyro is retained.
+- Graphics settings for both games in the standalone installer, with illustrated
+  help in the installer and overlays. Highlighted areas on official game frames
+  show where each option matters; these are not captured comparisons of mod settings.
 
 - A separate [RE6 controls profile](docs/re6-profile.md), based on synchronized
   console measurements: faster overview, slower aiming and a softer stop.

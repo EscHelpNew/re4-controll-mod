@@ -12,6 +12,11 @@ RE6 overlay** updates only the two menus. Start RE6, open Uberhand and select
 The root contains Graphics, Connect to RE6 and Language. English is the initial
 language; Russian is available there. Each graphics row has focused help.
 
+The standalone installer also has **RE6 → Graphics**, editing the same separate
+settings for the next launch of RE6. Both menus show an official game-frame
+illustration with the selected setting's area outlined. The pictures explain
+where to look; they are not screenshots of each selected mod mode.
+
 | Option | Choices | Application |
 |---|---|---|
 | Texture filtering | Native, AF2x, AF4x, AF8x, AF16x | Restart RE6 |

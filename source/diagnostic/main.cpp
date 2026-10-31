@@ -307,6 +307,7 @@ int main(int argc, char** argv) {
     re4::InstallerModel model;
     auto& settings=model.settings;
     re4::load_settings_file(re4::kSettingsPath,settings);
+    re6::load_settings_file(re6::kSettingsPath,model.re6_settings);
     re4::InstallerRenderer renderer;
     PlFontData font{};
     const Result font_service=plInitialize(PlServiceType_User);
@@ -389,6 +390,8 @@ int main(int argc, char** argv) {
         if(action==re4::InstallerAction::SaveSettings)
             model.status=re4::save_profiled_settings(re4::kSettingsPath,settings)
                 ?re4::InstallerStatus::Saved:re4::InstallerStatus::Failed;
+        if(action==re4::InstallerAction::SaveRe6Graphics)
+            model.save_re6_graphics();
         if(action==re4::InstallerAction::DefaultControls || action==re4::InstallerAction::CustomControls
             || action==re4::InstallerAction::RE6Controls
             || action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics){
