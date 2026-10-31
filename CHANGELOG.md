@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.15.0 (unreleased, illustrated graphics menus)
+## 0.15.0 (2026-10-31, illustrated graphics menus)
 
 - Add a Graphics page to the standalone installer's RE6 tab, with filtering,
   AA and reset backed by the separate RE6 settings file.
