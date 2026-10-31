@@ -9,17 +9,45 @@ struct UnifiedDelta {float yaw=0,pitch=0;};
 // gaps over100ms drain their first sample; no pause/raise motion is caught up.
 class UnifiedLook {
  std::uintptr_t actor_=0;unsigned route_=0;std::uint64_t tick_=0;bool ready_=false;
+ float x_=0,y_=0;
+ static float segment(float& velocity,float target,float dt,float tau){
+  const float change=-std::expm1(-dt/tau);
+  const float integral=target*dt+(velocity-target)*tau*change;
+  velocity+=(target-velocity)*change;
+  return integral;
+ }
+ static float advance(float& velocity,float target,float dt){
+  target=std::clamp(target,-1.f,1.f);
+  if(target*velocity<0){
+   const float crossing=.012f*std::log1p(-velocity/target);
+   if(crossing<dt){
+    const float first=segment(velocity,target,crossing,.012f);
+    velocity=0;
+    return first+segment(velocity,target,dt-crossing,.05f);
+   }
+   return segment(velocity,target,dt,.012f);
+  }
+  return segment(velocity,target,dt,std::fabs(target)<std::fabs(velocity)?.012f:.05f);
+ }
 public:
- void reset(){ready_=false;}
+ void reset(){ready_=false;x_=y_=0;}
  UnifiedDelta update(std::uintptr_t actor,unsigned route,std::uint64_t tick,bool allowed,float x,float y){
   if(!allowed||!actor||!std::isfinite(x)||!std::isfinite(y)){reset();return {};}
   const bool continuous=ready_&&actor==actor_&&route==route_&&tick>=tick_&&tick-tick_<=1920000;
   const float dt=continuous?float(tick-tick_)/19200000.f:0;
+  if(!continuous)x_=y_=0;
   actor_=actor;route_=route;tick_=tick;ready_=true;
-  return {-std::clamp(x,-1.f,1.f)*2.09439510239f*dt,std::clamp(y,-1.f,1.f)*1.57079632679f*dt};
+  return {-advance(x_,x,dt)*2.09439510239f,advance(y_,y,dt)*1.57079632679f};
  }
 };
 inline float unified_pitch_weight(float radians){return radians*.636619772368f;}
+// Only the stick contribution is bounded. A gyro angle outside the band must
+// allow gradual inward movement, without snapping or further outward motion.
+inline float unified_stick_pitch_delta(float current,float delta){
+ if(!std::isfinite(current)||!std::isfinite(delta))return 0;
+ constexpr float limit=.872664626f;
+ return std::clamp(delta,std::min(0.f,-limit-current),std::max(0.f,limit-current));
+}
 inline std::uint64_t unified_direction_flags(std::uint64_t flags,float x,float y){
  return (flags&~std::uint64_t(15))|((std::isfinite(x)&&std::isfinite(y)&&std::hypot(x,y)>0)?(y<0?2u:1u):0u);
 }

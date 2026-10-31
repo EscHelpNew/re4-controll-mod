@@ -186,6 +186,16 @@ void run(){
     // These installation helpers are compile-checked here; actual hook offsets
     // are checked against the verified image by module profile tests.
     assert(!modern_move_matches(nullptr,0));auto installer=&modern_move_install;(void)installer;
+    for(float height:{-1000.f,1000.f})for(float planar:{0.f,-.000043711f}){
+        Fixture f;settings.unified_controls=true;
+        f.store(f.state,0x14C,ModernMoveVec3{});
+        f.store(f.state,0x158,ModernMoveVec3{0,height,planar});
+        f.update();
+        assert(control.modern_move_steps==1);
+        assert(std::fabs(scalar(f.actor.data(),0xAC)-10)<.0001f);
+        assert(std::fabs(scalar(f.actor.data(),0xA4))<.0001f);
+        assert(hit_z==10&&collision_z==10); // Straight-up/down gyro cannot stop or reverse forward walking.
+    }
     {
         Fixture f;settings.unified_controls=true;f.actor[0x115]=1;control.raw_lx=1;control.raw_ly=0;
         test_unified_walk=true;f.update();

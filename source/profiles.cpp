@@ -23,7 +23,7 @@ Settings re9_profile() {
     settings.gyro_enabled = true;
     settings.free_camera = true;
     settings.camera_return_speed = 0;
-    settings.third_person_distance = 1.35f;
+    settings.third_person_distance = 1.15f;
     settings.move_while_aiming = true;
     settings.move_while_knife = true;
     settings.unified_controls = true;

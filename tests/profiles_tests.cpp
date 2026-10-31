@@ -174,7 +174,7 @@ void re9_recipe_switch_and_restart() {
     CHECK(switch_profile(file.c_str(), active, ProfileDomain::Controls, re9) == ProfileResult::Applied);
     CHECK(active.analog_enabled && active.gyro_enabled && active.free_camera);
     CHECK(active.camera_return_speed == 0 && !active.first_person);
-    CHECK(active.third_person_distance == 1.35f);
+    CHECK(active.third_person_distance == 1.15f);
     CHECK(active.move_while_aiming && active.move_while_knife);
     CHECK(active.unified_controls);
     CHECK(active.reticle == ReticleStyle::Crosshair && active.reticle_size == ReticleSize::Small);
@@ -195,7 +195,7 @@ void re9_recipe_switch_and_restart() {
     Settings restarted;
     CHECK(load_settings_file(file.c_str(), restarted));
     CHECK(profile_kind(restarted, ProfileDomain::Controls) == re9);
-    CHECK(restarted.third_person_distance == 1.35f);
+    CHECK(restarted.third_person_distance == 1.15f);
     const auto saved = bytes(file), controls = bytes(file + ".controls-custom");
     CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, re9) == ProfileResult::Unchanged);
     CHECK(bytes(file) == saved && bytes(file + ".controls-custom") == controls);

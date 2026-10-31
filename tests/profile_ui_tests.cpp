@@ -87,7 +87,7 @@ int main(){
     assert(!settings.gyro_enabled && settings.texture_filtering==TextureFilter::Bilinear
         && settings.gyro_bias_x==0.3f);
     assert(row(picker,"RE9")->click(HidNpadButton_A));
-    assert(settings.third_person_distance==1.35f && settings.move_while_aiming && settings.move_while_knife
+    assert(settings.third_person_distance==1.15f && settings.move_while_aiming && settings.move_while_knife
         && settings.gyro_speed==0.8f && settings.texture_filtering==TextureFilter::Bilinear);
     assert(row(picker,"Custom")->click(HidNpadButton_A) && settings.gyro_enabled);
     assert(settings.third_person_distance==1 && !settings.move_while_knife); // Pre-RE9 Custom was retained.

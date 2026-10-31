@@ -148,8 +148,8 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
              "1.00: штатный вид из-за плеча. Увеличьте,\nчтобы Леон меньше закрывал обзор. Стены\nучитываются. Не влияет на вид от глаз/оптику."},
              &Settings::third_person_distance,nullptr,0.05f,1,2},
         toggle(ControlId::UnifiedControls,{"Unified sticks","Единое управление стиками"},
-            {"Left stick moves; right stick turns and looks.\nOne right-stick sensitivity for walking/aiming.\nEnabled in RE9. Classic aim gains apply when off.",
-             "Левый стик двигает, правый поворачивает.\nОбщая чувствительность обзора и прицела.\nВ RE9 включено. Выкл.: раздельные настройки."},&Settings::unified_controls),
+            {"Shared right-stick sensitivity for walk/aim.\nSmooth start and fast braking.\nVertical stick look is limited to +/-50deg.",
+             "Общая чувствительность правого стика.\nПлавный разгон и быстрое торможение.\nВертикальный обзор стиком: +/-50 градусов."},&Settings::unified_controls),
         {ControlId::Reset,ControlKind::Action,{"Reset settings","Сбросить настройки"},
             {"Restore defaults: English, linear curve,\n0.05 deadzones, native stick speeds,\ngyro off and both gyro inversions on.",
              "Вернуть настройки: английский, линейная\nкривая, мёртвые зоны 0.05, гироскоп выкл.,\nобе инверсии вкл., штатные скорости."}}

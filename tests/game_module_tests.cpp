@@ -72,7 +72,7 @@ std::vector<re4::SensorState> sensor_batch;
 std::uint8_t sampler_seen[20]{};
 std::uint32_t shadow_flags_seen=0;
 unsigned rom_result=0;
-bool native_view_test=false,submit_models=false,short_laser_ray=false;
+bool native_view_test=false,submit_models=false,short_laser_ray=false,simulate_weapon_sway=false;
 unsigned camera_native_calls=0,basis_native_calls=0,laser_native_calls=0,hud_native_calls=0,ortho_native_calls=0;
 unsigned laser_draw_seen=0,laser_reuse_seen=0;
 std::vector<void*> submitted_models;
@@ -177,6 +177,7 @@ void test_CameraInput(void* camera) {
             offsets[0]=std::clamp(float(in[1])/59*(type&&*type<0?-1:1),-1.f,1.f);
             offsets[1]=float(in[0])/59*-1.04719758f;
         }else{offsets[0]*=0.9f;offsets[1]*=0.9f;}
+        if(simulate_weapon_sway&&game_test::native_aim)offsets[0]=*reinterpret_cast<const float*>(main_base+0x1265A08);
         if(game_test::camera_gate_change==1)bytes[0x26C]=0;
         if(game_test::camera_gate_change==2)bytes[0x222]=1;
         if(native_view_test){
@@ -207,6 +208,7 @@ int test_AimSensitivity(void* actor,int) {
         AimSway::Callback(actor,0,pitch,reinterpret_cast<float*>(b+0x524));
         pitch[1]=pitch[0];
     }
+    if(simulate_weapon_sway){pitch[0]+=.03f;pitch[1]+=.03f;}
     cached_aim_yaw=*reinterpret_cast<float*>(b+0xB4);cached_aim_pitch=pitch[0];
     return 13;
 }
@@ -240,8 +242,8 @@ struct Fixture {
         free_orbit.reset();camera_context=nullptr;
         unified_look.reset();unified_update=nullptr;unified_pitch=0;unified_pitch_actor=0;unified_pitch_route=0;
         unified_aim_session={};unified_new_aim=false;unified_command_frame=0;unified_command_tick=0;
-        unified_root_actor=nullptr;unified_camera_calculation=false;aligned_aim_frame=0;pending_aligned_frame=0;displayed_aligned_frame=0;
-        native_view_test=submit_models=short_laser_ray=false;laser_endpoint={0,0,-1000};camera_native_calls=basis_native_calls=laser_native_calls=hud_native_calls=ortho_native_calls=0;
+        unified_root_actor=nullptr;unified_camera_calculation=false;
+        native_view_test=submit_models=short_laser_ray=simulate_weapon_sway=false;laser_endpoint={0,0,-1000};camera_native_calls=basis_native_calls=laser_native_calls=hud_native_calls=ortho_native_calls=0;
         submitted_models.clear();hud_rects.clear();test_weapon=test_other_model=nullptr;
         native_basis={{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
         native_profile={{-500,1765,-1190},{-180,1700,-110},{0,1340,1480},0.2f,50};
@@ -322,6 +324,54 @@ struct Fixture {
 };
 }
 int main(){
+    for(bool aim:{false,true}){
+        Fixture f;f.view_mode();if(aim)f.aim();settings.unified_controls=true;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        modern_probe=aim;control.raw_rx=1;control.raw_ry=1;ModernPlayerUpdate::Callback(f.actor);
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);const float yaw=f.yaw(),pitch=unified_pitch;
+        settings.camera_gain=0;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw(),yaw)&&near(unified_pitch,pitch));
+        settings.camera_gain=1;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),yaw));
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw()-yaw,-.038524245f));
+        modern_probe=false;
+    }
+
+    for(bool fps:{false,true}){
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.analog_enabled=false;settings.first_person=fps;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        f.camera()[0x26C]=0;modern_probe=true;simulate_weapon_sway=true;
+        ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,0)&&f.pitch()[1]>.02f);
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,0));
+        const re4::ViewVec3 eye{},up{0,1,0},target{0,0,1000};std::memcpy(f.input_state.data()+0x14C,&eye,sizeof(eye));std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));std::memcpy(f.input_state.data()+0x16C,&up,sizeof(up));
+        calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
+        assert(near(look_seen.x,0)&&near(look_seen.y,0));assert(near(game_test::rendered_pitch,0));assert(f.look()[0]>.02f);
+        modern_probe=false;
+    }
+    for(bool aim:{false,true}){
+        Fixture f;f.view_mode();if(aim)f.aim();settings.unified_controls=true;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        modern_probe=aim;ModernPlayerUpdate::Callback(f.actor);unified_pitch=.85f;
+        f.pitch()[0]=f.pitch()[1]=.541126806f;control.raw_ry=1;
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,.872664626f));
+        for(unsigned i=0;i<5;++i){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,.872664626f));}
+        modern_probe=false;
+    }
+    {
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.analog_enabled=false;settings.gyro_enabled=true;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        modern_probe=true;ModernPlayerUpdate::Callback(f.actor);unified_pitch=1.2f;f.pitch()[0]=f.pitch()[1]=.763943727f;
+        assert(gyro_aim_ready(f.actor,true));gyro_pending={0,.1f};control.raw_ry=1;
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,1.3f));
+        control.raw_ry=0;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,1.3f));
+        control.raw_ry=-1;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(unified_pitch>1.2f&&unified_pitch<1.3f);
+        // Gyro can reach the native pole; stable analytic up keeps the view finite.
+        gyro_pending={0,.5f};game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,1.570796327f));
+        const re4::ViewVec3 eye{},up{0,1,0},target{0,0,1000};std::memcpy(f.input_state.data()+0x14C,&eye,sizeof(eye));std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));std::memcpy(f.input_state.data()+0x16C,&up,sizeof(up));
+        f.camera()[0x26C]=0;calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;assert(look_seen.y>990);
+        const auto* view=reinterpret_cast<const re4::ViewMatrix3x4*>(f.input_state.data()+0xD8);for(const auto& row:view->m)for(float value:row)assert(std::isfinite(value));
+        modern_probe=false;
+    }
+
     {
         Fixture f;f.view_mode();settings.unified_controls=true;settings.analog_enabled=false;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
@@ -329,7 +379,7 @@ int main(){
         control.raw_lx=1;control.raw_ly=0;control.raw_rx=1;control.raw_ry=1;f.flags()=15;unified_probe=true;
         ModernPlayerUpdate::Callback(f.actor);assert(unified_flags_seen==1);assert((f.flags()&15)==15);
         game_test::tick+=960000;const float before=f.yaw();ModernPlayerUpdate::Callback(f.actor);
-        assert(near(f.yaw()-before,-2.09439510239f*.05f));assert(near(game_test::motion_speed_seen,1.25f));
+        assert(near(f.yaw()-before,-.038524245f));assert(near(game_test::motion_speed_seen,1.25f));
         unified_probe=false;
     }
 
@@ -340,13 +390,14 @@ int main(){
         auto* axes=reinterpret_cast<int*>(f.image.data()+0x124E9C8);axes[0]=63;axes[1]=-63;
         ModernPlayerUpdate::Callback(f.actor);assert(seen_aim_x==0&&seen_aim_y==0);
         game_test::tick+=960000;const auto before=f.yaw();ModernPlayerUpdate::Callback(f.actor);
-        assert(near(f.yaw()-before,-2.09439510239f*.05f));assert(near(f.pitch()[1],.05f));
+        assert(near(f.yaw()-before,-.038524245f));assert(near(f.pitch()[1],.018393972f));
         assert(axes[0]==63&&axes[1]==-63);assert(near(f.pitch()[0],f.pitch()[1]));
         const auto yaw=f.yaw();AimSensitivity::Callback(f.actor,0);assert(near(f.yaw(),yaw));
+        const float expected_yaw[]={-.080367656f,-.095760823f};unsigned interval=0;
         for(unsigned phase:{2u,1u}){
             f.actor[0x116]=phase;f.actor[0x117]=phase==1?4:1;
             game_test::tick+=960000;const float value=f.yaw();ModernPlayerUpdate::Callback(f.actor);
-            assert(near(f.yaw()-value,-2.09439510239f*.05f));
+            assert(near(f.yaw()-value,expected_yaw[interval++]));
         }
         settings.unified_controls=false;publish_view_settings();settings.unified_controls=true;publish_view_settings();
         game_test::tick+=960000;const float toggled=f.yaw();ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),toggled));
@@ -371,19 +422,24 @@ int main(){
     {
         Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.reticle=re4::ReticleStyle::Crosshair;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
-        f.camera()[0x26C]=0;publish_view_settings();laser_endpoint={500,300,1000};
+        f.camera()[0x26C]=0;modern_probe=true;ModernPlayerUpdate::Callback(f.actor);modern_probe=false;
+        laser_endpoint={500,300,1000};
         const re4::ViewVec3 eye{10,20,30},up{0,1,0},target{0,0,100};
         std::memcpy(f.input_state.data()+0x14C,&eye,sizeof(eye));std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));std::memcpy(f.input_state.data()+0x16C,&up,sizeof(up));
         WeaponLaser::Callback(f.weapon,1,0,0);calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
-        assert(near(look_seen.x,500)&&near(look_seen.y,300)&&near(look_seen.z,1000));
+        assert(near(look_seen.x,eye.x)&&near(look_seen.y,eye.y)&&look_seen.z>eye.z);
         re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;std::memcpy(&view,f.input_state.data()+0xD8,sizeof(view));std::memcpy(&projection,f.input_state.data()+0x10C,sizeof(projection));
-        re4::ViewHudPoint point;assert(re4::project_view_point(view,projection,laser_endpoint,point));assert(near(point.x,256)&&near(point.y,224));
-        assert(aligned_aim_frame==view_frame);
-        SceneSubmit::Callback();view_frame.fetch_add(1);SceneDraw::Callback();assert(displayed_aligned_frame==view_frame);
+        re4::ViewHudPoint point;assert(re4::project_view_point(view,projection,laser_endpoint,point));assert(std::fabs(point.x-256)>5);
+        SceneSubmit::Callback();view_frame.fetch_add(1);SceneDraw::Callback();
         CameraInput::Callback(f.camera());HudDraw::Callback(nullptr);assert(hud_rects.size()==4);
-        displayed_aligned_frame=0;HudDraw::Callback(nullptr);assert(hud_rects.size()==4);
-        view_frame.fetch_add(1);std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
-        assert(look_seen.x==target.x&&look_seen.y==target.y&&look_seen.z==target.z&&aligned_aim_frame==0);
+        const auto drawn=std::size_t(hud_rects.size());
+        // Animated/near-wall endpoints must move the truthful marker, never the view.
+        for(auto ray:{re4::ViewVec3{15,21,40},re4::ViewVec3{-300,200,800},re4::ViewVec3{10,20,50000}}){
+            laser_endpoint=ray;WeaponLaser::Callback(f.weapon,1,0,0);calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
+            const auto* current=reinterpret_cast<const re4::ViewMatrix3x4*>(f.input_state.data()+0xD8);
+            for(unsigned i=0;i<3;++i)for(unsigned j=0;j<4;++j)assert(near(current->m[i][j],view.m[i][j]));
+        }
+        view_frame.fetch_add(1);CameraInput::Callback(f.camera());HudDraw::Callback(nullptr);assert(hud_rects.size()==drawn);
     }
     {
         Fixture f;f.view_mode();settings.unified_controls=true;settings.analog_enabled=false;
@@ -393,7 +449,7 @@ int main(){
         f.actor[0x116]=0;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
         f.actor[0x116]=1;f.actor[0x117]=4;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
         f.actor[0x117]=1;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
-        assert(near(f.pitch()[1],.05f));modern_probe=false;
+        assert(near(f.pitch()[1],.018393972f));modern_probe=false;
         f.actor[0x115]=1;game_test::native_aim=0;dpad_move=true;f.flags()=1;unified_probe=true;
         ModernPlayerUpdate::Callback(f.actor);assert(unified_flags_seen==1);unified_probe=false;
     }
@@ -403,8 +459,8 @@ int main(){
         control.raw_rx=1;control.raw_ry=1;ModernPlayerUpdate::Callback(f.actor);game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
         const re4::ViewVec3 eye{},up{0,1,0},target{0,0,1000};std::memcpy(f.input_state.data()+0x14C,&eye,sizeof(eye));std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));std::memcpy(f.input_state.data()+0x16C,&up,sizeof(up));
         calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
-        assert(near(look_seen.x/1000,std::sin(-2.09439510239f*.05f)*std::cos(1.57079632679f*.05f)));
-        assert(near(look_seen.y/1000,std::sin(1.57079632679f*.05f)));assert(f.look()[0]==0&&f.look()[1]==0);
+        assert(near(look_seen.x/1000,std::sin(-.038524245f)*std::cos(.028893184f)));
+        assert(near(look_seen.y/1000,std::sin(.028893184f)));assert(f.look()[0]==0&&f.look()[1]==0);
     }
     {
         Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.analog_enabled=false;settings.gyro_enabled=true;

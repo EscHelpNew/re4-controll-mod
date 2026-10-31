@@ -7,12 +7,45 @@ using namespace re4;
 bool near(float a,float b){return std::fabs(a-b)<1e-4f;}
 int main(){
  UnifiedLook look;auto d=look.update(1,1,1,true,1,1);assert(d.yaw==0&&d.pitch==0);
- d=look.update(1,1,960001,true,1,1);assert(near(d.yaw,-2.09439510239f*.05f));assert(near(d.pitch,1.57079632679f*.05f));
- assert(near(unified_pitch_weight(d.pitch),.05f));
+ // A50ms step must ease into motion instead of instantly taking full speed.
+ d=look.update(1,1,960001,true,1,1);assert(near(d.yaw,-.038524245f));assert(near(d.pitch,.028893184f));
+ assert(near(unified_pitch_weight(d.pitch),.018393972f));
  d=look.update(1,1,960001,true,1,1);assert(d.yaw==0&&d.pitch==0);
  d=look.update(1,2,1920001,true,1,1);assert(d.yaw==0&&d.pitch==0);
  d=look.update(1,2,100000000,true,1,1);assert(d.yaw==0&&d.pitch==0);
  look.update(1,2,100100000,false,1,1);d=look.update(1,2,100200000,true,1,1);assert(d.yaw==0);
+ // The analytic velocity integral gives the same half-second turn at each rate.
+ for(unsigned hz:{30u,60u,120u}){
+  UnifiedLook motion;motion.update(7,1,1,true,1,1);float yaw=0,pitch=0;
+  for(unsigned n=1;n<=hz/2;++n){auto step=motion.update(7,1,1+19200000ull*n/hz,true,1,1);yaw+=step.yaw;pitch+=step.pitch;}
+  assert(near(yaw,-.94248255f)&&near(pitch,.70686191f));
+  float coast=0;
+  for(unsigned n=1;n<=hz/2;++n){auto step=motion.update(7,1,9600001+19200000ull*n/hz,true,0,0);assert(step.yaw<=0);coast-=step.yaw;d=step;}
+  assert(coast<.02514f&&std::fabs(d.yaw)<1e-6f); // Stop tail is below1.45degrees at full speed.
+ }
+ for(unsigned hz:{30u,60u,120u}){
+  UnifiedLook motion;motion.update(1,1,1,true,1,0);
+  for(unsigned n=1;n<=hz;++n)motion.update(1,1,1+19200000ull*n/hz,true,1,0);
+  float reversed=0;
+  for(unsigned n=1;n<=hz/10;++n)reversed+=motion.update(1,1,19200001+19200000ull*n/hz,true,-1,0).yaw;
+  assert(std::fabs(reversed-.09632437f)<.000002f); // Same100ms flick after the brake-to-acceleration crossing.
+ }
+ {
+  UnifiedLook motion;motion.update(1,1,1,true,1,0);
+  for(unsigned n=1;n<=10;++n)motion.update(1,1,1+960000ull*n,true,1,0);
+  d=motion.update(1,1,10560001,true,-1,0);assert(d.yaw>0); // A reversal must brake promptly.
+  motion.reset();assert(motion.update(1,1,11520001,true,1,0).yaw==0);
+  d=motion.update(1,1,12480001,true,1,0);assert(near(d.yaw,-.038524245f));
+ }
+ // Stop stick-driven pitch at50degrees without snapping a gyro-created angle.
+ assert(near(unified_stick_pitch_delta(.85f,.1f),.022664626f));
+ assert(near(unified_stick_pitch_delta(-.85f,-.1f),-.022664626f));
+ assert(unified_stick_pitch_delta(1.2f,.1f)==0);
+ assert(near(unified_stick_pitch_delta(1.2f,-.02f),-.02f));
+ assert(unified_stick_pitch_delta(-1.2f,-.1f)==0);
+ assert(near(unified_stick_pitch_delta(-1.2f,.02f),.02f));
+ assert(unified_stick_pitch_delta(1.2f,0)==0);
+ assert(unified_stick_pitch_delta(std::numeric_limits<float>::quiet_NaN(),.1f)==0);
  ViewMatrix3x4 basis{{{2,.1f,0,44},{0,3,.2f,55},{.3f,0,4,66}}};ViewVec3 in{2,3,4},out,world0,world1;
  assert(unified_redirect_root(basis,in,1.2f,out));auto linear=basis;for(auto& row:linear.m)row[3]=0;
  assert(view_transform_point(linear,in,world0)&&view_transform_point(linear,out,world1));

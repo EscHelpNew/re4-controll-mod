@@ -109,12 +109,20 @@ bool modern_move_prepare(void* actor){
         re4::shape_axis(control.raw_lx,settings.left_deadzone,1,settings.stick_curve),
         re4::shape_axis(control.raw_ly,settings.left_deadzone,1,settings.stick_curve));
     if(!(std::hypot(left.x,left.z)>0)){control.modern_move_status=1;return false;}
-    const auto state=modern_move_slot(0xB1AE08);re4::ModernMoveVec3 eye,target;
-    if(!modern_move_read(state+0x14C,eye)||!modern_move_read(state+0x158,target)
-       ||!re4::modern_move_finite(eye)||!re4::modern_move_finite(target))return false;
-    const auto dx=target.x-eye.x,dz=target.z-eye.z;
-    if(!(std::hypot(dx,dz)>0.001f))return false;
-    const float camera_yaw=std::atan2(dx,dz);
+    float camera_yaw;
+    if(settings.unified_controls){
+        // Unified view heading is owned by the player, including at gyro poles
+        // where the view's horizontal projection vanishes or changes sign.
+        if(!modern_move_read(reinterpret_cast<std::uintptr_t>(actor)+0xB4,camera_yaw)
+            ||!std::isfinite(camera_yaw))return false;
+    }else{
+        const auto state=modern_move_slot(0xB1AE08);re4::ModernMoveVec3 eye,target;
+        if(!modern_move_read(state+0x14C,eye)||!modern_move_read(state+0x158,target)
+           ||!re4::modern_move_finite(eye)||!re4::modern_move_finite(target))return false;
+        const auto dx=target.x-eye.x,dz=target.z-eye.z;
+        if(!(std::hypot(dx,dz)>0.001f))return false;
+        camera_yaw=std::atan2(dx,dz);
+    }
     re4::ModernMoveVec3 direction;const re4::ModernMoveBasis unit{};
     if(!re4::modern_move_world_step({0,0,1},unit,left.x,left.z,camera_yaw,direction))return false;
     re4::ModernMoveIdentity owner;

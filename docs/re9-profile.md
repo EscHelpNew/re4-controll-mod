@@ -2,7 +2,7 @@
 
 Select **Controls > Profiles and reset > Controls profile > RE9** in either
 interface. Use RE4's default native controller layout. Reapply RE9 after updating
-from0.8 to activate the revised preset; saved Custom controls are preserved.
+from an earlier version to activate the revised preset; saved Custom controls are preserved.
 Graphics has separate profiles. Changing a control from RE9 creates Custom.
 
 The preset enables **Unified sticks**: the left stick moves without steering,
@@ -12,7 +12,7 @@ right-stick deadzone and response curve. Separate classic turn/aim gains do not
 apply in this mode. Default and old saved settings keep Unified sticks off.
 
 The preset also enables moving aim/knife, firearm-only gyro at0.80, free360 look
-and a small half-transparent crosshair. Third-person distance starts at1.35.
+and a small half-transparent crosshair. Third-person distance starts at1.15.
 **Camera > Third-person distance** ranges from1.00 (original framing) to2.00.
 It moves the camera before native wall collision; narrow spaces may pull it in.
 First person, optical sights and cinematic cameras retain their own ownership.
@@ -33,18 +33,20 @@ L3 remains an alias of the native B action, so its other contextual actions can
 also apply. This profile does not change native button prompts or add RE9
 crouching, parrying, quick healing, quick weapon slots or modern animations.
 
-For supported ordinary firearm views, the camera follows the fresh native
-weapon-ray endpoint and the custom reticle is centered on that aim. Unsupported
-weapons, scopes and special camera states retain native behavior. The shared
-input formula does not claim identical animation response for every weapon.
+The camera follows the intended view direction, independently of weapon sway.
+The reticle projects the actual displayed laser aim and may move off-center;
+native bullet spread and weapon animations remain. Optical sights and special
+camera states retain native behavior. First person keeps the original weapon
+animations rather than introducing a replacement viewmodel.
 Movement, transitions, walls and aiming alignment still need hardware acceptance
 for each new build; host tests do not reproduce the whole game engine.
 
 For a console check, reapply RE9 and compare a small/full right-stick deflection
 while walking and aiming at a common sensitivity of0.30. With the right stick
 released, test all four left-stick directions. Check walking-to-aim pitch,
-release/re-aim and post-shot recovery. Compare the centered translucent marker
-with the laser/hit endpoint near walls, and verify original face/menu buttons.
+release/re-aim and post-shot recovery. Compare the translucent marker
+with laser aim near walls. Check that changing aim distance or weapon sway does
+not steer the camera, including first person. Verify original face/menu buttons.
 
 The initial layout research visually checked the
 [RE9 in-game PS5 layout screenshot](https://www.spottis.com/img/public/resident-evil-requiem-controls-playstation.jpg),
@@ -52,3 +54,9 @@ The initial layout research visually checked the
 and [Capcom's original RE4 Switch controls](https://game.capcom.com/manual/bio4/img/manual/en/switch/5.jpg).
 The0.9 preset preserves original face/menu buttons at the user's request. It is
 an adaptation to this port, not a claim to reproduce undocumented RE9 formulas.
+
+Unified look uses a50ms velocity rise and12ms braking/reversal response. Stick
+pitch is limited to50degrees up/down; gyro retains its own range. These are
+mod-specific tuning choices inspired by the requested BLACK PS2 feel, not values
+claimed from its engine. The [original BLACK PS2 manual](https://www.videogamemanual.com/PS2/Black%20%28USA%29.pdf)
+confirms move/look separation and custom button layouts, not numerical curves.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 (unreleased)
+
+- Ease unified stick velocity into motion, brake promptly and integrate by time for consistent frame-rate response.
+- Limit stick-driven vertical look to50degrees each way without snapping gyro angles back into that band.
+- Keep camera orientation and profile pitch independent of animated weapon sway and clipped laser endpoints.
+- Project the translucent reticle onto actual displayed laser aim; it may move off-center while the view remains steady.
+- Bring the RE9 shoulder camera closer at1.15; native Default remains1.00.
+- Keep native shot/laser calculations and first-person weapon animations; this is not a replacement first-person viewmodel.
+
 ## 0.9.0 (unreleased)
 
 - Add opt-in unified sticks, enabled by the RE9 profile: left-stick movement and right-stick turn/look with one sensitivity during walking and aiming.
