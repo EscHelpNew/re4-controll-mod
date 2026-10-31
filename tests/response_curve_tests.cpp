@@ -38,7 +38,7 @@ int main(){
     assert(shape_axis(0.5f,0,1,static_cast<StickCurve>(255))==0);
     std::uint8_t bytes[kSettingsBytes];
     Settings s;s.language=Language::Russian;s.stick_curve=StickCurve::Hybrid;
-    assert(encode_settings(s,bytes,sizeof(bytes)) && bytes[4]==12);
+    assert(encode_settings(s,bytes,sizeof(bytes)) && bytes[4]==13);
     Settings decoded;assert(decode_settings(bytes,sizeof(bytes),decoded));
     assert(decoded.language==Language::Russian && decoded.stick_curve==StickCurve::Hybrid);
     s.language=static_cast<Language>(2);assert(!valid_settings(s));

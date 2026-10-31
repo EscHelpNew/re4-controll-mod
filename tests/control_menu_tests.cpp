@@ -14,15 +14,16 @@ int main(){
         assert(std::strstr(spec.label.russian,"ходьбы")==nullptr);
     }
     assert(ids.size()==unsigned(ControlId::Count));
+    assert(control_group_count(ControlGroup::Aiming)==7);
     // Missing, duplicated or misplaced entries would hide settings in both interfaces.
     const std::array<std::initializer_list<ControlId>,7> expected{{
         {ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone,ControlId::UnifiedControls},
-        {ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife},
+        {ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife,ControlId::MoveReloading},
         {ControlId::Gyro,ControlId::GyroSpeed,ControlId::GyroDeadzone,ControlId::GyroX,ControlId::GyroY,ControlId::InvertX,ControlId::InvertY},
         {ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson,ControlId::ThirdPersonDistance},
         {ControlId::Reticle,ControlId::ReticleSize},
         {ControlId::ButtonMapping},
-        {ControlId::Profile,ControlId::Reset}
+        {ControlId::Reset}
     }};
     std::set<unsigned> grouped;
     assert(control_groups().size()==expected.size());
@@ -43,7 +44,7 @@ int main(){
         assert(control_group_item(id,row)==ControlId::Count);
         assert(control_group_item(id,999)==ControlId::Count);
     }
-    assert(grouped.size()==unsigned(ControlId::Count)-1 && !grouped.count(unsigned(ControlId::Language)));
+    assert(grouped.size()==unsigned(ControlId::Count)-2 && !grouped.count(unsigned(ControlId::Language)));
     for(auto group:{ControlGroup::Count,static_cast<ControlGroup>(999)}){
         assert(control_group_count(group)==0 && control_group_item(group,0)==ControlId::Count);
         assert(control_group_spec(group).id==ControlGroup::Count);
@@ -57,7 +58,7 @@ int main(){
     assert(camera_return && free_camera && mapping);
     for(auto language:{Language::English,Language::Russian}){
         assert(std::strcmp(profile_name(ProfileKind::RE6,language),"RE6")==0);
-        Settings original=re9_profile();original.language=language;
+        Settings original;original.language=language;
         Settings reference=re6_profile();reference.language=language;
         for(auto id:{ControlId::Camera,ControlId::RightAimX,ControlId::RightAimY,ControlId::UnifiedControls}){
             assert(std::strcmp(control_help_text(control_spec(id),original),control_spec(id).help.get(language))==0);
@@ -65,6 +66,12 @@ int main(){
         }
         assert(std::strcmp(control_help_text(control_spec(ControlId::Gyro),reference),control_spec(ControlId::Gyro).help.get(language))==0);
     }
+    assert(kControlProfiles.size()==3);
+    assert(kControlProfiles[0]==ProfileKind::Default && kControlProfiles[1]==ProfileKind::RE6 && kControlProfiles[2]==ProfileKind::Custom);
+    assert(std::strstr(control_spec(ControlId::UnifiedControls).help.english,"+/-35")!=nullptr);
+    assert(std::strcmp(control_spec(ControlId::Profile).label.russian,"Профиль управления")==0);
+    assert(std::strcmp(control_group_spec(ControlGroup::Profiles).label.russian,"Сброс")==0);
+    for(auto language:{Language::English,Language::Russian})assert(std::strstr(control_spec(ControlId::Profile).help.get(language),"RE9")==nullptr);
     Settings unified;
     assert(change_control(unified,ControlId::UnifiedControls,1) && unified.unified_controls);
     assert(change_control(unified,ControlId::UnifiedControls,-1) && !unified.unified_controls);
@@ -84,6 +91,8 @@ int main(){
     assert(!s.first_person && change_control(s,ControlId::FirstPerson,1) && s.first_person);
     assert(change_control(s,ControlId::MoveAiming,1) && s.move_while_aiming);
     assert(change_control(s,ControlId::MoveKnife,1) && s.move_while_knife);
+    assert(change_control(s,ControlId::MoveReloading,1) && s.move_while_reloading);
+    assert(control_value_text(control_spec(ControlId::MoveReloading),s)=="On");
     assert(control_value_text(control_spec(ControlId::FirstPerson),s)=="On");
     for(unsigned i=0;i<3;++i)assert(change_control(s,ControlId::Reticle,1));
     assert(s.reticle==ReticleStyle::Off);
@@ -131,7 +140,10 @@ int main(){
     assert(!change_control(s,static_cast<ControlId>(999),1));
     change_control(s,ControlId::Gyro,1);assert(s.gyro_enabled);
     assert(change_control(s,ControlId::Reset,1));
-    assert(s.language==Language::English && s.left_deadzone==0.05f && s.invert_x && !s.gyro_enabled);
+    assert(s.language==Language::Russian && s.left_deadzone==0.05f && s.invert_x && !s.gyro_enabled);
+    assert(!s.analog_enabled && !s.remap_enabled && !s.unified_controls);
+    assert(!s.move_while_reloading);
+    assert(!change_control(s,ControlId::Reset,1));
     assert(s.gyro_speed==0.8f && s.camera_return_speed==1 && !s.free_camera);
     for(unsigned i=0;i<30;++i)change_control(s,ControlId::CameraReturn,-1);
     assert(s.camera_return_speed==0 && !change_control(s,ControlId::CameraReturn,-1));

@@ -149,16 +149,27 @@ private:
 };
 
 struct ModernMoveFrame {
-    bool aim_enabled=false,knife_enabled=false,active_player=false;
+    bool aim_enabled=false,knife_enabled=false,reload_enabled=false,active_player=false;
     bool generic_firearm=false,native_aim=false,input_live=false,scripted=false,frozen=false;
     unsigned character=0,mode=0,routine=0,phase=0,subphase=0;
     std::uint64_t held=0;
     float frame_factor=0,x=0,y=0;
 };
-inline bool modern_move_allowed(const ModernMoveFrame& f){
+inline bool modern_move_context_allowed(const ModernMoveFrame& f){
     if(!f.active_player||f.character!=0||f.mode||!f.input_live||f.scripted||f.frozen
        ||!std::isfinite(f.frame_factor)||f.frame_factor<=0||f.frame_factor>2
        ||!std::isfinite(f.x)||!std::isfinite(f.y))return false;
+    return true;
+}
+// Proven generic31CC60 reload family, including initialization before the
+// weapon's reload flag is written and playback after the aim button is released.
+inline bool modern_reload_allowed(const ModernMoveFrame& f){
+    return modern_move_context_allowed(f)&&f.reload_enabled&&f.generic_firearm
+        &&f.routine==6&&f.phase==4&&f.subphase<=3;
+}
+inline bool modern_move_allowed(const ModernMoveFrame& f){
+    if(!modern_move_context_allowed(f))return false;
+    if(modern_reload_allowed(f))return true;
     if(f.routine==6)return f.aim_enabled&&f.generic_firearm&&f.native_aim&&(f.held&0x10)
         &&((f.phase==1&&f.subphase==1)||(f.phase==2&&f.subphase<=1));
     return f.routine==11&&f.knife_enabled&&(f.held&kKnifeHeldMask)&&f.subphase==1&&(f.phase==1||f.phase==2);

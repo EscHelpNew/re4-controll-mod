@@ -25,6 +25,7 @@ void test_ModernPose(void*,int);
 void test_RootDisplacement(void*,void*,unsigned,re4::ViewVec3*,re4::ViewVec3*);
 int test_AimSensitivity(void*, int);
 void test_AimSway(void*, unsigned, float*, float*);
+void test_AimRaise(void*);
 unsigned test_RomMount(const char*,void*,std::size_t);
 void test_SamplerCreate(void*,void*,const std::uint8_t*);
 void test_ResolutionMap(int,int,int*,int*);
@@ -42,6 +43,18 @@ void test_SceneDraw();
 #define assert(c) do { if(!(c)){std::fprintf(stderr,"line %d: %s\n",__LINE__,#c);std::exit(1);} } while(0)
 namespace {
 bool modern_probe=false,unified_probe=false;
+unsigned aim_raise_native_calls=0,aim_raise_native_change=0;
+void test_AimRaise(void* actor){
+    ++aim_raise_native_calls;
+    if(actor){
+        auto* context=*reinterpret_cast<std::uint8_t**>(static_cast<std::uint8_t*>(actor)+0x938);
+        if(context)*reinterpret_cast<float*>(context+0x28)=0;
+        if(aim_raise_native_change==1)static_cast<std::uint8_t*>(actor)[0x117]=1;
+    }
+    auto* pitch=reinterpret_cast<float*>(main_base+0x1265A08);pitch[0]=pitch[1]=pitch[2]=0;
+    if(aim_raise_native_change==2){auto* state=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);state[0x5092]|=4;}
+    if(aim_raise_native_change==3)settings.unified_controls=false;
+}
 unsigned unified_flags_seen=0,update_state_change=0;
 unsigned modern_original_updates=0,modern_original_roots=0,modern_original_poses=0;
 bool native_root_probe=false;
@@ -238,7 +251,7 @@ struct Fixture {
     alignas(4) std::uint8_t input_type[16]{};
     alignas(16) std::uint8_t weapon_context[0x60]{},weapon[0x500]{},other_model[0x500]{};
     Fixture() {
-        sensor.stop();sensor={};gyro.reset();gyro_session={};gyro_pending={};last_sensor_tick=0;sensor_batch.clear();
+        sensor.stop();sensor={};gyro.reset();gyro_frame.reset();gyro_tuning_ready=false;gyro_session={};gyro_pending={};last_sensor_tick=0;sensor_batch.clear();
         free_orbit.reset();camera_context=nullptr;
         unified_look.reset();unified_update=nullptr;unified_pitch=0;unified_pitch_actor=0;unified_pitch_route=0;
         unified_aim_session={};unified_new_aim=false;unified_command_frame=0;unified_command_tick=0;
@@ -253,6 +266,7 @@ struct Fixture {
         fps_override_count=0;reticle_draw_count=0;
         main_view_actor=nullptr;
         modern_probe=false;modern_original_updates=modern_original_roots=modern_original_poses=0;
+        aim_raise_native_calls=aim_raise_native_change=0;
         game_test::memory_maps.clear();modern_update_actor=nullptr;modern_cycle.reset();modern_pose.discard();
         modern_native={};modern_bound_owner={};modern_bound_asset=modern_bound_clip=0;
         modern_epoch=0;modern_root_done=modern_stepped=modern_pose_done=false;
@@ -324,6 +338,20 @@ struct Fixture {
 };
 }
 int main(){
+    for(unsigned sub=0;sub<4;++sub){
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.move_while_reloading=true;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        *reinterpret_cast<std::uint16_t*>(f.actor+0x352)=0x300;
+        game_test::memory_maps={{reinterpret_cast<std::uintptr_t>(f.actor),sizeof(f.actor),3},
+            {reinterpret_cast<std::uintptr_t>(f.input_state.data()),f.input_state.size(),3}};
+        f.actor[0x116]=4;f.actor[0x117]=std::uint8_t(sub);f.flags()=0;game_test::native_aim=0;
+        unified_pitch_actor=reinterpret_cast<std::uintptr_t>(f.actor);unified_pitch=.4f;
+        assert(modern_move_reload_active(f.actor)&&!modern_move_aim_active(f.actor));
+        assert(unified_view_ready(f.actor)); // Keep the angle when ZL is released during reload.
+        settings.gyro_enabled=true;assert(!gyro_aim_ready(f.actor,true));
+        settings.move_while_reloading=false;assert(!unified_view_ready(f.actor));
+        settings.move_while_reloading=true;f.actor[0x117]=4;assert(!unified_view_ready(f.actor));
+    }
     {
         Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.re6_response=true;settings.analog_enabled=false;
         settings.camera_gain=0;settings.right_aim_gain_x=1;settings.right_aim_gain_y=0;
@@ -393,10 +421,10 @@ int main(){
     for(bool aim:{false,true}){
         Fixture f;f.view_mode();if(aim)f.aim();settings.unified_controls=true;settings.analog_enabled=false;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
-        modern_probe=aim;ModernPlayerUpdate::Callback(f.actor);unified_pitch=.85f;
-        f.pitch()[0]=f.pitch()[1]=.541126806f;control.raw_ry=1;
-        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,.872664626f));
-        for(unsigned i=0;i<5;++i){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,.872664626f));}
+        modern_probe=aim;ModernPlayerUpdate::Callback(f.actor);unified_pitch=.6f;
+        f.pitch()[0]=f.pitch()[1]=re4::unified_pitch_weight(.6f);control.raw_ry=1;
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,.610865238f));
+        for(unsigned i=0;i<5;++i){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,.610865238f));}
         modern_probe=false;
     }
     {
@@ -1062,7 +1090,7 @@ int main(){
         game_test::program=re4::profile::title_id;f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
         assert(control.status==2 && game_test::installed==0);
         f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
-        assert(control.status==1 && game_test::installed==26 && game_test::initialized==1);
+        assert(control.status==1 && game_test::installed==27 && game_test::initialized==1);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }
@@ -1162,7 +1190,9 @@ int main(){
         game_test::tick+=640'000;f.sample(2);
         const auto s=sensor_batch[0];sensor_batch={s,s,s};
         sensor_batch[0].number=4;sensor_batch[1].number=3;
-        poll_sensors();assert(near(gyro_pending.yaw,(1-0.5f*0.01745329252f)*0.01f));
+        poll_sensors();assert(gyro_pending.yaw==0); // The first10ms endpoint is presented after10ms.
+        game_test::tick+=96'000;f.sample(5);poll_sensors();
+        assert(near(gyro_pending.yaw,(1-0.5f*0.01745329252f)*0.005f));
         const float filtered=gyro_pending.yaw;
         control.raw_lx=0.575f;control.raw_ly=0.575f;settings.aim_gain_x=settings.aim_gain_y=0.3f;
         assert(AimSensitivity::Callback(f.actor,0)==13);
@@ -1170,11 +1200,38 @@ int main(){
         assert(near(f.pitch()[0],filtered+0.08f*9/63)); // Additive gyro and stick in same frame.
         const float before=f.yaw();AimSensitivity::Callback(f.actor,0);
         assert(near(f.yaw()-before,0.04f*9/63)); // Sensor delta applied once.
-        game_test::tick+=2'000'000;f.sample(3);poll_sensors();assert(gyro_pending.yaw==0); // Pause backlog.
-        game_test::tick+=640'000;game_test::native_aim=0;f.sample(4);poll_sensors();assert(gyro_pending.yaw==0);
-        game_test::native_aim=1;f.flags()=0;f.sample(5);poll_sensors();assert(gyro_pending.yaw==0);
+        game_test::tick+=2'000'000;f.sample(6);poll_sensors();assert(gyro_pending.yaw==0); // Pause backlog.
+        game_test::tick+=640'000;game_test::native_aim=0;f.sample(7);poll_sensors();assert(gyro_pending.yaw==0);
+        game_test::native_aim=1;f.flags()=0;f.sample(8);poll_sensors();assert(gyro_pending.yaw==0);
         game_test::pad_attributes=0;HandheldPad::Callback(&pad,id);poll_sensors();
         assert(!sensor.running() && game_test::sensor_stops==1);
+    }
+    {
+        // Real module, filter and native aiming callbacks must turn a uniform
+        // sensor rate into uniform frame steps despite 6/7-sample FIFO batches.
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.gyro_enabled=true;
+        settings.analog_enabled=false;settings.gyro_speed=1;settings.gyro_deadzone_dps=0;
+        game_test::apply_sway=true;game_test::aim_step=0;
+        *reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        NpadState pad{};pad.attributes=1;capture(pad,32,2);
+        unsigned number=1;
+        for(unsigned frame=0;frame<24;++frame){
+            game_test::tick+=640000;
+            const unsigned count=(frame+1)*200/30-frame*200/30;
+            number+=count;
+            f.sample(number-1);const auto sample=sensor_batch.front();sensor_batch.clear();
+            for(unsigned i=0;i<count;++i){auto s=sample;s.number=number-1-i;sensor_batch.push_back(s);}
+            if(frame==8||frame==9)sensor_batch.clear(); // Connected sensor dropout, not a game pause.
+            const float before=f.yaw(),pitch_before=unified_pitch;
+            poll_sensors();AimSensitivity::Callback(f.actor,0);
+            if(frame>=3&&(frame<8||frame>=14)){
+                assert(near(f.yaw()-before,1.f/30));assert(near(unified_pitch-pitch_before,1.f/30));
+            }
+        }
+        // A tuning change to zero discards the delayed tail immediately.
+        settings.gyro_speed=0;game_test::tick+=640000;poll_sensors();
+        const float before=f.yaw(),pitch_before=unified_pitch;AimSensitivity::Callback(f.actor,0);
+        assert(f.yaw()==before&&unified_pitch==pitch_before&&gyro_pending.yaw==0);
     }
     std::puts("actual game callbacks: identity, flags, motion, camera, additive aim/gyro, native raise, FIFO and pause PASS");
 }

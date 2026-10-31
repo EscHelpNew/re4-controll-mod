@@ -54,9 +54,9 @@ int main(){
   motion.reset();assert(motion.update(1,1,11520001,true,1,0).yaw==0);
   d=motion.update(1,1,12480001,true,1,0);assert(near(d.yaw,-.038524245f));
  }
- // Stop stick-driven pitch at50degrees without snapping a gyro-created angle.
- assert(near(unified_stick_pitch_delta(.85f,.1f),.022664626f));
- assert(near(unified_stick_pitch_delta(-.85f,-.1f),-.022664626f));
+ // Stop stick-driven pitch at35degrees without snapping a gyro-created angle.
+ assert(near(unified_stick_pitch_delta(.6f,.1f),.010865238f));
+ assert(near(unified_stick_pitch_delta(-.6f,-.1f),-.010865238f));
  assert(unified_stick_pitch_delta(1.2f,.1f)==0);
  assert(near(unified_stick_pitch_delta(1.2f,-.02f),-.02f));
  assert(unified_stick_pitch_delta(-1.2f,-.1f)==0);

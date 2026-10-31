@@ -15,6 +15,7 @@
 #include "re4/modern_move.hpp"
 #include "re4/unified.hpp"
 #include "re4/reticle_draw.hpp"
+#include "re4/gyro_frame.hpp"
 #include "re6/journal.hpp"
 #include <atomic>
 
@@ -86,7 +87,7 @@ bool telemetry_read_input(std::uint64_t tick,re6::Record& out){
     out.sticks[0]=value.pad.lx;out.sticks[1]=value.pad.ly;out.sticks[2]=value.pad.rx;out.sticks[3]=value.pad.ry;
     out.validity|=re6::InputValid;return true;
 }
-re4::Settings settings;
+re4::Settings settings=[] {re4::Settings s;s.analog_enabled=false;s.remap_enabled=false;return s;}();
 float raw_left_x = 0;
 bool dpad_turn = false;
 bool dpad_move = false;
@@ -106,6 +107,9 @@ std::uintptr_t main_base = 0;
 std::uint32_t sensor_pad = 0, sensor_style = 0, sensor_attributes = 0;
 re4::SensorReader<SensorBackend> sensor;
 re4::GyroFilter gyro;
+re4::GyroFrame gyro_frame;
+re4::Settings gyro_tuning_cache;
+bool gyro_tuning_ready=false;
 re4::AimDelta gyro_pending;
 std::uint64_t last_sensor_tick = 0;
 std::uint64_t next_sensor_retry = 0, last_fresh_tick = 0, last_sensor_number = 0;
@@ -318,12 +322,14 @@ bool unified_scene(void* actor){
     const float factor=*reinterpret_cast<const float*>(state+0xA4);
     return !state[0x86FF]&&std::isfinite(factor)&&factor>0&&factor<=2;
 }
+bool modern_move_reload_active(void* actor);
 bool unified_view_ready(void* actor){
     if(!unified_scene(actor)||unified_pitch_actor!=reinterpret_cast<std::uintptr_t>(actor)
         ||!std::isfinite(unified_pitch)||std::fabs(unified_pitch)>1.570797f)return false;
     const auto* b=static_cast<const std::uint8_t*>(actor);
     const auto held=*reinterpret_cast<const std::uint64_t*>(main_base+re4::profile::input_flags);
-    return b[0x115]<=4||(b[0x115]==6&&(held&0x10))||(b[0x115]==11&&(held&re4::kKnifeHeldMask));
+    return b[0x115]<=4||(b[0x115]==6&&((held&0x10)||modern_move_reload_active(actor)))
+        ||(b[0x115]==11&&(held&re4::kKnifeHeldMask));
 }
 bool unified_aim_allowed(void* actor,bool allow_arm=false){
     unified_new_aim=false;
@@ -433,9 +439,17 @@ bool draw_native_reticle(re4::ViewHudPoint point,unsigned style,unsigned size){
 }
 void poll_sensors() {
     gyro_pending = {};
+    const auto& previous=gyro_tuning_cache;
+    if(!gyro_tuning_ready||settings.gyro_enabled!=previous.gyro_enabled
+        ||settings.gyro_speed!=previous.gyro_speed||settings.gyro_gain_x!=previous.gyro_gain_x
+        ||settings.gyro_gain_y!=previous.gyro_gain_y||settings.gyro_deadzone_dps!=previous.gyro_deadzone_dps
+        ||settings.gyro_bias_x!=previous.gyro_bias_x||settings.gyro_bias_y!=previous.gyro_bias_y
+        ||settings.invert_x!=previous.invert_x||settings.invert_y!=previous.invert_y){
+        gyro.reset();gyro_frame.reset();gyro_tuning_cache=settings;gyro_tuning_ready=true;
+    }
     const auto now = svcGetSystemTick();
     if (sensor.select(sensor_pad, sensor_style, sensor_attributes, settings.gyro_enabled)) {
-        gyro.reset(); gyro_session={}; last_sensor_tick = 0;
+        gyro.reset();gyro_frame.reset();gyro_session={};last_sensor_tick=0;
         next_sensor_retry=now+19'200'000;last_fresh_tick=now;last_sensor_number=0;
     }
     void* actor = *reinterpret_cast<void**>(main_base + re4::profile::player_slot);
@@ -443,7 +457,7 @@ void poll_sensors() {
     if (settings.gyro_enabled && (sensor_attributes&1) && now>=next_sensor_retry
         && (!sensor.running() || (aiming && now-last_fresh_tick>9'600'000))) {
         if (sensor.restart()) {
-            gyro.reset();gyro_session={};last_sensor_tick=0;last_sensor_number=0;last_fresh_tick=now;
+            gyro.reset();gyro_frame.reset();gyro_session={};last_sensor_tick=0;last_sensor_number=0;last_fresh_tick=now;
             control.sensor_restarts=control.sensor_restarts+1;
         }
         next_sensor_retry=now+19'200'000;
@@ -451,7 +465,7 @@ void poll_sensors() {
     control.sensor_result = sensor.result;
     control.sensor_running = sensor.running();
     control.gyro_active=0;control.pad_style=sensor_style;
-    if (!sensor.running()){gyro_session={};return;}
+    if (!sensor.running()){gyro_session={};gyro_frame.reset();return;}
     // Tegra's system counter runs at 19.2 MHz. Ignore the first batch and any
     // batch following a >100 ms gap (HOME, overlay pause, controller switch).
     const bool continuous = last_sensor_tick && now >= last_sensor_tick && now - last_sensor_tick <= 1'920'000;
@@ -461,6 +475,7 @@ void poll_sensors() {
     // On the readiness edge the FIFO can still contain raising-animation
     // samples. Drain this entire batch before anchoring fresh measurements.
     const bool active = continuous && ready && !gyro_session.drain;
+    gyro_frame.begin_frame(now,active);
     control.gyro_active=active;
     if(!active)gyro.reset();
     re4::SensorState samples[16]{};
@@ -482,8 +497,10 @@ void poll_sensors() {
         const auto d = gyro.update({s.number, s.interval_ns, yaw, pitch}, active && connected,
             settings.gyro_speed * settings.gyro_gain_x * (settings.invert_x ? -1 : 1),
             settings.gyro_speed * settings.gyro_gain_y * (settings.invert_y ? -1 : 1),settings.gyro_deadzone_dps);
-        gyro_pending.yaw += d.yaw; gyro_pending.pitch += d.pitch;
+        if(!connected||gyro.discontinuity())gyro_frame.reset();
+        if(gyro.emitted_ns())gyro_frame.push(d,gyro.emitted_ns());
     }
+    gyro_pending=gyro_frame.finish_frame();
     control.sensor_samples = control.sensor_samples + count;
 }
 
@@ -597,7 +614,7 @@ void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
     const bool connected = pad.attributes & 1;
     const bool changed=connected?(sensor_pad!=id||sensor_style!=style||sensor_attributes!=(pad.attributes&21u))
         :(id==sensor_pad&&style==sensor_style&&sensor_attributes!=0);
-    if(changed){unified_look.reset();unified_aim_session={};gyro_session={};gyro_pending={};gyro.reset();}
+    if(changed){unified_look.reset();unified_aim_session={};gyro_session={};gyro_pending={};gyro.reset();gyro_frame.reset();}
     if (connected) {
         sensor_pad = id; sensor_style = style; sensor_attributes = pad.attributes & 21u;
     } else if (id == sensor_pad && style == sensor_style) sensor_attributes = 0;
@@ -998,6 +1015,7 @@ HOOK_DEFINE_TRAMPOLINE(HudDraw) {
         if(drawn)reticle_draw_count.fetch_add(1,std::memory_order_relaxed);
     }
 };
+#include "aim_raise.inc"
 #include "modern_move.inc"
 HOOK_DEFINE_TRAMPOLINE(RootDisplacement) {
     static void Callback(void* actor,void* motion,unsigned flags,re4::ViewVec3* translation,re4::ViewVec3* rotation){
@@ -1024,7 +1042,7 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
             && (bytes[0x115] == 6 || bytes[0x115] == 11 || bytes[0x115] == 15) && held;
         if (!active){
             if(ours){
-                gyro_session={};gyro_pending={};gyro.reset();
+                gyro_session={};gyro_pending={};gyro.reset();gyro_frame.reset();
                 if(settings.unified_controls){
                     unified_aim_session={};unified_look.reset();
                     if(unified_update&&unified_update->actor==actor)unified_update->consumed=true;
@@ -1065,7 +1083,7 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
             }
             if (*yaw != old_yaw || pitch[1] != old_pitch) gyro_input_actor = actor;
             control.gyro_yaw = d.yaw; control.gyro_pitch = d.pitch;
-        }else {gyro_pending={};gyro.reset();}
+        }else {gyro_pending={};gyro.reset();gyro_frame.reset();}
         auto* axes=reinterpret_cast<std::int32_t*>(main_base+0x124E9C8);
         const std::int32_t old_x=axes[0],old_y=axes[1];
         auto* aim_directions=reinterpret_cast<std::uint32_t*>(main_base+0x124E9C8+0x14);
@@ -1151,6 +1169,7 @@ extern "C" void exl_main(void*, void*) {
     FrustumUpdate::InstallAtOffset(0x4F5C90);
     SceneSubmit::InstallAtOffset(0x4EB700);
     SceneDraw::InstallAtOffset(0x4ECFB0);
+    AimRaise::InstallAtOffset(0x33F130);
     AimSensitivity::InstallAtOffset(0x33DF80);
     AimSway::InstallAtOffset(0x33EC50);
     control.status = 1;

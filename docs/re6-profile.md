@@ -1,8 +1,9 @@
 # RE6 controls profile
 
-Select **Controls → Profiles and reset → Controls profile → RE6** in the
-installer or overlay. Install the matching module and overlay before selecting
-it: version0.12.0 uses settings wire12 and shared ABI16.
+Select **Controls → Controls profile → RE6** in the installer or overlay.
+The profile is the first row; change it with A or Left/Right. Install the matching
+module and overlay before selecting it: version0.13.0 uses settings wire13 and
+shared ABI17.
 
 The preset is an initial adaptation of RE6 response to RE4's proven camera and
 movement hooks. It is based on1437 synchronized, fully valid samples recorded
@@ -30,14 +31,25 @@ the existing90°/s baseline is retained.
 
 For this preset, **Camera speed** controls overview. **Right-stick aim X/Y**
 control aiming and knife look independently. Gains remain0..1; editing saves
-Custom while retaining RE6 response. Selecting Default or RE9 restores their
-existing response. Graphics, language, calibration and saved Custom settings
-remain scoped to their original domains.
+Custom while retaining RE6 response. The three profiles are Default, RE6 and
+Custom. Default restores the original game's controls with gyro disabled.
+Previous RE9 settings remain usable as Custom. Graphics, language, calibration
+and saved Custom settings remain scoped to their original domains.
 
 The preset retains the current modern RE4 movement/camera implementation,
-native-speed movement while aiming/using the knife, aim-only gyro at0.8, both
+native-speed movement while aiming/using the knife/reloading, aim-only gyro at0.8, both
 gyro inversions,0.05 stick deadzones and the existing shoulder framing. A/B/X/Y
 and PLUS/MINUS retain native actions; L3 keeps the existing run alias.
+
+Right-stick vertical look is limited to ±35°; gyro keeps its independent native
+range and can return gradually into the stick band without snapping. Filtered
+gyro angles are interpolated onto the game frame clock with10ms presentation
+delay, avoiding unequal steps from asynchronous sensor batches. Native firearm
+raising is seeded with the retained pitch for the verified generic mode0 path.
+
+Reload walking covers ordinary Leon reloads in the generic firearm handler.
+Unsupported handlers retain native behavior. Existing v12 settings keep reload
+walking off; reselect RE6 to apply the updated preset, or enable the new toggle.
 
 This does not replace RE4's animation, weapon or collision engine. First-person
 weapon behavior and camera collision still belong to RE4. Actual comparison of

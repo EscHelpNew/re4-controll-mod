@@ -30,8 +30,10 @@ float shape_axis(float raw, float deadzone, float gain, StickCurve curve) {
     return std::copysign(shaped, raw);
 }
 void GyroIntegrator::reset() { last_ = 0; seen_ = false; }
-void GyroFilter::reset() { last_=time_=0; count_=0; seen_=flowing_=false; }
+void GyroFilter::reset() { last_=time_=emitted_ns_=0; count_=0; seen_=flowing_=discontinuity_=false; }
 AimDelta GyroFilter::update(GyroSample s,bool active,float gx,float gy,float deadzone_dps) {
+    emitted_ns_=0;
+    discontinuity_=false;
     if (!active) { count_=0;time_=0;flowing_=false; }
     if (seen_ && s.number<=last_) return {};
     const auto skipped=seen_ ? s.number-last_ : 1;
@@ -41,7 +43,7 @@ AimDelta GyroFilter::update(GyroSample s,bool active,float gx,float gy,float dea
         || !std::isfinite(s.yaw_radians_per_second) || !std::isfinite(s.pitch_radians_per_second)
         || !std::isfinite(gx) || !std::isfinite(gy) || !std::isfinite(deadzone_dps)
         || deadzone_dps<0 || deadzone_dps>20) {
-        count_=0;time_=0;flowing_=false;return {};
+        discontinuity_=active;count_=0;time_=0;flowing_=false;return {};
     }
     if (!count_) {
         history_[0]={0,s.yaw_radians_per_second,s.pitch_radians_per_second};
@@ -56,14 +58,15 @@ AimDelta GyroFilter::update(GyroSample s,bool active,float gx,float gy,float dea
         for(unsigned i=1;i<count_;++i)history_[i-1]=history_[i];
         --count_;
     }
-    if(count_==16){count_=0;time_=0;flowing_=false;return {};}
+    if(count_==16){discontinuity_=true;count_=0;time_=0;flowing_=false;return {};}
     history_[count_++]={time_,s.yaw_radians_per_second,s.pitch_radians_per_second};
     if(time_<10'000'000)return {};
     const auto& a=history_[0];const auto& b=history_[1];
     const float fraction=float(boundary-a.time)/float(b.time-a.time);
     const float old_yaw=a.yaw+(b.yaw-a.yaw)*fraction;
     const float old_pitch=a.pitch+(b.pitch-a.pitch)*fraction;
-    const float seconds=float(flowing_?dt:time_)*1e-9f;
+    emitted_ns_=flowing_?dt:time_;
+    const float seconds=float(emitted_ns_)*1e-9f;
     const float threshold=deadzone_dps*0.01745329252f;
     const auto soften=[threshold](float rate) {
         return std::copysign(std::fmax(0.f,std::fabs(rate)-threshold),rate);

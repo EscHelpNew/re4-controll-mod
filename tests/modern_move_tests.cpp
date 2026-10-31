@@ -49,9 +49,9 @@ void parser(){
     put<std::uint32_t>(a.b,520,0);assert(!m.parse(a.memory(),a.base(),a.base()+512));
 }
 }
-namespace { void cycle_and_gates(); void poses(); }
+namespace { void cycle_and_gates(); void reload_gates(); void poses(); }
 namespace runtime_fixture {void run();}
-int main(){parser();cycle_and_gates();poses();runtime_fixture::run();std::puts("modern movement tests passed");}
+int main(){parser();cycle_and_gates();reload_gates();poses();runtime_fixture::run();std::puts("modern movement tests passed");}
 
 // Appended test group is included by main below.
 namespace {
@@ -84,6 +84,34 @@ void cycle_and_gates(){
     assert(!cycle.step(engine,nullptr,4,0,1,0,basis,std::numeric_limits<float>::infinity(),delta));
     basis.m[0][0]=std::numeric_limits<float>::quiet_NaN();assert(!cycle.step(engine,nullptr,5,0,1,0,basis,1,delta));assert(!cycle.valid());
 }
+void reload_gates(){
+    ModernMoveFrame reload;reload.reload_enabled=true;reload.active_player=true;
+    reload.generic_firearm=true;reload.input_live=true;reload.routine=6;reload.phase=4;reload.frame_factor=1;
+    // Native reload initialization/playback/return blend do not require held
+    // aim, native aim, or either of the other movement options.
+    for(unsigned sub:{0,1,2,3}){
+        reload.subphase=sub;assert(modern_reload_allowed(reload)&&modern_move_allowed(reload));
+    }
+    reload.subphase=0;
+    const auto rejected=[](const ModernMoveFrame& frame){assert(!modern_reload_allowed(frame)&&!modern_move_allowed(frame));};
+    auto candidate=reload;candidate.reload_enabled=false;rejected(candidate);
+    candidate=reload;candidate.active_player=false;rejected(candidate);
+    candidate=reload;candidate.character=1;rejected(candidate);
+    candidate=reload;candidate.mode=1;rejected(candidate);
+    candidate=reload;candidate.generic_firearm=false;rejected(candidate);
+    candidate=reload;candidate.input_live=false;rejected(candidate);
+    candidate=reload;candidate.scripted=true;rejected(candidate);
+    candidate=reload;candidate.frozen=true;rejected(candidate);
+    for(unsigned routine:{0,1,4,5,7,11,15,17}){candidate=reload;candidate.routine=routine;rejected(candidate);}
+    for(unsigned phase:{0,1,2,3,5,6,7,8,255}){candidate=reload;candidate.phase=phase;rejected(candidate);}
+    for(unsigned sub:{4,5,255}){candidate=reload;candidate.subphase=sub;rejected(candidate);}
+    for(float factor:{0.f,-1.f,2.01f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}){
+        candidate=reload;candidate.frame_factor=factor;rejected(candidate);
+    }
+    candidate=reload;candidate.x=std::numeric_limits<float>::quiet_NaN();rejected(candidate);
+    candidate=reload;candidate.y=std::numeric_limits<float>::infinity();rejected(candidate);
+    reload.frame_factor=2;assert(modern_reload_allowed(reload));
+}
 }
 
 // Compile and execute the actual native adapter. Only engine entry points are
@@ -93,7 +121,8 @@ std::uintptr_t main_base=0;
 re4::Settings settings;
 re4::SharedControl control{};
 unsigned sensor_attributes=1;
-int native_aim(void*){return 1;}
+bool native_aim_value=true;
+int native_aim(void*){return native_aim_value;}
 int (*aiming_predicate)(void*)=native_aim;
 void test_ModernPlayerUpdate(void*);
 std::uint32_t test_ModernRoot(void*,void*);
@@ -106,13 +135,16 @@ bool unified_walk_root(void*,float& yaw){yaw=-1.57079632679f;return test_unified
 std::vector<unsigned> order;
 unsigned evaluation_count=0,healthy_value=1;
 bool simulate_nan=false;
+int phase_before_root=-1;
 float expected_local=0,hit_z=0,collision_z=0;
 std::array<std::uint8_t,0x1E0>* active_bones=nullptr;
 std::uint8_t* active_actor=nullptr;
 float& scalar(void* p,std::size_t offset){return *reinterpret_cast<float*>(static_cast<std::uint8_t*>(p)+offset);}
 void test_ModernPlayerUpdate(void* actor){
     assert(scalar(active_bones[17].data(),0xB4)==expected_local);
-    order.push_back(1);assert(ModernRoot::Callback(actor,nullptr)==0x17);
+    order.push_back(1);
+    if(phase_before_root>=0)static_cast<std::uint8_t*>(actor)[0x116]=std::uint8_t(phase_before_root);
+    assert(ModernRoot::Callback(actor,nullptr)==0x17);
     // The native weapon creates its ray/knife sweep only after native root and
     // world/IK. Native physics then processes the translated actor once.
     order.push_back(5);hit_z=scalar(actor,0xAC);
@@ -157,7 +189,7 @@ struct Fixture {
     Fixture(){
         modern_pose.discard();modern_cycle.reset();modern_bound_owner={};modern_bound_asset=modern_bound_clip=0;
         modern_update_actor=nullptr;modern_epoch=0;modern_root_done=modern_stepped=modern_pose_done=false;
-        control={};settings={};sensor_attributes=1;healthy_value=1;simulate_nan=false;evaluation_count=0;order.clear();expected_local=0;
+        control={};settings={};sensor_attributes=1;native_aim_value=true;healthy_value=1;simulate_nan=false;phase_before_root=-1;evaluation_count=0;order.clear();expected_local=0;
         main_base=reinterpret_cast<std::uintptr_t>(image.data());active_actor=actor.data();active_bones=bones.data();
         game_test::memory_maps.clear();register_memory(image.data(),image.size());register_memory(state.data(),state.size());register_memory(actor.data(),actor.size());register_memory(table.data(),table.size());register_memory(bones.data(),sizeof(bones));
         for(auto* asset:{&forward,&back,&injured_forward,&injured_back})register_memory(asset->b.data(),asset->b.size());
@@ -183,6 +215,49 @@ struct Fixture {
     void update(){ModernPlayerUpdate::Callback(actor.data());}
 };
 void run(){
+    // Reload has its own option and survives aim release from initialization
+    // through return blend, without replacing the native upper-body clip.
+    for(unsigned sub : {0,1,2,3}){
+        Fixture f;settings.move_while_aiming=false;settings.move_while_reloading=true;
+        f.actor[0x116]=4;f.actor[0x117]=std::uint8_t(sub);
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(0));native_aim_value=false;
+        const std::uint32_t primary_cursor=0x12345678,secondary_cursor=0x87654321;
+        f.store(f.actor,0x2FC,primary_cursor);f.store(f.actor,0x300,secondary_cursor);
+        f.update();
+        assert(control.modern_move_steps==1&&control.modern_pose_steps==1&&evaluation_count==1);
+        assert(hit_z==10&&collision_z==10&&scalar(f.actor.data(),0x12C)==10);
+        assert((order==std::vector<unsigned>{1,2,3,7,4,4,5,6}));
+        assert(*reinterpret_cast<const std::uint32_t*>(f.actor.data()+0x2FC)==primary_cursor);
+        assert(*reinterpret_cast<const std::uint32_t*>(f.actor.data()+0x300)==secondary_cursor);
+        assert(scalar(f.bones[10].data(),0xB0)==0);
+        assert(!modern_move_aim_active(f.actor.data()));
+        assert(modern_move_reload_active(f.actor.data()));
+        // A neutral stick restores the prior leg pose without advancing gait.
+        control.raw_ly=0;f.update();
+        assert(control.modern_move_steps==1&&evaluation_count==1&&!modern_pose.pending());
+        settings.move_while_reloading=false;f.update();
+        assert(control.modern_move_steps==1&&control.modern_move_status==0&&!modern_pose.pending());
+    }
+    {
+        Fixture f;settings.move_while_aiming=false;settings.move_while_reloading=true;
+        f.actor[0x116]=4;f.actor[0x117]=0;
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(0));native_aim_value=false;
+        // Recheck the actual native root state, rather than caching eligibility
+        // at PlayerUpdate entry before native code has changed phase.
+        assert(modern_move_reload_active(f.actor.data()));phase_before_root=1;f.update();
+        assert(!control.modern_move_steps&&!modern_pose.pending());
+        phase_before_root=-1;f.actor[0x116]=4;
+        f.store(f.image,0x1265A28,main_base+0x3270F0);f.update();assert(!control.modern_move_steps);
+        f.store(f.image,0x1265A28,main_base+0x31CC60);
+        f.store(f.actor,0x352,std::uint16_t(0x100));f.update();assert(!control.modern_move_steps);
+        f.store(f.actor,0x352,std::uint16_t(0x300));
+        f.actor[0x117]=4;f.update();assert(!control.modern_move_steps);
+        f.actor[0x117]=0;f.image[0x11C7D55]=1;f.update();assert(!control.modern_move_steps);
+        f.image[0x11C7D55]=0;f.state[0x86FF]=1;f.update();assert(!control.modern_move_steps);
+        f.state[0x86FF]=0;f.state[0x5092]=4;f.update();assert(!control.modern_move_steps);
+        f.state[0x5092]=0;f.store(f.state,0xA4,0.f);f.update();assert(!control.modern_move_steps);
+        f.store(f.state,0xA4,1.f);f.update();assert(control.modern_move_steps==1);
+    }
     // These installation helpers are compile-checked here; actual hook offsets
     // are checked against the verified image by module profile tests.
     assert(!modern_move_matches(nullptr,0));auto installer=&modern_move_install;(void)installer;

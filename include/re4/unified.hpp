@@ -52,7 +52,7 @@ inline float unified_pitch_weight(float radians){return radians*.636619772368f;}
 // allow gradual inward movement, without snapping or further outward motion.
 inline float unified_stick_pitch_delta(float current,float delta){
  if(!std::isfinite(current)||!std::isfinite(delta))return 0;
- constexpr float limit=.872664626f;
+ constexpr float limit=.610865238f;
  return std::clamp(delta,std::min(0.f,-limit-current),std::max(0.f,limit-current));
 }
 inline std::uint64_t unified_direction_flags(std::uint64_t flags,float x,float y){

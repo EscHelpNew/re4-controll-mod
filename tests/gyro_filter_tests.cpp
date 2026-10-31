@@ -11,8 +11,11 @@ int main(){
     assert(filter.update({1,5'000'000,1,2},true,1,1,0).yaw==0);
     assert(filter.update({2,5'000'000,99,99},true,1,1,0).yaw==0);
     auto d=filter.update({3,5'000'000,3,4},true,2,-1,0);
+    assert(filter.emitted_ns()==10'000'000);
     assert(near(d.yaw,0.04f) && near(d.pitch,-0.03f)); // Mean of endpoints10ms apart.
     assert(filter.update({3,5'000'000,3,4},true,2,-1,0).yaw==0); // No replay.
+    assert(filter.emitted_ns()==0);
+    assert(!filter.discontinuity()); // A duplicate is not a broken sensor timeline.
     // A constant rate must produce movement on every fresh sample after the
     // 10ms measurement window, rather than alternating zero / 10ms bursts.
     filter.reset();
@@ -49,8 +52,11 @@ int main(){
     filter.update({5,10'000'000,1,1},false,1,1,0); // Inactive even with no fresh sample.
     assert(filter.update({6,10'000'000,1,1},true,1,1,0).yaw==0);
     assert(filter.update({50,10'000'000,100,100},true,1,1,0).yaw==0); // Missing history.
+    assert(filter.discontinuity());
     assert(filter.update({51,0,1,1},true,1,1,0).yaw==0);
+    assert(filter.discontinuity());
     assert(filter.update({52,5'000'000,std::numeric_limits<float>::quiet_NaN(),1},true,1,1,0).yaw==0);
+    assert(filter.discontinuity());
     filter.reset();
     float totals[2]{};
     for(int grouping=0;grouping<2;++grouping){
@@ -63,7 +69,7 @@ int main(){
     Settings settings; settings.gyro_speed=2.5f;settings.gyro_deadzone_dps=0.75f;
     settings.gyro_enabled=true;settings.language=Language::Russian;settings.stick_curve=StickCurve::Hybrid;
     std::uint8_t bytes[kSettingsBytes];
-    assert(encode_settings(settings,bytes,sizeof(bytes)) && bytes[4]==12);
+    assert(encode_settings(settings,bytes,sizeof(bytes)) && bytes[4]==13);
     Settings decoded;assert(decode_settings(bytes,sizeof(bytes),decoded));
     assert(decoded.gyro_speed==2.5f && decoded.gyro_deadzone_dps==0.75f && decoded.gyro_enabled);
     assert(decoded.language==Language::Russian && decoded.stick_curve==StickCurve::Hybrid);

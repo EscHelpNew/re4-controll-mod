@@ -9,19 +9,19 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.12.0, unreleased**. Published Releases may
+The current source/local build is **0.13.0, unreleased**. Published Releases may
 contain an earlier version while new features are being tested.
 
 ## Features
 
 - A separate [RE6 controls profile](docs/re6-profile.md), based on synchronized
   console measurements: faster overview, slower aiming and a softer stop.
-  Its first approximation awaits comparison inside RE4.
+  Basic console comparison in RE4 is accepted; further animation polish is tested separately.
 
 - Read-only RE6 reference observer and the same synchronized journal in RE4.
   A separate [measurement overlay](docs/measurement-ru.md) records raw sticks,
   player/camera matrices and native timestamps with explicit Start/Stop actions.
-  Handheld capture is verified; the first RE6 response fit awaits comparison in RE4.
+  Handheld capture and a first RE4 baseline comparison are verified.
 
 - Proportional turning, walking, camera and firearm aiming.
 - Separate left/right aiming sensitivities and adjustable stick deadzones.
@@ -31,15 +31,16 @@ contain an earlier version while new features are being tested.
 - Adjustable camera return speed and a continuous 360-degree free camera.
 - A Graphics menu with Native defaults: bilinear/trilinear/AF2x-16x filtering,
   handheld900p SSAA, loaded-object culling distance and rendered shadows.
-- Independent Default/Custom profiles for controls and graphics. Editing a setting
+- Default/RE6/Custom controls profiles and independent Default/Custom graphics profiles. Editing a setting
   saves Custom; selecting Default keeps your last Custom for later restoration.
 - Optional first-person view, preserving native scopes and scripted cameras.
 - Optional dot/crosshair reticle with three sizes, projected from the weapon ray.
-- Optional movement while aiming or using the knife: left stick moves, right
+- Optional movement while aiming, using the knife or reloading: left stick moves, right
   stick aims, with native walking motion and leg animation for supported Leon states.
 - Additive gyro aiming **only while aiming a firearm**; independent X/Y gains,
   motion speed, calibration and a deadzone in degrees/second.
 - Gyro filtering averages two readings separated by 10 ms of sensor time, with continuous output on every fresh sample.
+- Frame-clock interpolation adds10ms presentation delay to avoid uneven sensor-batch steps.
 - Motion during ordinary weapon raising is discarded; aiming starts after native readiness without replaying that motion.
 - Live settings, help for every control, English/Russian language selection.
 - Separate settings groups and a main-menu language selector.
@@ -56,8 +57,8 @@ The overlay opens separate **Controls** and **Graphics** sections. Each has its
 own profile selector; switching one preserves the other, your language and gyro
 calibration. An empty Custom profile becomes available after editing a setting.
 
-Controls are grouped into Sticks, Aiming, Gyro, Camera, Reticle, Button mapping,
-and Profiles and reset. Language is selected only on the main menu. In Reticle,
+Controls starts with a profile row, changed with A or Left/Right. The groups are
+Sticks, Aiming, Gyro, Camera, Reticle, Button mapping and Reset. Language is selected only on the main menu. In Reticle,
 the picture updates as you change form or size; Off shows no marker.
 
 The new view, reticle and movement modes start **Off**. Enable them independently
@@ -149,7 +150,12 @@ Own code: [MIT](LICENSE). The game module uses exlaunch (GPL-2.0), and the overl
 uses libtesla (GPL-2.0-or-later). Complete pinned sources and dependency notices
 are in `third_party/`. Release artifacts include their notices.
 
-The built-in **RE9** controls profile combines a wider shoulder-camera framing, unified sticks, moving aim/knife and gyro. Choose it under **Controls → Profiles and reset → Controls profile**. The left stick moves; the right stick turns and looks using one sensitivity during walking and aiming. A/B/X/Y and PLUS/MINUS keep their original actions. Third-person distance is adjustable in Camera (native1.00, RE9 1.15). See the [layout and limits](docs/re9-profile.md).
+The built-in **RE6** controls profile combines measured overview/aiming response,
+unified sticks, moving aim/knife/reload and gyro. Choose it in the first Controls
+row. The left stick moves; the right stick turns and looks. A/B/X/Y and PLUS/MINUS
+keep their original actions. Right-stick vertical look stops at±35°; gyro retains
+its separate native range. Default restores original controls with gyro off.
+Previous RE9 settings remain available as Custom; RE9 is no longer a preset.
 
 The installer also has an **RE6** page, selected with **L/R**, with separate
 module/overlay installation, shared language and exit. The supported RE6 update

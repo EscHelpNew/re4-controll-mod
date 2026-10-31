@@ -18,27 +18,50 @@ std::string snapshot_path(const char* path, ProfileDomain domain) {
     return std::string(path) + (domain == ProfileDomain::Controls ? ".controls-custom" : ".graphics-custom");
 }
 }
-Settings re9_profile() {
+Settings default_controls_profile() {
     Settings settings;
+    settings.analog_enabled = false;
+    settings.gyro_enabled = false;
+    settings.remap_enabled = false;
+    settings.button_map = identity_button_map();
+    settings.free_camera = false;
+    settings.move_while_aiming = false;
+    settings.move_while_knife = false;
+    settings.move_while_reloading = false;
+    settings.unified_controls = false;
+    settings.re6_response = false;
+    settings.first_person = false;
+    settings.reticle = ReticleStyle::Off;
+    settings.turn_gain = settings.camera_gain = settings.camera_return_speed = 1;
+    settings.aim_gain_x = settings.aim_gain_y = 1;
+    settings.right_aim_gain_x = settings.right_aim_gain_y = 1;
+    settings.movement_gain = settings.third_person_distance = 1;
+    return settings;
+}
+ProfileKind next_control_profile(ProfileKind current, int direction) {
+    constexpr ProfileKind kinds[]{ProfileKind::Default, ProfileKind::RE6, ProfileKind::Custom};
+    unsigned index = 0;
+    for (unsigned i = 0; i < 3; ++i) if (kinds[i] == current) index = i;
+    return kinds[(index + (direction < 0 ? 2 : 1)) % 3];
+}
+Settings re6_profile() {
+    Settings settings;
+    settings.analog_enabled = true;
+    settings.remap_enabled = true;
     settings.gyro_enabled = true;
     settings.free_camera = true;
     settings.camera_return_speed = 0;
     settings.third_person_distance = 1.15f;
     settings.move_while_aiming = true;
     settings.move_while_knife = true;
+    settings.move_while_reloading = true;
     settings.unified_controls = true;
     settings.reticle = ReticleStyle::Crosshair;
-    settings.aim_gain_x = 0;
-    settings.aim_gain_y = 0;
-    // Physical Switch sources -> actions in RE4's native default layout.
-    settings.button_map[4] = 1;   // L3 -> B: hold run.
-    return settings;
-}
-Settings re6_profile() {
-    Settings settings = re9_profile();
     settings.re6_response = true;
     settings.aim_gain_x = 1;
     settings.aim_gain_y = 1;
+    // Physical Switch L3 -> B: hold run; other native actions retain identity.
+    settings.button_map[4] = 1;
     return settings;
 }
 void copy_profile(Settings& destination, const Settings& source, ProfileDomain domain) {
@@ -66,8 +89,7 @@ bool same_profile(const Settings& first, const Settings& second, ProfileDomain d
         && first_bytes == second_bytes;
 }
 ProfileKind profile_kind(const Settings& settings, ProfileDomain domain) {
-    if (same_profile(settings, Settings{}, domain)) return ProfileKind::Default;
-    if (domain == ProfileDomain::Controls && same_profile(settings, re9_profile(), domain)) return ProfileKind::RE9;
+    if (same_profile(settings, domain == ProfileDomain::Controls ? default_controls_profile() : Settings{}, domain)) return ProfileKind::Default;
     if (domain == ProfileDomain::Controls && same_profile(settings, re6_profile(), domain)) return ProfileKind::RE6;
     return ProfileKind::Custom;
 }
@@ -100,12 +122,11 @@ bool load_custom_profile(const char* path, ProfileDomain domain, Settings& out) 
 }
 ProfileResult switch_profile(const char* path, Settings& active, ProfileDomain domain, ProfileKind kind) {
     if (!valid_domain(domain)
-        || (kind != ProfileKind::Default && kind != ProfileKind::Custom && kind != ProfileKind::RE9 && kind != ProfileKind::RE6)
-        || ((kind == ProfileKind::RE9 || kind == ProfileKind::RE6) && domain != ProfileDomain::Controls))
+        || (kind != ProfileKind::Default && kind != ProfileKind::Custom && kind != ProfileKind::RE6)
+        || ((kind == ProfileKind::RE6) && domain != ProfileDomain::Controls))
         return ProfileResult::SaveFailed;
     Settings next = active;
-    if (kind == ProfileKind::Default) copy_profile(next, Settings{}, domain);
-    else if (kind == ProfileKind::RE9) copy_profile(next, re9_profile(), domain);
+    if (kind == ProfileKind::Default) copy_profile(next, domain == ProfileDomain::Controls ? default_controls_profile() : Settings{}, domain);
     else if (kind == ProfileKind::RE6) copy_profile(next, re6_profile(), domain);
     else if (!load_custom_profile(path, domain, next)) return ProfileResult::MissingCustom;
     if (same_profile(active, next, domain)) return ProfileResult::Unchanged;

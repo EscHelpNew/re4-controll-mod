@@ -63,7 +63,8 @@ bool modern_move_collect(void* actor,re4::ModernMoveIdentity& identity,std::arra
 
 bool modern_move_frame(void* actor,re4::ModernMoveFrame& frame){
     frame.aim_enabled=settings.move_while_aiming;frame.knife_enabled=settings.move_while_knife;
-    if(!frame.aim_enabled&&!frame.knife_enabled)return false;
+    frame.reload_enabled=settings.move_while_reloading;
+    if(!frame.aim_enabled&&!frame.knife_enabled&&!frame.reload_enabled)return false;
     const auto a=reinterpret_cast<std::uintptr_t>(actor);re4::ModernMoveMemory am;
     if(!actor||actor!=reinterpret_cast<void*>(modern_move_slot(re4::profile::player_slot))
        ||!modern_move_region(a,0x950,false,am))return false;
@@ -87,7 +88,12 @@ bool modern_move_frame(void* actor,re4::ModernMoveFrame& frame){
 }
 // Routing context, deliberately independent of left-stick magnitude and asset
 // readiness. Neutral left input must continue to aim with the right stick.
-bool modern_move_aim_active(void* actor){re4::ModernMoveFrame frame;return modern_move_frame(actor,frame);}
+bool modern_move_aim_active(void* actor){
+    re4::ModernMoveFrame frame;return modern_move_frame(actor,frame)&&!re4::modern_reload_allowed(frame);
+}
+bool modern_move_reload_active(void* actor){
+    re4::ModernMoveFrame frame;return modern_move_frame(actor,frame)&&re4::modern_reload_allowed(frame);
+}
 
 bool modern_move_bind(void* actor,bool backwards,const re4::ModernMoveIdentity& owner){
     const auto a=reinterpret_cast<std::uintptr_t>(actor);
@@ -150,7 +156,7 @@ HOOK_DEFINE_TRAMPOLINE(ModernPlayerUpdate) {
         }
         const auto previous=modern_update_actor;modern_update_actor=actor;
         ++modern_epoch;modern_root_done=modern_stepped=modern_pose_done=false;
-        control.modern_move_status=(settings.move_while_aiming||settings.move_while_knife)?1:0;
+        control.modern_move_status=(settings.move_while_aiming||settings.move_while_knife||settings.move_while_reloading)?1:0;
         control.modern_move_distance=0;
         unified_player_update(actor,+[](void* value){Orig(value);});modern_update_actor=previous;
     }
@@ -159,7 +165,7 @@ HOOK_DEFINE_TRAMPOLINE(ModernRoot) {
     static std::uint32_t Callback(void* actor,void* flag){
         if(actor&&actor==modern_update_actor&&!modern_root_done){
             modern_root_done=true;
-            if(settings.move_while_aiming||settings.move_while_knife)modern_stepped=modern_move_prepare(actor);
+            if(settings.move_while_aiming||settings.move_while_knife||settings.move_while_reloading)modern_stepped=modern_move_prepare(actor);
         }
         const auto previous_root=unified_root_actor;const auto previous_yaw=unified_root_yaw;
         float rotation=0;

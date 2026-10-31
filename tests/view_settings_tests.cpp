@@ -29,32 +29,34 @@ int main(){
         s.third_person_distance=invalid;CHECK(!valid_settings(s));
     }
     s.third_person_distance=2;CHECK(valid_settings(s));s={};
-    CHECK(!s.first_person && !s.move_while_aiming && !s.move_while_knife
+    CHECK(!s.first_person && !s.move_while_aiming && !s.move_while_knife && !s.move_while_reloading
         && s.reticle==ReticleStyle::Off && s.reticle_size==ReticleSize::Small);
-    CHECK(encode_settings(s,bytes.data(),bytes.size()) && bytes[4]==12);
+    CHECK(encode_settings(s,bytes.data(),bytes.size()) && bytes[4]==13);
     // Independently exercise the new wire bit before using it through a preset.
     bytes[97]=16;seal(bytes);
     Settings response;CHECK(decode_settings(bytes.data(),bytes.size(),response));
     Bytes response_bytes{};CHECK(encode_settings(response,response_bytes.data(),response_bytes.size()));
     CHECK(response_bytes[97]==16);
-    for(unsigned flags=0;flags<32;++flags)for(unsigned style=0;style<3;++style)for(unsigned size=0;size<3;++size){
+    for(unsigned flags=0;flags<64;++flags)for(unsigned style=0;style<3;++style)for(unsigned size=0;size<3;++size){
         s.first_person=flags&1;s.move_while_aiming=flags&2;s.move_while_knife=flags&4;
         s.unified_controls=flags&8;
         s.re6_response=flags&16;
+        s.move_while_reloading=flags&32;
         s.reticle=static_cast<ReticleStyle>(style);s.reticle_size=static_cast<ReticleSize>(size);
         CHECK(encode_settings(s,bytes.data(),bytes.size()));
         CHECK(bytes[96]==style && bytes[97]==flags && bytes[98]==size);
         Settings decoded;CHECK(decode_settings(bytes.data(),bytes.size(),decoded));
         CHECK(decoded.first_person==s.first_person && decoded.move_while_aiming==s.move_while_aiming
             && decoded.move_while_knife==s.move_while_knife && decoded.reticle==s.reticle && decoded.reticle_size==s.reticle_size
-            && decoded.unified_controls==s.unified_controls && decoded.re6_response==s.re6_response);
+            && decoded.unified_controls==s.unified_controls && decoded.re6_response==s.re6_response
+            && decoded.move_while_reloading==s.move_while_reloading);
         CHECK(same_profile(s,decoded,ProfileDomain::Controls));
     }
     for(unsigned offset:{96,97,98,99,104,123}){
         auto bad=bytes;bad[offset]=255;seal(bad);Settings out;out.camera_gain=0.3f;
         CHECK(!decode_settings(bad.data(),bad.size(),out) && out.camera_gain==0.3f);
     }
-    for(unsigned bit : {32u,64u,128u}){
+    for(unsigned bit : {64u,128u}){
         auto bad=bytes;bad[97]=std::uint8_t(bit);seal(bad);Settings out;out.re6_response=true;
         CHECK(!decode_settings(bad.data(),bad.size(),out) && out.re6_response);
     }
@@ -95,5 +97,5 @@ int main(){
     CHECK(profile_kind(s,ProfileDomain::Graphics)==ProfileKind::Default);
     copy_profile(s,Settings{},ProfileDomain::Graphics);CHECK(s.first_person);
     copy_profile(s,Settings{},ProfileDomain::Controls);CHECK(!s.first_person);
-    std::puts("view settings: v12 response, unified controls, distance, strict fields and legacy migration PASS");
+    std::puts("view settings: v13 response, unified controls, distance, strict fields and legacy migration PASS");
 }

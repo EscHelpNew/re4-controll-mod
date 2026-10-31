@@ -17,9 +17,12 @@ class GyroFilter {
     struct Point { std::uint64_t time; float yaw, pitch; } history_[16]{};
     std::uint64_t last_ = 0, time_ = 0;
     unsigned count_ = 0;
-    bool seen_ = false, flowing_ = false;
+    bool seen_ = false, flowing_ = false, discontinuity_ = false;
+    std::uint64_t emitted_ns_=0;
 public:
     void reset();
+    std::uint64_t emitted_ns()const{return emitted_ns_;}
+    bool discontinuity()const{return discontinuity_;}
     AimDelta update(GyroSample sample, bool active, float gain_x, float gain_y, float deadzone_dps);
 };
 class GyroIntegrator {

@@ -50,15 +50,15 @@ const std::array<HomeItem,9>& installer_home_items(){
 }
 unsigned InstallerModel::item_count()const{
     if(game==GameTarget::RE6)return page==InstallerPage::Home?4:0;
-    if(page==InstallerPage::Profiles)return unsigned(kControlProfiles.size());
     if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
     if(page==InstallerPage::ControlGroup)return control_group_count(control_group);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
     if(page==InstallerPage::MappingTargets)return kButtonCount+1;
-    return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlGroup::Count):page==InstallerPage::Updates?2:0;
+    return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlGroup::Count)+1:page==InstallerPage::Updates?2:0;
 }
 ControlId InstallerModel::selected_control()const{
     if(game==GameTarget::RE6)return ControlId::Count;
+    if(page==InstallerPage::Controls && selected==0)return ControlId::Profile;
     return page==InstallerPage::ControlGroup?control_group_item(control_group,selected):ControlId::Count;
 }
 InstallerAction InstallerModel::handle(UiEvent event){
@@ -88,12 +88,11 @@ InstallerAction InstallerModel::handle(UiEvent event){
     profile_note.clear();
     if(event==UiEvent::Exit)return InstallerAction::Exit;
     if(event==UiEvent::Back){
-        if(page==InstallerPage::Profiles){page=InstallerPage::ControlGroup;control_group=ControlGroup::Profiles;selected=0;return InstallerAction::None;}
         if(page==InstallerPage::Graphics){page=graphics_origin;selected=page==InstallerPage::Home?home_selected:controls_selected;return InstallerAction::None;}
         if(page==InstallerPage::MappingTargets){page=InstallerPage::Mapping;selected=mapping_source+1;return InstallerAction::None;}
         if(page==InstallerPage::Mapping || page==InstallerPage::ControlGroup){
             page=InstallerPage::Controls;
-            selected=unsigned(control_group)<unsigned(ControlGroup::Count)?unsigned(control_group):0;
+            selected=unsigned(control_group)<unsigned(ControlGroup::Count)?unsigned(control_group)+1:0;
             controls_selected=selected;return InstallerAction::None;
         }
         if(page==InstallerPage::Controls){page=InstallerPage::Home;selected=3;return InstallerAction::None;}
@@ -120,13 +119,6 @@ InstallerAction InstallerModel::handle(UiEvent event){
             status=InstallerStatus::NoSensor;
         }
         return InstallerAction::None;
-    }
-    if(page==InstallerPage::Profiles){
-        if(event!=UiEvent::Confirm || selected>=kControlProfiles.size())return InstallerAction::None;
-        const auto kind=kControlProfiles[selected];
-        return kind==ProfileKind::RE9?InstallerAction::RE9Controls:
-            kind==ProfileKind::RE6?InstallerAction::RE6Controls:
-            kind==ProfileKind::Custom?InstallerAction::CustomControls:InstallerAction::DefaultControls;
     }
     if(page==InstallerPage::Updates){
         if(event!=UiEvent::Confirm || update.stage==UpdateStage::Checking || update.stage==UpdateStage::Downloading
@@ -163,8 +155,13 @@ InstallerAction InstallerModel::handle(UiEvent event){
         return change_graphics(settings,spec.id,event==UiEvent::Left?-1:1)?InstallerAction::SaveSettings:InstallerAction::None;
     }
     if(page==InstallerPage::Controls){
+        if(selected==0 && (event==UiEvent::Confirm || event==UiEvent::Left || event==UiEvent::Right)){
+            const auto kind=next_control_profile(profile_kind(settings,ProfileDomain::Controls),event==UiEvent::Left?-1:1);
+            return kind==ProfileKind::RE6?InstallerAction::RE6Controls:
+                kind==ProfileKind::Custom?InstallerAction::CustomControls:InstallerAction::DefaultControls;
+        }
         if(event==UiEvent::Confirm && selected<count){
-            controls_selected=selected;control_group=static_cast<ControlGroup>(selected);
+            controls_selected=selected;control_group=static_cast<ControlGroup>(selected-1);
             page=control_group==ControlGroup::Mapping?InstallerPage::Mapping:InstallerPage::ControlGroup;
             selected=0;
         }
@@ -174,13 +171,6 @@ InstallerAction InstallerModel::handle(UiEvent event){
         const auto id=selected_control();
         if(id==ControlId::Count)return InstallerAction::None;
         const auto& spec=control_spec(id);
-        if(spec.id==ControlId::Profile){
-            if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
-            page=InstallerPage::Profiles;selected=0;
-            for(unsigned i=0;i<kControlProfiles.size();++i)
-                if(kControlProfiles[i]==profile_kind(settings,ProfileDomain::Controls))selected=i;
-            return InstallerAction::None;
-        }
         if(spec.id==ControlId::ButtonMapping){
             if(event==UiEvent::Confirm){page=InstallerPage::Mapping;selected=0;}
             return InstallerAction::None;
@@ -205,7 +195,6 @@ InstallerAction InstallerModel::handle(UiEvent event){
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
-    if(page==InstallerPage::Profiles)return Bilingual{"CONTROLS PROFILE","ПРОФИЛЬ УПРАВЛЕНИЯ"}.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_group_spec(control_group).label.get(settings.language);
     if(page==InstallerPage::Graphics)return Bilingual{"GRAPHICS","ГРАФИКА"}.get(settings.language);
     if(page==InstallerPage::Mapping)return Bilingual{"BUTTON MAPPING","НАЗНАЧЕНИЕ КНОПОК"}.get(settings.language);
@@ -256,8 +245,7 @@ const char* InstallerModel::status_text()const{
 const char* InstallerModel::selected_help()const{
     if(game==GameTarget::RE6)return re6_home_items[selected<4?selected:0].help.get(settings.language);
     if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
-        || selected_control()==ControlId::Profile || page==InstallerPage::Profiles))return profile_note.c_str();
-    if(page==InstallerPage::Profiles)return control_profile_help(kControlProfiles[selected<kControlProfiles.size()?selected:0],settings.language);
+        || selected_control()==ControlId::Profile))return profile_note.c_str();
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_help(selected,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);
@@ -269,7 +257,7 @@ const char* InstallerModel::selected_help()const{
         return Bilingual{"Check the latest public GitHub release,\nthen choose Download / install.\nSettings are kept. No token is needed.",
             "Проверьте последний публичный релиз,\nзатем выберите «Скачать / установить».\nНастройки сохраняются. Токен не нужен."}.get(settings.language);
     }
-    if(page==InstallerPage::Controls)return control_group_spec(static_cast<ControlGroup>(selected)).help.get(settings.language);
+    if(page==InstallerPage::Controls)return selected==0?control_help_text(control_spec(ControlId::Profile),settings):control_group_spec(static_cast<ControlGroup>(selected-1)).help.get(settings.language);
     if(page==InstallerPage::ControlGroup){
         const auto id=selected_control();
         return id==ControlId::Count?"":control_help_text(control_spec(id),settings);
@@ -280,8 +268,7 @@ const char* InstallerModel::selected_help()const{
 std::string InstallerModel::item_label(unsigned index)const{
     if(index>=item_count())return "";
     if(game==GameTarget::RE6)return re6_home_items[index].label.get(settings.language);
-    if(page==InstallerPage::Profiles)return profile_name(kControlProfiles[index],settings.language);
-    if(page==InstallerPage::Controls)return control_group_spec(static_cast<ControlGroup>(index)).label.get(settings.language);
+    if(page==InstallerPage::Controls)return index==0?control_spec(ControlId::Profile).label.get(settings.language):control_group_spec(static_cast<ControlGroup>(index-1)).label.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_spec(control_group_item(control_group,index)).label.get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_label(index,settings.language);
@@ -294,9 +281,7 @@ std::string InstallerModel::item_label(unsigned index)const{
 std::string InstallerModel::item_value(unsigned index)const{
     if(index>=item_count())return "";
     if(game==GameTarget::RE6)return index==2?(settings.language==Language::Russian?"Русский":"English"):"";
-    if(page==InstallerPage::Profiles)return profile_kind(settings,ProfileDomain::Controls)==kControlProfiles[index]?
-        Bilingual{"Active","Активен"}.get(settings.language):"A";
-    if(page==InstallerPage::Controls)return "";
+    if(page==InstallerPage::Controls)return index==0?profile_name(profile_kind(settings,ProfileDomain::Controls),settings.language):"";
     if(page==InstallerPage::ControlGroup)return control_value_text(control_spec(control_group_item(control_group,index)),settings);
     if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);
     if(page==InstallerPage::Mapping)return mapping_row_value(index,settings);

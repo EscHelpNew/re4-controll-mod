@@ -78,17 +78,13 @@ int main(){
         model.selected=unsigned(re4::GraphicsId::Profile);
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-graphics-profile-en.bmp":"build/installer-graphics-profile-ru.bmp"));
-        model.page=re4::InstallerPage::ControlGroup;model.control_group=re4::ControlGroup::Profiles;model.settings.camera_gain=0.6f;
+        model.page=re4::InstallerPage::Controls;model.settings.camera_gain=0.6f;
         model.selected=0;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-controls-profile-en.bmp":"build/installer-controls-profile-ru.bmp"));
-        re4::copy_profile(model.settings,re4::re9_profile(),re4::ProfileDomain::Controls);
-        model.page=re4::InstallerPage::Profiles;model.selected=1;
-        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
-            "build/installer-re9-profile-en.bmp":"build/installer-re9-profile-ru.bmp"));
         re4::copy_profile(model.settings,re4::re6_profile(),re4::ProfileDomain::Controls);
-        model.selected=2;
-        assert(model.item_count()==4 && model.item_label(2)=="RE6" && model.item_value(2)==(language==re4::Language::English?"Active":"Активен"));
+        model.selected=0;
+        assert(model.item_count()==8 && model.item_value(0)=="RE6");
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-re6-profile-en.bmp":"build/installer-re6-profile-ru.bmp"));
         model.page=re4::InstallerPage::ControlGroup;model.control_group=re4::ControlGroup::Camera;model.selected=0;
@@ -97,7 +93,11 @@ int main(){
         model.control_group=re4::ControlGroup::Aiming;model.selected=2;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-re6-aim-en.bmp":"build/installer-re6-aim-ru.bmp"));
-        re4::copy_profile(model.settings,re4::re9_profile(),re4::ProfileDomain::Controls);
+        model.selected=6;
+        assert(model.selected_control()==re4::ControlId::MoveReloading && model.settings.move_while_reloading);
+        renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
+            "build/installer-re6-reload-en.bmp":"build/installer-re6-reload-ru.bmp"));
+        re4::copy_profile(model.settings,re4::re6_profile(),re4::ProfileDomain::Controls);
         model.page=re4::InstallerPage::Mapping;model.selected=21;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-mapping-en.bmp":"build/installer-mapping-ru.bmp"));

@@ -389,14 +389,13 @@ int main(int argc, char** argv) {
         if(action==re4::InstallerAction::SaveSettings)
             model.status=re4::save_profiled_settings(re4::kSettingsPath,settings)
                 ?re4::InstallerStatus::Saved:re4::InstallerStatus::Failed;
-        if(action==re4::InstallerAction::DefaultControls || action==re4::InstallerAction::CustomControls || action==re4::InstallerAction::RE9Controls
+        if(action==re4::InstallerAction::DefaultControls || action==re4::InstallerAction::CustomControls
             || action==re4::InstallerAction::RE6Controls
             || action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics){
             const bool graphics_profile=action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics;
             const bool custom=action==re4::InstallerAction::CustomControls || action==re4::InstallerAction::CustomGraphics;
             const auto result=re4::switch_profile(re4::kSettingsPath,settings,
                 graphics_profile?re4::ProfileDomain::Graphics:re4::ProfileDomain::Controls,
-                action==re4::InstallerAction::RE9Controls?re4::ProfileKind::RE9:
                 action==re4::InstallerAction::RE6Controls?re4::ProfileKind::RE6:
                 custom?re4::ProfileKind::Custom:re4::ProfileKind::Default);
             model.status=result==re4::ProfileResult::Applied || result==re4::ProfileResult::Unchanged?

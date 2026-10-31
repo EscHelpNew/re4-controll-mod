@@ -10,7 +10,7 @@
 
 namespace {
 GameLink link;
-re4::Settings settings;
+re4::Settings settings=re4::default_controls_profile();
 std::string note;
 const char* tr(const char* en,const char* ru) { return settings.language==re4::Language::Russian?ru:en; }
 void record_connection() {
@@ -64,37 +64,6 @@ public:
             if(settings.reticle==re4::ReticleStyle::Off)renderer->drawString(tr("Off","Выключен"),false,32,help_y_+130,16,a(tsl::style::color::ColorDescription));
         }
         renderer->drawString(description_,false,20,help_y_,16,a(tsl::style::color::ColorDescription));
-    }
-};
-class ControlsProfilesGui : public tsl::Gui {
-    DescriptionFrame* frame_=nullptr;
-    std::array<tsl::elm::ListItem*,re4::kControlProfiles.size()> rows_{};
-    re4::ProfileKind last_action_=re4::ProfileKind::Default;
-public:
-    tsl::elm::Element* createUI()override{
-        frame_=new DescriptionFrame;auto* list=new tsl::elm::List;
-        for(unsigned i=0;i<re4::kControlProfiles.size();++i){
-            const auto kind=re4::kControlProfiles[i];
-            auto* row=new tsl::elm::ListItem(re4::profile_name(kind,settings.language));
-            row->setClickListener([this,kind](u64 keys){
-                if(!(keys&HidNpadButton_A))return false;
-                last_action_=kind;
-                apply_profile(re4::ProfileDomain::Controls,kind);update();return true;
-            });
-            rows_[i]=row;list->addItem(row);
-        }
-        frame_->setContent(list);update();return frame_;
-    }
-    void update()override{
-        if(!frame_)return;
-        const auto active=re4::profile_kind(settings,re4::ProfileDomain::Controls);
-        for(unsigned i=0;i<rows_.size();++i){
-            const auto kind=re4::kControlProfiles[i];
-            rows_[i]->setValue(active==kind?tr("Active","Активен"):"A");
-            if(getFocusedElement()==rows_[i] || (!getFocusedElement() && i==0))
-                frame_->set_help(note.empty()||kind!=last_action_?re4::control_profile_help(kind,settings.language):note.c_str());
-        }
-        frame_->setSubtitle(note.empty()?tr("Choose controls profile","Выберите профиль управления"):note.c_str());
     }
 };
 class MappingTargetsGui : public tsl::Gui {
@@ -231,10 +200,6 @@ public:
             }else{
                 item=new tsl::elm::ListItem(spec.label.get(settings.language),re4::control_value_text(spec,settings));
                 item->setClickListener([this,entry](u64 keys){
-                    if(entry->id==re4::ControlId::Profile){
-                        if(!(keys&(HidNpadButton_A|HidNpadButton_Left|HidNpadButton_Right)))return false;
-                        note.clear();tsl::changeTo<ControlsProfilesGui>();return true;
-                    }
                     if(entry->id==re4::ControlId::ButtonMapping){
                         if(!(keys&HidNpadButton_A))return false;
                         tsl::changeTo<MappingGui>();return true;
@@ -267,9 +232,18 @@ public:
 class ControlsGui : public tsl::Gui {
     DescriptionFrame* frame_=nullptr;
     std::vector<tsl::elm::ListItem*> groups_;
+    tsl::elm::ListItem* profile_=nullptr;
 public:
     tsl::elm::Element* createUI()override{
         groups_.clear();frame_=new DescriptionFrame;auto* list=new tsl::elm::List;
+        profile_=new tsl::elm::ListItem(re4::control_spec(re4::ControlId::Profile).label.get(settings.language));
+        profile_->setClickListener([this](u64 keys){
+            const int direction=(keys&HidNpadButton_Left)?-1:(keys&(HidNpadButton_A|HidNpadButton_Right))?1:0;
+            if(!direction)return false;
+            apply_profile(re4::ProfileDomain::Controls,re4::next_control_profile(re4::profile_kind(settings,re4::ProfileDomain::Controls),direction));
+            update();return true;
+        });
+        list->addItem(profile_);
         for(const auto& group:re4::control_groups()){
             auto* item=new tsl::elm::ListItem(group.label.get(settings.language),"A");
             item->setClickListener([id=group.id](u64 keys){
@@ -285,6 +259,9 @@ public:
     }
     void update()override{
         frame_->setTitle(tr("Controls","Управление"));frame_->setSubtitle(re4::kVersion);
+        profile_->setText(re4::control_spec(re4::ControlId::Profile).label.get(settings.language));
+        profile_->setValue(re4::profile_name(re4::profile_kind(settings,re4::ProfileDomain::Controls),settings.language));
+        if(getFocusedElement()==profile_ || !getFocusedElement())frame_->set_help(note.empty()?re4::control_help_text(re4::control_spec(re4::ControlId::Profile),settings):note.c_str());
         for(unsigned i=0;i<groups_.size();++i){
             const auto& group=re4::control_groups()[i];groups_[i]->setText(group.label.get(settings.language));
             if(getFocusedElement()==groups_[i])frame_->set_help(group.help.get(settings.language));
@@ -333,8 +310,8 @@ public:
         frame_->set_help(getFocusedElement()==graphics_?tr(
             "Independent graphics profile and settings.\nFiltering and AA require a game restart.",
             "Отдельный профиль и настройки графики.\nФильтрация и AA: перезапуск игры."):tr(
-            "Controls and graphics have separate profiles.\nEach keeps Default and your last Custom.\nA: open. B: return.",
-            "Управление и графика: отдельные профили.\nШтатный и последний пользовательский.\nA: открыть. B: назад."));
+            "Controls: Default, RE6 or your last Custom.\nGraphics have a separate saved profile.\nA: open. B: return.",
+            "Управление: исходное, RE6 или своё.\nУ графики отдельный сохранённый профиль.\nA: открыть. B: назад."));
     }
 };
 class ControlsOverlay:public tsl::Overlay{

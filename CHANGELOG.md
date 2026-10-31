@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.13.0 (unreleased, controls and gyro polish)
+
+- Put the controls profile first, cycling with A or Left/Right between Default,
+  RE6 and Custom. Default restores original controls without gyro; legacy RE9
+  settings remain Custom. Preserve separate graphics and calibration settings.
+- Present filtered gyro displacement on the game frame clock with10ms delay,
+  removing uneven6/7-sample batch steps and flushing old motion on session,
+  controller, pause and gain changes.
+- Seed the verified generic firearm's original raising animation with the
+  retained camera pitch, avoiding the late pitch handoff in native mode0.
+- Limit right-stick vertical look to ±35° without restricting gyro's native
+  range or snapping angles created by gyro.
+- Add walking during ordinary generic Leon reloads, enabled in RE6. Preserve
+  native collision, root movement budget and weapon animation/readiness.
+- Migrate settings1..12 to wire13 with reload movement off; use shared ABI17
+  with the same400-byte layout. Update module and overlay together.
+- Baseline RE4 recording:1495 valid samples/34.43s, zero drops; sustained yaw
+  approximately171°/s overview and56°/s aim, close to the RE6 reference.
+
 ## 0.12.0 (unreleased, RE6 controls profile)
 
 - Add a separate RE6 controls preset to the installer and overlay.

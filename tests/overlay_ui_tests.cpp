@@ -36,8 +36,8 @@ int main(){
     assert(find(root,"Language") && list(root)->children.size()==4);
     auto* language=find(root,"Language");
     ControlsGui groups;auto* frame=static_cast<tsl::elm::OverlayFrame*>(groups.createUI());frame->layout(0,0,448,720);
-    assert(list(frame)->children.size()==unsigned(ControlGroup::Count) && !find(frame,"Language"));
-    std::set<unsigned> displayed;
+    assert(list(frame)->children.size()==unsigned(ControlGroup::Count)+1 && !find(frame,"Language"));
+    std::set<unsigned> displayed{unsigned(ControlId::Profile)};
     for(const auto& group:control_groups()){
         auto* item=find(frame,group.label.english);assert(item);
         groups.focused=item;groups.update();tsl::gfx::Renderer root_help;frame->draw(&root_help);assert(!root_help.text.empty());
@@ -89,6 +89,16 @@ int main(){
         tsl::goBack();assert(tsl::navigation.empty());
     }
     assert(displayed.size()==unsigned(ControlId::Count)-1);
+    {
+        settings=default_controls_profile();
+        ControlsPageGui aiming(ControlGroup::Aiming);
+        auto* content=static_cast<tsl::elm::OverlayFrame*>(aiming.createUI());
+        auto* reload=dynamic_cast<tsl::elm::ToggleListItem*>(find(content,"Move while reloading"));
+        assert(reload && !settings.move_while_reloading);
+        reload->changed(true);assert(settings.move_while_reloading);
+        reload->changed(false);assert(!settings.move_while_reloading);
+        delete content;
+    }
     for(auto lang:{Language::English,Language::Russian}){
         settings=re6_profile();settings.language=lang;
         for(auto group:{ControlGroup::Camera,ControlGroup::Aiming}){

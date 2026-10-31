@@ -12,16 +12,16 @@ constexpr ControlSpec toggle(ControlId id,Bilingual label,Bilingual help,bool Se
 constexpr ControlSpec slider(ControlId id,Bilingual label,Bilingual help,float Settings::*field,float step,float maximum){
     return {id,ControlKind::Slider,label,help,field,nullptr,step,0,maximum};
 }
-constexpr std::array<ControlId,unsigned(ControlId::Count)-1> grouped_controls{{
+constexpr std::array<ControlId,unsigned(ControlId::Count)-2> grouped_controls{{
     ControlId::Curve,ControlId::Analog,ControlId::Turn,ControlId::LeftDeadzone,ControlId::RightDeadzone,ControlId::UnifiedControls,
-    ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife,
+    ControlId::AimX,ControlId::AimY,ControlId::RightAimX,ControlId::RightAimY,ControlId::MoveAiming,ControlId::MoveKnife,ControlId::MoveReloading,
     ControlId::Gyro,ControlId::GyroSpeed,ControlId::GyroDeadzone,ControlId::GyroX,ControlId::GyroY,ControlId::InvertX,ControlId::InvertY,
     ControlId::Camera,ControlId::CameraReturn,ControlId::FreeCamera,ControlId::FirstPerson,ControlId::ThirdPersonDistance,
     ControlId::Reticle,ControlId::ReticleSize,
     ControlId::ButtonMapping,
-    ControlId::Profile,ControlId::Reset
+    ControlId::Reset
 }};
-constexpr std::array<unsigned,unsigned(ControlGroup::Count)+1> group_offsets{{0,6,12,19,24,26,27,29}};
+constexpr std::array<unsigned,unsigned(ControlGroup::Count)+1> group_offsets{{0,6,13,20,25,27,28,29}};
 }
 const std::array<ControlGroupSpec,unsigned(ControlGroup::Count)>& control_groups(){
     static constexpr std::array<ControlGroupSpec,unsigned(ControlGroup::Count)> groups{{
@@ -29,8 +29,8 @@ const std::array<ControlGroupSpec,unsigned(ControlGroup::Count)>& control_groups
             {"Stick response, smooth control and turn speed.\nAdjust left and right stick deadzones.",
              "Кривая стиков, плавное управление и повороты.\nМёртвые зоны левого и правого стика."}},
         {ControlGroup::Aiming,{"Aiming","Прицеливание"},
-            {"Separate aiming speeds for both sticks.\nMovement while aiming or using the knife.",
-             "Скорость прицеливания каждым стиком.\nДвижение при прицеливании и с ножом."}},
+            {"Separate aiming speeds for both sticks.\nMovement with aim, knife or reload.",
+             "Скорость прицеливания каждым стиком.\nДвижение с прицелом, ножом и перезарядкой."}},
         {ControlGroup::Gyro,{"Gyro","Гироскоп"},
             {"Motion aiming, speed and gyro deadzone.\nSeparate axis sensitivities and inversion.",
              "Прицеливание движением и мёртвая зона.\nЧувствительность и инверсия по осям."}},
@@ -43,9 +43,9 @@ const std::array<ControlGroupSpec,unsigned(ControlGroup::Count)>& control_groups
         {ControlGroup::Mapping,{"Button mapping","Назначение кнопок"},
             {"Assign physical buttons to game buttons.\nMappings work in play, menus and QTE.",
              "Назначить физическим кнопкам кнопки игры.\nДля игры, меню и QTE."}},
-        {ControlGroup::Profiles,{"Profiles and reset","Профили и сброс"},
-            {"Choose Default, RE9, RE6 or Custom controls.\nReset settings with A when selected.",
-             "Управление: Default, RE9, RE6 или своё.\nДля сброса выберите строку и нажмите A."}}
+        {ControlGroup::Profiles,{"Reset","Сброс"},
+            {"Restore original game controls without gyro.\nGraphics, language and calibration are kept.",
+             "Вернуть исходное управление без гироскопа.\nГрафика, язык и калибровка сохраняются."}}
     }};
     return groups;
 }
@@ -87,8 +87,8 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
             {"Map physical buttons in menus, QTE and play.\nOverlay controls remain physical for recovery.\nHOME/Capture are system buttons outside RE4.",
              "Кнопки в игре, меню и QTE.\nОверлей использует физические кнопки.\nHOME/Capture — системные кнопки вне RE4."}},
         selector(ControlId::Profile,{"Controls profile","Профиль управления"},
-            {"Choose Default, RE9, RE6 or Custom controls.\nA: open the profile list. Edits save Custom.\nGraphics and calibration are preserved.",
-             "Управление: Default, RE9, RE6 или своё.\nA: список. Изменения сохраняются в свой.\nГрафика и калибровка сохраняются."}),
+            {"Default, RE6 or your last Custom controls.\nA / LEFT / RIGHT: change profile.\nGraphics and calibration are preserved.",
+             "Исходное, RE6 или своё управление.\nA / влево / вправо: сменить профиль.\nГрафика и калибровка сохраняются."}),
         slider(ControlId::AimX,{"Left-stick aim X","Прицел левым стиком X"},
             {"Classic controls: left-stick aim X.\nUnified sticks use the left stick to move.\nGyro sensitivity is independent.",
              "Классическое управление: прицел по X.\nПри единых стиках левый стик двигает.\nЧувствительность гироскопа отдельно."},&Settings::aim_gain_x,0.1f,1),
@@ -143,16 +143,19 @@ const std::array<ControlSpec,unsigned(ControlId::Count)>& control_specs(){
         toggle(ControlId::MoveKnife,{"Move with knife","Движение с ножом"},
             {"Left-stick movement in knife stance\nand during a slash. Right stick aims.\nNative attack timing is preserved.",
              "Движение левым стиком в стойке\nс ножом и при ударе. Правый: прицел.\nШтатное время удара сохраняется."},&Settings::move_while_knife),
+        toggle(ControlId::MoveReloading,{"Move while reloading","Движение при перезарядке"},
+            {"Walk during an ordinary firearm reload.\nSupported weapon reloads only.\nNative reload timing is preserved.",
+             "Ходьба при обычной перезарядке оружия.\nТолько для поддерживаемых видов оружия.\nШтатное время перезарядки сохраняется."},&Settings::move_while_reloading),
         {ControlId::ThirdPersonDistance,ControlKind::Slider,{"Third-person distance","Дистанция камеры"},
             {"1.00: original shoulder view. Larger values\nshow more space around Leon. Wall collision\nstays active. Not used in first person/scopes.",
              "1.00: штатный вид из-за плеча. Увеличьте,\nчтобы Леон меньше закрывал обзор. Стены\nучитываются. Не влияет на вид от глаз/оптику."},
              &Settings::third_person_distance,nullptr,0.05f,1,2},
         toggle(ControlId::UnifiedControls,{"Unified sticks","Единое управление стиками"},
-            {"Shared right-stick sensitivity for walk/aim.\nSmooth start and fast braking.\nVertical stick look is limited to +/-50deg.",
-             "Общая чувствительность правого стика.\nПлавный разгон и быстрое торможение.\nВертикальный обзор стиком: +/-50 градусов."},&Settings::unified_controls),
+            {"Shared right-stick sensitivity for walk/aim.\nVertical stick look is limited to +/-35deg.\nGyro keeps the full native aiming range.",
+             "Общая чувствительность правого стика.\nВертикальный обзор стиком: +/-35 градусов.\nГироскоп сохраняет полный штатный диапазон."},&Settings::unified_controls),
         {ControlId::Reset,ControlKind::Action,{"Reset settings","Сбросить настройки"},
-            {"Restore defaults: English, linear curve,\n0.05 deadzones, native stick speeds,\ngyro off and both gyro inversions on.",
-             "Вернуть настройки: английский, линейная\nкривая, мёртвые зоны 0.05, гироскоп выкл.,\nобе инверсии вкл., штатные скорости."}}
+            {"Restore original game controls without gyro.\nGraphics, language and calibration are kept.\nYour saved Custom profile is retained.",
+             "Вернуть исходное управление без гироскопа.\nГрафика, язык и калибровка сохраняются.\nСохранённый свой профиль остаётся."}}
     };
     return items;
 }
@@ -195,7 +198,7 @@ bool change_control(Settings& s,ControlId id,int direction){
     if(id==ControlId::Curve){s.stick_curve=static_cast<StickCurve>((unsigned(s.stick_curve)+(direction>0?1:3))%4);return true;}
     if(id==ControlId::Reticle){s.reticle=static_cast<ReticleStyle>((unsigned(s.reticle)+(direction>0?1:2))%3);return true;}
     if(id==ControlId::ReticleSize){s.reticle_size=static_cast<ReticleSize>((unsigned(s.reticle_size)+(direction>0?1:2))%3);return true;}
-    if(id==ControlId::Reset){s={};return true;}
+    if(id==ControlId::Reset){const bool changed=!same_profile(s,default_controls_profile(),ProfileDomain::Controls);copy_profile(s,default_controls_profile(),ProfileDomain::Controls);return changed;}
     return false;
 }
 const std::array<GraphicsSpec,unsigned(GraphicsId::Count)>& graphics_specs(){
@@ -254,8 +257,8 @@ bool reset_graphics(Settings& s){
 const char* control_help_text(const ControlSpec& item,const Settings& settings){
     if(settings.re6_response){
         if(item.id==ControlId::UnifiedControls)return Bilingual{
-            "RE6 response: left stick moves, right looks.\nOverview and aiming speeds tune separately.\nSmooth braking; vertical look +/-50deg.",
-            "Отклик RE6: слева движение, справа обзор.\nСкорости обзора и прицела задаются отдельно.\nПлавное торможение; обзор вверх/вниз +/-50."}.get(settings.language);
+            "RE6: move left, look right.\nSeparate overview and aiming speeds.\nStick pitch +/-35deg; smooth braking.\nGyro keeps the full native aiming range.",
+            "RE6: слева движение, справа обзор.\nСкорости обзора и прицела раздельные.\nОбзор +/-35; плавное торможение.\nГироскоп: полный штатный диапазон."}.get(settings.language);
         if(item.id==ControlId::Camera)return Bilingual{
             "RE6 response: overview speed while walking.\nRight-stick aim X/Y set aiming separately.\nA lower value gives a slower overview.",
             "Отклик RE6: скорость обзора при ходьбе.\nПрицел правым стиком X/Y задаётся отдельно.\nМеньше значение — медленнее обзор."}.get(settings.language);
@@ -269,7 +272,6 @@ const char* control_help_text(const ControlSpec& item,const Settings& settings){
     return item.help.get(settings.language);
 }
 const char* profile_name(ProfileKind kind,Language language){
-    if(kind==ProfileKind::RE9)return "RE9";
     if(kind==ProfileKind::RE6)return "RE6";
     return (kind==ProfileKind::Default?Bilingual{"Default","По умолчанию"}:
         Bilingual{"Custom","Пользовательский"}).get(language);
@@ -278,14 +280,11 @@ const char* control_profile_help(ProfileKind kind,Language language){
     if(kind==ProfileKind::RE6)return Bilingual{
         "RE6 measured reference: faster overview,\nslower aim and smooth braking. Partial\napproximation, not the exact RE6 engine.",
         "По замерам RE6: быстрый обзор, медленный\nприцел и плавное торможение. Частичное\nприближение, не точная копия движка RE6."}.get(language);
-    if(kind==ProfileKind::RE9)return Bilingual{
-        "Shared right-stick look/aim, moving left stick.\nOriginal A/B/X/Y and PLUS/MINUS.\nHold L3 to run; native RE4 mechanics remain.",
-        "Правый стик: обзор и прицел. Левый: движение.\nA/B/X/Y и PLUS/MINUS как в исходной игре.\nБег: держать L3. Механики исходной RE4."}.get(language);
     if(kind==ProfileKind::Custom)return Bilingual{
         "Restore your last edited controls.\nChoosing a built-in profile keeps this copy.\nEdit any control setting to create Custom.",
         "Вернуть последние пользовательские настройки.\nГотовые профили сохраняют эту копию.\nДля создания измените любой параметр."}.get(language);
-    return Bilingual{"Restore the mod's default controls.\nYour Custom profile and graphics are kept.",
-        "Вернуть управление мода по умолчанию.\nВаш профиль и графика сохраняются."}.get(language);
+    return Bilingual{"Restore original game controls without gyro.\nYour Custom profile and graphics are kept.",
+        "Вернуть исходное управление без гироскопа.\nВаш профиль и графика сохраняются."}.get(language);
 }
 const char* profile_result_text(ProfileResult result,Language language){
     if(result==ProfileResult::MissingCustom)return Bilingual{

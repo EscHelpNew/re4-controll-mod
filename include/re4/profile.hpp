@@ -56,6 +56,9 @@ constexpr Site sites[] = {
     , {0xFDB0,0xF81C0FF7},{0x279F70,0xD10183FF}
     , {0x24FB30,0xF81D0FF5},{0x24FD80,0xA9BD57F6},{0x250BC0,0xFC1D0FEA}
     , {0x250EA0,0xA9BD57F6},{0x250060,0xF81E0FF3},{0x251E90,0xF81C0FF7}
+    // Generic raise initializer ABI and its actor-argument call boundary.
+    , {0x33F130,0xD100C3FF},{0x33F134,0xF9000BF3},{0x33F138,0xA9027BFD}
+    , {0x33F13C,0x910083FD},{0x31D554,0x940086F7}
 };
 inline bool matches(const std::uint8_t* memory, std::size_t size) {
     if (!memory || size < build_id_offset + sizeof(build_id)

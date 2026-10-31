@@ -79,16 +79,16 @@ int main(){
     assert(m.item_label(5)=="Graphics" && m.item_label(6)=="Updates" && m.item_label(7)=="Language" && m.item_label(8)=="Exit");
     assert(m.handle(UiEvent::Confirm)==InstallerAction::InstallGame);
     m.selected=3;assert(m.handle(UiEvent::Confirm)==InstallerAction::None && m.page==InstallerPage::Controls);
-    assert(m.item_count()==7 && m.selected==0); // Controls opens categories, never the complete catalogue.
-    assert(m.selected_control()==ControlId::Count);
+    assert(m.item_count()==8 && m.selected==0); // Controls opens categories, never the complete catalogue.
+    assert(m.selected_control()==ControlId::Profile);
     const auto pristine=m.settings;
     for(unsigned group=0;group<7;++group){
-        m.selected=group;
+        m.selected=group+1;
         for(auto language:{Language::English,Language::Russian}){
             m.settings.language=language;
-            assert(!m.item_label(group).empty() && m.item_value(group).empty());
+            assert(!m.item_label(group+1).empty() && m.item_value(group+1).empty());
             assert(std::strlen(m.selected_help())>20);
-            assert(m.item_label(group)!=control_spec(ControlId::Language).label.get(language));
+            assert(m.item_label(group+1)!=control_spec(ControlId::Language).label.get(language));
         }
         assert(m.handle(UiEvent::Left)==InstallerAction::None);
         assert(m.handle(UiEvent::Right)==InstallerAction::None);
@@ -124,12 +124,17 @@ int main(){
         assert(m.handle(UiEvent::QuickDisable)==InstallerAction::None);
         assert(m.handle(UiEvent::QuickOverlay)==InstallerAction::None);
         assert(m.handle(UiEvent::Back)==InstallerAction::None);
-        assert(m.page==InstallerPage::Controls && m.selected==group);
+        assert(m.page==InstallerPage::Controls && m.selected==group+1);
     }
     m.settings.language=Language::English;
     assert(same_profile(m.settings,pristine,ProfileDomain::Controls));
     assert(same_profile(m.settings,pristine,ProfileDomain::Graphics));
-    m.selected=unsigned(ControlGroup::Sticks);m.handle(UiEvent::Confirm);
+    m.selected=1+unsigned(ControlGroup::Aiming);m.handle(UiEvent::Confirm);m.selected=6;
+    assert(m.selected_control()==ControlId::MoveReloading && !m.settings.move_while_reloading);
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::SaveSettings && m.settings.move_while_reloading);
+    assert(m.handle(UiEvent::Left)==InstallerAction::SaveSettings && !m.settings.move_while_reloading);
+    m.handle(UiEvent::Back);
+    m.selected=1+unsigned(ControlGroup::Sticks);m.handle(UiEvent::Confirm);
     assert(m.selected_control()==ControlId::Curve);
     m.selected=2;
     assert(m.selected_control()==ControlId::Turn);
@@ -137,28 +142,26 @@ int main(){
     assert(m.handle(UiEvent::Confirm)==InstallerAction::None && m.settings.turn_gain==0.4f);
     assert(m.handle(UiEvent::Right)==InstallerAction::SaveSettings && m.settings.turn_gain==0.5f);
     m.handle(UiEvent::Back);
-    m.selected=unsigned(ControlGroup::Profiles);m.handle(UiEvent::Confirm);
+    m.selected=0;
     assert(m.selected_control()==ControlId::Profile && m.item_value(0)=="Custom");
     m.profile_note="A missing Custom profile";
     assert(std::strcmp(m.selected_help(),m.profile_note.c_str())==0);
-    assert(m.handle(UiEvent::Confirm)==InstallerAction::None && m.page==InstallerPage::Profiles);
-    m.selected=0;assert(m.handle(UiEvent::Confirm)==InstallerAction::DefaultControls);
-    assert(m.settings.turn_gain==0.5f); // Application performs profile persistence.
-    m.settings={};
-    m.selected=2;assert(m.handle(UiEvent::Confirm)==InstallerAction::RE6Controls);
-    m.selected=3;assert(m.handle(UiEvent::Confirm)==InstallerAction::CustomControls);
-    m.settings.shadow_mode=ShadowMode::Off;
-    assert(m.item_value(0)=="Active" && m.handle(UiEvent::Left)==InstallerAction::None);
-    assert(m.handle(UiEvent::Back)==InstallerAction::None && m.selected_control()==ControlId::Profile);
-    m.selected=1;m.profile_note="Should only be shown for a profile";
-    assert(m.selected_control()==ControlId::Reset && std::strcmp(m.selected_help(),m.profile_note.c_str())!=0);
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::DefaultControls && m.page==InstallerPage::Controls);
+    assert(m.settings.turn_gain==0.5f);
+    m.settings=default_controls_profile();
+    assert(m.handle(UiEvent::Right)==InstallerAction::RE6Controls);
+    assert(m.handle(UiEvent::Left)==InstallerAction::CustomControls);
+    m.settings=re6_profile();
+    assert(m.handle(UiEvent::Confirm)==InstallerAction::CustomControls);
+    m.selected=1+unsigned(ControlGroup::Profiles);m.handle(UiEvent::Confirm);
+    assert(m.selected_control()==ControlId::Reset);
     m.settings.turn_gain=0.4f;m.settings.gyro_bias_x=1.2f;
     assert(m.handle(UiEvent::Left)==InstallerAction::None);
     assert(m.handle(UiEvent::Right)==InstallerAction::None);
     assert(m.settings.turn_gain==0.4f && m.settings.gyro_bias_x==1.2f);
     assert(m.handle(UiEvent::Confirm)==InstallerAction::SaveSettings && m.settings.turn_gain==1);
     m.handle(UiEvent::Back);
-    m.selected=unsigned(ControlGroup::Mapping);m.handle(UiEvent::Confirm);
+    m.selected=1+unsigned(ControlGroup::Mapping);m.handle(UiEvent::Confirm);
     assert(m.item_label(0)=="Enable mapping" && m.item_count()==22);
     for(auto language:{Language::English,Language::Russian}){
         m.settings.language=language;
@@ -200,7 +203,7 @@ int main(){
     assert(m.item_label(0)=="Включить назначения" && m.item_value(0)=="Вкл");
     m.selected=1;m.handle(UiEvent::Confirm);assert(m.item_label(20)=="Не назначено");
     m.handle(UiEvent::Back);m.handle(UiEvent::Back);
-    assert(m.page==InstallerPage::Controls && m.selected==unsigned(ControlGroup::Mapping));
+    assert(m.page==InstallerPage::Controls && m.selected==1+unsigned(ControlGroup::Mapping));
     assert(m.selected_control()==ControlId::Count);
     m.settings={};
     assert(m.handle(UiEvent::QuickInstall)==InstallerAction::None);
@@ -271,6 +274,6 @@ int main(){
     assert(m.handle(UiEvent::Right)==InstallerAction::None);
     m.page=InstallerPage::ControlGroup;m.control_group=ControlGroup::Gyro;m.controls_selected=0;
     assert(m.handle(UiEvent::Back)==InstallerAction::None && m.page==InstallerPage::Controls);
-    assert(m.selected==unsigned(ControlGroup::Gyro)); // The opened group owns the return location.
+    assert(m.selected==1+unsigned(ControlGroup::Gyro)); // The opened group owns the return location.
     std::puts("installer navigation: grouped controls, page-safe actions, language, mapping, profiles and calibration PASS");
 }

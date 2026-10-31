@@ -3,10 +3,11 @@
 
 namespace re4 {
 enum class ProfileDomain { Controls, Graphics };
-enum class ProfileKind { Default = 0, Custom = 1, RE9 = 2, RE6 = 3 };
+enum class ProfileKind { Default = 0, Custom = 1, RE6 = 3 };
 enum class ProfileResult { Applied, Unchanged, MissingCustom, SaveFailed };
 
-Settings re9_profile();
+Settings default_controls_profile();
+ProfileKind next_control_profile(ProfileKind current, int direction);
 Settings re6_profile();
 void copy_profile(Settings& destination, const Settings& source, ProfileDomain domain);
 bool same_profile(const Settings& first, const Settings& second, ProfileDomain domain);

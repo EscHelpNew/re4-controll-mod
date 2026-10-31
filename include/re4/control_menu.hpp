@@ -12,7 +12,7 @@ struct Bilingual {
 };
 enum class ControlId : unsigned {
     Language, Curve, Analog, Turn, Camera, CameraReturn, FreeCamera, ButtonMapping, Profile, AimX, AimY, RightAimX, RightAimY, LeftDeadzone, RightDeadzone,
-    Gyro, GyroSpeed, GyroDeadzone, GyroX, GyroY, InvertX, InvertY, FirstPerson, Reticle, ReticleSize, MoveAiming, MoveKnife, ThirdPersonDistance, UnifiedControls, Reset, Count
+    Gyro, GyroSpeed, GyroDeadzone, GyroX, GyroY, InvertX, InvertY, FirstPerson, Reticle, ReticleSize, MoveAiming, MoveKnife, MoveReloading, ThirdPersonDistance, UnifiedControls, Reset, Count
 };
 enum class ControlGroup : unsigned { Sticks, Aiming, Gyro, Camera, Reticle, Mapping, Profiles, Count };
 struct ControlGroupSpec {
@@ -50,7 +50,7 @@ std::string graphics_value_text(const GraphicsSpec&,const Settings&);
 bool change_graphics(Settings&,GraphicsId,int direction);
 bool reset_graphics(Settings&);
 const char* profile_name(ProfileKind,Language);
-inline constexpr std::array<ProfileKind,4> kControlProfiles{{ProfileKind::Default,ProfileKind::RE9,ProfileKind::RE6,ProfileKind::Custom}};
+inline constexpr std::array<ProfileKind,3> kControlProfiles{{ProfileKind::Default,ProfileKind::RE6,ProfileKind::Custom}};
 const char* control_profile_help(ProfileKind,Language);
 const char* profile_result_text(ProfileResult,Language);
 constexpr unsigned kMappingRowCount=kButtonCount+2;

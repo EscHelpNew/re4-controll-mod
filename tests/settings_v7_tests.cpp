@@ -57,8 +57,8 @@ void rejected(const Bytes& bytes,std::size_t length=128) {
 int main() {
     using namespace re4;
     Settings defaults;
-    assert(kSharedAbi==16 && std::strcmp(kSharedMarker,"RE4CTL_SHARED16")==0 && sizeof(SharedControl)==400);
-    assert(!defaults.re6_response);
+    assert(kSharedAbi==17 && std::strcmp(kSharedMarker,"RE4CTL_SHARED17")==0 && sizeof(SharedControl)==400);
+    assert(!defaults.re6_response && !defaults.move_while_reloading);
     assert(defaults.gyro_speed == 0.8f);
     for(auto member:{&Settings::turn_gain,&Settings::camera_gain,&Settings::aim_gain_x,&Settings::aim_gain_y,
                     &Settings::right_aim_gain_x,&Settings::right_aim_gain_y,&Settings::gyro_gain_x,&Settings::gyro_gain_y,
@@ -67,7 +67,7 @@ int main() {
     assert(defaults.left_deadzone==0.05f && defaults.right_deadzone==0.05f && defaults.gyro_deadzone_dps==0.5f);
     Bytes bytes{};
     assert(encode_settings(defaults,bytes.data(),bytes.size()));
-    assert(bytes[4] == 12);
+    assert(bytes[4] == 13);
     assert(bytes[64]==0 && bytes[65]==1);
     for(unsigned i=0;i<20;++i)assert(bytes[68+i]==i);
     for(unsigned i:{66,67,88,89,100,123})assert(bytes[i]==0);
@@ -87,15 +87,21 @@ int main() {
     custom.re6_response=true;
     assert(encode_settings(custom,bytes.data(),bytes.size()) && bytes[97]==16);
     assert(decode_settings(bytes.data(),bytes.size(),decoded) && decoded.re6_response);
+    custom.move_while_reloading=true;
+    assert(encode_settings(custom,bytes.data(),bytes.size()) && bytes[97]==48);
+    assert(decode_settings(bytes.data(),bytes.size(),decoded) && decoded.re6_response && decoded.move_while_reloading);
+    auto re6_v12=extended_legacy(12);re6_v12[97]|=16;seal(re6_v12);
+    assert(decode_settings(re6_v12.data(),re6_v12.size(),decoded) && decoded.re6_response && !decoded.move_while_reloading);
+    auto bad_v12=re6_v12;bad_v12[97]|=32;seal(bad_v12);rejected(bad_v12);
     for(unsigned version=7;version<=11;++version){
         const auto old=extended_legacy(version);
         assert(decode_settings(old.data(),old.size(),decoded));
-        assert(!decoded.re6_response && decoded.unified_controls==(version>=11));
+        assert(!decoded.re6_response && !decoded.move_while_reloading && decoded.unified_controls==(version>=11));
         assert(decoded.camera_gain==0.5f && decoded.right_aim_gain_x==0.25f && decoded.right_aim_gain_y==0.75f);
         assert(decoded.camera_return_speed==0.375f && decoded.free_camera && decoded.button_map[4]==1);
         assert(decoded.third_person_distance==(version>=10?1.35f:1.f));
         assert(decoded.texture_filtering==(version>=8?TextureFilter::Bilinear:TextureFilter::Native));
-        assert(encode_settings(decoded,resealed.data(),resealed.size()) && resealed[4]==12 && !(resealed[97]&16));
+        assert(encode_settings(decoded,resealed.data(),resealed.size()) && resealed[4]==13 && !(resealed[97]&16));
         auto bad=old;bad[97]|=16;seal(bad);rejected(bad);
     }
     for(unsigned version=1;version<=6;++version) {
@@ -115,10 +121,10 @@ int main() {
         assert(decoded.right_aim_gain_y==(version>=6?0.75f:1));
         assert(decoded.button_map==identity_button_map() && decoded.remap_enabled && !decoded.free_camera && decoded.camera_return_speed==1);
         assert(decoded.third_person_distance==1);
-        assert(!decoded.re6_response);
+        assert(!decoded.re6_response && !decoded.move_while_reloading);
         assert(decoded.texture_filtering==TextureFilter::Native && decoded.shadow_mode==ShadowMode::Native
             && decoded.anti_aliasing==AntiAliasing::Native && decoded.draw_distance_scale==1);
-        assert(encode_settings(decoded,resealed.data(),resealed.size()) && resealed[4]==12);
+        assert(encode_settings(decoded,resealed.data(),resealed.size()) && resealed[4]==13);
         rejected(old,128);
     }
     for(unsigned n=0;n<128;++n)rejected(bytes,n);
@@ -135,7 +141,7 @@ int main() {
     for(unsigned offset=68;offset<88;++offset)for(unsigned value:{20,127,254}){auto bad=bytes;bad[offset]=std::uint8_t(value);seal(bad);rejected(bad);}
     for(unsigned bit:{7,15,23,24,31}){auto bad=bytes;put32(bad.data()+8,get32(bad.data()+8)|(1u<<bit));seal(bad);rejected(bad);}
     for(unsigned shift:{8,16}){auto bad=bytes;put32(bad.data()+8,(get32(bad.data()+8)&~(127u<<shift))|(101u<<shift));seal(bad);rejected(bad);}
-    for(unsigned version:{0,1,6,13,255}){auto bad=bytes;put32(bad.data()+4,version);seal(bad);rejected(bad);}
+    for(unsigned version:{0,1,6,14,255}){auto bad=bytes;put32(bad.data()+4,version);seal(bad);rejected(bad);}
     for(float value:{-0.01f,1.01f,std::numeric_limits<float>::infinity(),-std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
         auto bad=bytes;putfloat(bad.data()+60,value);seal(bad);rejected(bad);
         auto invalid=custom;invalid.camera_return_speed=value;
@@ -154,5 +160,5 @@ int main() {
     auto old=legacy(6);old[4]=7;seal(old,64);rejected(old,64);
     old=legacy(1);old[56]=1;seal(old,64);rejected(old,64);
     old=legacy(5);old[9]=1;seal(old,64);rejected(old,64);
-    std::puts("settings v12: defaults, complete legacy migration, strict wire checks, rollback and ranges PASS");
+    std::puts("settings v13: defaults, complete legacy migration, strict wire checks, rollback and ranges PASS");
 }
