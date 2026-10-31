@@ -1,0 +1,6 @@
+Mode: built-in imagegen edit
+Reference: assets/icon-original.png
+Output: assets/icon-re6.png
+
+Prompt:
+Edit the reference application emblem for a second game tab. Preserve the exact black square background, centered circular crosshair, ring thickness, four tick marks, margins, minimal flat-color style and crisp silhouette. Change every red part to vivid violet-purple (#A640E8). Replace the large central angular digit 4 with a clearly readable bold angular digit 6 in the same weight and overall occupied area. There must be exactly one numeral, 6, no other text, no extra imagery, no gradients, no glow, no texture, no borders. Deliver a clean square application logo suitable for a 128-pixel in-app header.

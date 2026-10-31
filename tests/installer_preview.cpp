@@ -16,6 +16,47 @@ unsigned white_pixels(const char* path,bool translucent=false){
     }
     SDL_FreeSurface(image);return count;
 }
+SDL_Color pixel_at(SDL_Surface* image,int x,int y){
+    Uint32 pixel=0;
+    std::memcpy(&pixel,static_cast<const unsigned char*>(image->pixels)+y*image->pitch+x*image->format->BytesPerPixel,image->format->BytesPerPixel);
+    SDL_Color color{};SDL_GetRGB(pixel,image->format,&color.r,&color.g,&color.b);return color;
+}
+void check_game_frame(const char* path,bool re6){
+    auto* image=SDL_LoadBMP(path);assert(image && image->w==1280 && image->h==720);
+    // Home actions begin at the panel's 16px top inset, without a second heading.
+    const auto accent=pixel_at(image,66,190);
+    assert(re6?(accent.b>accent.r && accent.r>accent.g):(accent.r>accent.g && accent.g>accent.b));
+    // Both borders enclose content, with an unobstructed 16px gutter between them.
+    for(int y=168;y<615;++y){
+        const auto left=pixel_at(image,821,y),right=pixel_at(image,838,y);
+        assert(left.r==73 && left.g==73 && left.b==57);
+        assert(right.r==73 && right.g==73 && right.b==57);
+        for(int x=822;x<838;++x){
+            const auto gap=pixel_at(image,x,y);
+            assert(gap.r<30 && gap.g<30 && gap.b<30);
+        }
+    }
+    unsigned help_pixels=0;
+    for(int y=185;y<210;++y)for(int x=862;x<1206;++x){
+        const auto c=pixel_at(image,x,y);
+        if(c.r>190 && c.g>180 && c.b>160)++help_pixels;
+    }
+    assert(help_pixels>100); // Context help itself occupies the top, not a muted description heading.
+    unsigned logo_accent=0;
+    for(int y=23;y<151;++y)for(int x=42;x<170;++x){
+        const auto c=pixel_at(image,x,y);
+        if(re6?(c.b>c.r+20 && c.r>c.g+20 && c.b>100):(c.r>c.g+30 && c.r>c.b+30 && c.r>100))++logo_accent;
+    }
+    assert(logo_accent>100); // The actual selected-game bitmap must be present.
+    if(re6){
+        // RE6 cannot display the RE4 stick-response plot or extra home rows.
+        const auto blank=pixel_at(image,864,420);
+        assert(blank.r==23 && blank.g==24 && blank.b==19);
+        const auto fifth_row=pixel_at(image,66,420);
+        assert(fifth_row.r==23 && fifth_row.g==24 && fifth_row.b==19);
+    }
+    SDL_FreeSurface(image);
+}
 int main(){
     std::ifstream stream("C:/Windows/Fonts/segoeui.ttf",std::ios::binary);
     std::vector<unsigned char> font((std::istreambuf_iterator<char>(stream)),{});
@@ -81,6 +122,24 @@ int main(){
     renderer.draw(model);assert(renderer.save_preview("build/installer-updates-en.bmp"));
     model.settings.language=re4::Language::Russian;model.update.stage=re4::UpdateStage::Downloading;model.update.received=4*1024*1024;
     renderer.draw(model);assert(renderer.save_preview("build/installer-updates-ru.bmp"));
+    assert(renderer.initialize(font.data(),font.size(),"build/app-logo.bmp",true,"build/app-logo-re6.bmp"));
+    for(auto language:{re4::Language::English,re4::Language::Russian}){
+        model={};model.settings.language=language;
+        const auto* re4_path=language==re4::Language::English?"build/installer-home-en.bmp":"build/installer-home-ru.bmp";
+        renderer.draw(model);assert(renderer.save_preview(re4_path));
+        check_game_frame(re4_path,false);
+        assert(model.handle(re4::UiEvent::NextGame)==re4::InstallerAction::None);
+        renderer.draw(model);
+        const auto* path=language==re4::Language::English?"build/installer-re6-home-en.bmp":"build/installer-re6-home-ru.bmp";
+        assert(renderer.save_preview(path));check_game_frame(path,true);
+    }
     renderer.close();renderer.close();
+    assert(SDL_WasInit(SDL_INIT_VIDEO)==0 && !renderer.save_preview("build/installer-closed.bmp"));
+    // Reinitialize after freeing both logos and cached EN/RU glyphs.
+    assert(renderer.initialize(font.data(),font.size(),"build/app-logo.bmp",true,"build/app-logo-re6.bmp"));
+    model={};model.handle(re4::UiEvent::PreviousGame);renderer.draw(model);
+    assert(renderer.save_preview("build/installer-re6-reopened.bmp"));
+    check_game_frame("build/installer-re6-reopened.bmp",true);
+    renderer.close();assert(SDL_WasInit(SDL_INIT_VIDEO)==0);
     std::puts("actual installer renderer: EN/RU frames, diagnostics and cleanup PASS");
 }

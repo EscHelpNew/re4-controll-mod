@@ -1,6 +1,21 @@
 #include "re4/installer_ui.hpp"
 #include <cstring>
 namespace re4 {
+namespace {
+const std::array<HomeItem,4> re6_home_items{{
+    {{"Install RE6 module","Установить модуль RE6"},
+     {"Install the RE6 measurement module.\nClose Resident Evil 6 before installing.",
+      "Установить модуль измерений RE6.\nПеред установкой закройте Resident Evil 6."}},
+    {{"Install RE6 overlay","Установить оверлей RE6"},
+     {"Install the RE6 measurement overlay.\nKeeps the existing Uberhand installation.",
+      "Установить оверлей измерений RE6.\nСуществующий Uberhand сохраняется."}},
+    {{"Language","Язык"},
+     {"Choose English or Russian for both games.\nUse LEFT/RIGHT or A to change.",
+      "Русский или английский для обеих игр.\nСмена: влево/вправо или A."}},
+    {{"Exit","Выход"},
+     {"Return to the HOME menu.","Вернуться на главный экран консоли."}}
+}};
+}
 const std::array<HomeItem,9>& installer_home_items(){
     static constexpr std::array<HomeItem,9> items{{
         {{"Install / update mod","Установить / обновить мод"},
@@ -34,6 +49,7 @@ const std::array<HomeItem,9>& installer_home_items(){
     return items;
 }
 unsigned InstallerModel::item_count()const{
+    if(game==GameTarget::RE6)return page==InstallerPage::Home?4:0;
     if(page==InstallerPage::Profiles)return unsigned(kControlProfiles.size());
     if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
     if(page==InstallerPage::ControlGroup)return control_group_count(control_group);
@@ -42,9 +58,33 @@ unsigned InstallerModel::item_count()const{
     return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlGroup::Count):page==InstallerPage::Updates?2:0;
 }
 ControlId InstallerModel::selected_control()const{
+    if(game==GameTarget::RE6)return ControlId::Count;
     return page==InstallerPage::ControlGroup?control_group_item(control_group,selected):ControlId::Count;
 }
 InstallerAction InstallerModel::handle(UiEvent event){
+    if(event==UiEvent::PreviousGame || event==UiEvent::NextGame){
+        auto& old=game_home_[game==GameTarget::RE6?1:0];
+        old.selected=page==InstallerPage::Home?selected:home_selected;
+        old.status=status;old.detail=detail;
+        game=game==GameTarget::RE4?GameTarget::RE6:GameTarget::RE4;
+        const auto& next=game_home_[game==GameTarget::RE6?1:0];
+        page=InstallerPage::Home;selected=next.selected;
+        status=next.status;detail=next.detail;profile_note.clear();
+        return InstallerAction::None;
+    }
+    if(game==GameTarget::RE6){
+        page=InstallerPage::Home;
+        if(event==UiEvent::Exit || event==UiEvent::Back)return InstallerAction::Exit;
+        if(event==UiEvent::Up || event==UiEvent::Down){
+            selected=(selected+(event==UiEvent::Down?1:3))%4;return InstallerAction::None;
+        }
+        if(selected>=4)return InstallerAction::None;
+        if(selected==2 && (event==UiEvent::Confirm || event==UiEvent::Left || event==UiEvent::Right)){
+            change_control(settings,ControlId::Language,1);return InstallerAction::SaveSettings;
+        }
+        if(event!=UiEvent::Confirm)return InstallerAction::None;
+        return selected==0?InstallerAction::InstallGame:selected==1?InstallerAction::InstallOverlay:InstallerAction::Exit;
+    }
     profile_note.clear();
     if(event==UiEvent::Exit)return InstallerAction::Exit;
     if(event==UiEvent::Back){
@@ -176,6 +216,11 @@ const char* InstallerModel::page_title()const{
     return text.get(settings.language);
 }
 const char* InstallerModel::status_text()const{
+    if(game==GameTarget::RE6){
+        if(status==InstallerStatus::Installed)return Bilingual{"Module installed. Start RE6 again.","Модуль установлен. Запустите RE6 заново."}.get(settings.language);
+        if(status==InstallerStatus::GameRunning)return Bilingual{"Close Resident Evil 6 first","Сначала закройте Resident Evil 6"}.get(settings.language);
+        if(status==InstallerStatus::Failed)return Bilingual{"Operation failed. See details.","Ошибка операции. См. описание."}.get(settings.language);
+    }
     if(page==InstallerPage::Updates){
         static constexpr Bilingual updates[]={
             {"Check for a newer version","Проверьте наличие новой версии"},
@@ -208,6 +253,7 @@ const char* InstallerModel::status_text()const{
     return messages[index<sizeof(messages)/sizeof(*messages)?index:unsigned(InstallerStatus::Failed)].get(settings.language);
 }
 const char* InstallerModel::selected_help()const{
+    if(game==GameTarget::RE6)return re6_home_items[selected<4?selected:0].help.get(settings.language);
     if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
         || selected_control()==ControlId::Profile || page==InstallerPage::Profiles))return profile_note.c_str();
     if(page==InstallerPage::Profiles)return control_profile_help(kControlProfiles[selected<kControlProfiles.size()?selected:0],settings.language);
@@ -232,6 +278,7 @@ const char* InstallerModel::selected_help()const{
 }
 std::string InstallerModel::item_label(unsigned index)const{
     if(index>=item_count())return "";
+    if(game==GameTarget::RE6)return re6_home_items[index].label.get(settings.language);
     if(page==InstallerPage::Profiles)return profile_name(kControlProfiles[index],settings.language);
     if(page==InstallerPage::Controls)return control_group_spec(static_cast<ControlGroup>(index)).label.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_spec(control_group_item(control_group,index)).label.get(settings.language);
@@ -245,6 +292,7 @@ std::string InstallerModel::item_label(unsigned index)const{
 }
 std::string InstallerModel::item_value(unsigned index)const{
     if(index>=item_count())return "";
+    if(game==GameTarget::RE6)return index==2?(settings.language==Language::Russian?"Русский":"English"):"";
     if(page==InstallerPage::Profiles)return profile_kind(settings,ProfileDomain::Controls)==kControlProfiles[index]?
         Bilingual{"Active","Активен"}.get(settings.language):"A";
     if(page==InstallerPage::Controls)return "";
@@ -262,8 +310,8 @@ void InstallerModel::installation_result(const char* result){
     if(!result){status=InstallerStatus::Failed;return;}
     if(std::strncmp(result,"Conflict",8)==0)status=InstallerStatus::Conflict;
     else if(std::strncmp(result,"Disabled RE4",12)==0)status=InstallerStatus::Disabled;
-    else if(std::strstr(result,"Installed RE4 overlay")==result)status=InstallerStatus::OverlayInstalled;
-    else if(std::strncmp(result,"Installed RE4 Controls",22)==0)status=InstallerStatus::Installed;
+    else if(std::strstr(result,game==GameTarget::RE6?"Installed RE6 overlay":"Installed RE4 overlay")==result)status=InstallerStatus::OverlayInstalled;
+    else if(std::strstr(result,game==GameTarget::RE6?"Installed RE6 module":"Installed RE4 Controls")==result)status=InstallerStatus::Installed;
     else status=InstallerStatus::Failed;
 }
 bool InstallerModel::allow_installation(bool identified,bool running){

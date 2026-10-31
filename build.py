@@ -68,7 +68,7 @@ def tests():
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/modern_move_tests.cpp','source/input.cpp','-o',OUT/'modern_move_tests.exe'])
     native('modern_move_tests.exe')
-    for name in ('unified_tests','reticle_draw_tests'):
+    for name in ('unified_tests','reticle_draw_tests','re6_journal_tests'):
         run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
              'tests/'+name+'.cpp','source/input.cpp','-o',OUT/(name+'.exe')])
         native(name+'.exe')
@@ -122,6 +122,7 @@ def tests():
          'tests/calibration_tests.cpp','-o',OUT/'calibration_tests.exe'])
     native('calibration_tests.exe')
     prepare_bitmap(ROOT / 'assets/icon-original.png',OUT / 'app-logo.bmp')
+    prepare_bitmap(ROOT / 'assets/icon-re6.png',OUT / 'app-logo-re6.bmp')
     run([host,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static-libgcc','-static-libstdc++',
          '-Iinclude','-IC:/msys64/mingw64/include/SDL2','-isystem','third_party/libtesla/include',
          'tests/installer_preview.cpp','source/diagnostic/installer_renderer.cpp',
@@ -179,10 +180,14 @@ def diagnostic():
     run([sdk_tool('nacptool'), '--create', cfg['name'], cfg['author'], VERSION, nacp,
          '--titleid=' + cfg['title_id']])
     prepare_bitmap(ROOT/'assets/icon-original.png',OUT/'app-logo.bmp')
+    prepare_bitmap(ROOT/'assets/icon-re6.png',OUT/'app-logo-re6.bmp')
     base = OUT / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
-    payload=stage_payload(ROOT,{'app-logo.bmp':OUT/'app-logo.bmp',
+    payload_files={'app-logo.bmp':OUT/'app-logo.bmp','app-logo-re6.bmp':OUT/'app-logo-re6.bmp',
         'home-launcher.bin':ROOT/'assets/home-launcher.bin','subsdk9':base/'subsdk9','main.npdm':base/'main.npdm',
-        're4-controls.ovl':OUT/'experimental/switch/.overlays/re4-controls.ovl'})
+        're4-controls.ovl':OUT/'experimental/switch/.overlays/re4-controls.ovl'}
+    # RE6 native files require a verified profile/builder. Do not discover or
+    # package arbitrary pre-existing build files while that work is pending.
+    payload=stage_payload(ROOT,payload_files)
     icon = prepare_app_icon(ROOT / 'assets/icon-original.png', OUT / 'icon.jpg')
     run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp), '--icon=' + str(icon),
          '--romfsdir=' + str(payload)])

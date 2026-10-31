@@ -18,6 +18,7 @@ namespace {
 constexpr int width=1280,height=720;
 constexpr SDL_Color cream{220,211,184,255},muted{146,143,121,255},red{172,48,36,255};
 constexpr SDL_Color panel{24,25,20,245},line{73,73,57,255},highlight{77,31,25,255};
+constexpr SDL_Color purple{156,99,218,255},purple_highlight{52,31,77,255};
 const char* tr(const InstallerModel& m,const char* en,const char* ru){return m.settings.language==Language::Russian?ru:en;}
 std::uint32_t next_codepoint(const char*& p){
     const unsigned char c=static_cast<unsigned char>(*p++);
@@ -41,6 +42,7 @@ struct InstallerRenderer::Impl {
     SDL_Renderer* renderer=nullptr;
     SDL_Texture* background=nullptr;
     SDL_Texture* logo=nullptr;
+    SDL_Texture* re6_logo=nullptr;
     stbtt_fontinfo font{};
     std::map<std::uint64_t,Glyph> glyphs;
     std::vector<std::uint32_t> preview;
@@ -171,7 +173,7 @@ struct InstallerRenderer::Impl {
 };
 InstallerRenderer::InstallerRenderer()=default;
 InstallerRenderer::~InstallerRenderer(){close();}
-bool InstallerRenderer::initialize(const void* data,std::size_t size,const char* logo_path,bool hidden){
+bool InstallerRenderer::initialize(const void* data,std::size_t size,const char* logo_path,bool hidden,const char* re6_logo_path){
     close();impl_=new Impl;impl_->hidden=hidden;
     if(!data || size<1000){impl_->failure="Shared font unavailable";return false;}
     const auto* bytes=static_cast<const unsigned char*>(data);
@@ -195,6 +197,10 @@ bool InstallerRenderer::initialize(const void* data,std::size_t size,const char*
         SDL_Surface* surface=SDL_LoadBMP(logo_path);
         if(surface){impl_->logo=SDL_CreateTextureFromSurface(impl_->renderer,surface);SDL_FreeSurface(surface);}
     }
+    if(re6_logo_path){
+        SDL_Surface* surface=SDL_LoadBMP(re6_logo_path);
+        if(surface){impl_->re6_logo=SDL_CreateTextureFromSurface(impl_->renderer,surface);SDL_FreeSurface(surface);}
+    }
     std::vector<std::uint32_t> pixels(width*height);
     for(int y=0;y<height;++y)for(int x=0;x<width;++x){
         const float dx=(x-width*.5f)/(width*.7f),dy=(y-height*.5f)/(height*.8f);
@@ -211,40 +217,54 @@ bool InstallerRenderer::initialize(const void* data,std::size_t size,const char*
 void InstallerRenderer::draw(const InstallerModel& m){
     if(!impl_ || !impl_->renderer)return;
     auto& p=*impl_;
+    const bool re6=m.game==GameTarget::RE6;
+    const auto accent=re6?purple:red;
     SDL_SetRenderDrawColor(p.renderer,10,12,9,255);SDL_RenderClear(p.renderer);
     if(p.background)SDL_RenderCopy(p.renderer,p.background,nullptr,nullptr);
-    if(p.logo){const SDL_Rect dest{42,23,128,128};SDL_RenderCopy(p.renderer,p.logo,nullptr,&dest);}
-    p.text("RE4 CONTROLS",183,43,46,cream);
+    auto* logo=re6?p.re6_logo:p.logo;
+    if(logo){const SDL_Rect dest{42,23,128,128};SDL_RenderCopy(p.renderer,logo,nullptr,&dest);}
+    else if(re6)p.text("6",78,36,110,purple);
+    p.text(re6?"RE6 CONTROLS":"RE4 CONTROLS",183,43,46,cream);
     p.text(m.page_title(),186,106,18,muted);
     p.text(re4::kVersion,1150,51,18,muted);
+    p.text("L  RE4",1000,106,18,re6?muted:red);
+    p.text("RE6  R",1125,106,18,re6?purple:muted);
     p.fill({52,151,1176,1},line);
-    p.fill({52,167,750,449},panel);p.border({52,167,750,449},line);
+    p.fill({52,167,770,449},panel);p.border({52,167,770,449},line);
     p.fill({838,167,390,449},panel);p.border({838,167,390,449},line);
     if(m.page==InstallerPage::Diagnostics)p.diagnostics(m);
     else if(m.page==InstallerPage::Updates)p.updates(m);
     else{
-        const auto heading=m.page==InstallerPage::MappingTargets?
-            std::string(button_name(m.mapping_source))+tr(m," -> GAME BUTTON"," -> КНОПКА ИГРЫ"):
-            m.page==InstallerPage::Home?tr(m,"OPERATIONS","ДЕЙСТВИЯ"):tr(m,"SETTINGS","НАСТРОЙКИ");
-        p.text(heading,76,184,17,muted);
+        const bool home=m.page==InstallerPage::Home;
+        if(!home){
+            const auto heading=m.page==InstallerPage::MappingTargets?
+                std::string(button_name(m.mapping_source))+tr(m," -> GAME BUTTON"," -> КНОПКА ИГРЫ"):
+                tr(m,"SETTINGS","НАСТРОЙКИ");
+            p.text(heading,76,184,17,muted);
+        }
         const unsigned count=m.item_count(),visible=8;
         unsigned first=m.selected>=visible?m.selected-visible+1:0;
         if(count<visible)first=0;
         for(unsigned i=first;i<count && i<first+visible;++i){
-            const int y=222+int(i-first)*49;
-            if(i==m.selected){p.fill({65,y-2,723,43},highlight);p.fill({65,y-2,4,43},red);}
+            const int y=(home?185:222)+int(i-first)*49;
+            if(i==m.selected){p.fill({65,y-2,743,43},re6?purple_highlight:highlight);p.fill({65,y-2,4,43},accent);}
             p.text(m.item_label(i),81,y+7,23,i==m.selected?cream:muted,485);
             const auto value=m.item_value(i);
-            if(!value.empty())p.text(value,766-int(p.measure(value,18)),y+10,18,cream,240);
+            if(!value.empty())p.text(value,786-int(p.measure(value,18)),y+10,18,cream,240);
         }
         if(count>visible){
-            p.fill({793,223,2,383},{43,45,34,255});
-            p.fill({793,223+int(m.selected*340/std::max(1u,count-1)),2,43},red);
+            const int track_y=home?186:223;
+            p.fill({813,track_y,2,383},{43,45,34,255});
+            p.fill({813,track_y+int(m.selected*340/std::max(1u,count-1)),2,43},accent);
         }
     }
-    p.text(tr(m,"FIELD NOTES","ОПИСАНИЕ"),862,185,17,muted);
-    p.text(m.selected_help(),862,224,19,cream,344,true,5);
-    if(m.page==InstallerPage::Updates){
+    p.text(m.selected_help(),862,185,19,cream,344,true,5);
+    if(re6){
+        p.text(tr(m,"MEASUREMENT","ИЗМЕРЕНИЯ"),862,360,16,muted);
+        p.text(tr(m,"Original controls and camera.\nNo control tuning on this page.",
+                    "Штатное управление и камера.\nБез настройки управления."),862,399,19,cream,344,true,4);
+        if(!m.detail.empty())p.text(m.detail,862,486,16,cream,344,true,4);
+    }else if(m.page==InstallerPage::Updates){
         p.text(tr(m,"BEFORE YOU UPDATE","ПЕРЕД ОБНОВЛЕНИЕМ"),862,360,16,muted);
         p.text(tr(m,"Keep Wi-Fi connected.\nReopen the app after installation.\nYour settings are preserved.",
                     "Не отключайте Wi-Fi.\nПосле установки откройте\nприложение заново. Ваши\nнастройки сохраняются."),862,399,19,cream,344,true,6);
@@ -293,6 +313,7 @@ void InstallerRenderer::close(){
     if(!impl_)return;
     for(auto& entry:impl_->glyphs)if(entry.second.texture)SDL_DestroyTexture(entry.second.texture);
     if(impl_->logo)SDL_DestroyTexture(impl_->logo);
+    if(impl_->re6_logo)SDL_DestroyTexture(impl_->re6_logo);
     if(impl_->background)SDL_DestroyTexture(impl_->background);
     if(impl_->renderer)SDL_DestroyRenderer(impl_->renderer);
     if(impl_->window)SDL_DestroyWindow(impl_->window);

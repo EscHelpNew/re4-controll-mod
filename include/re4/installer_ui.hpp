@@ -1,12 +1,13 @@
 #pragma once
 #include "control_menu.hpp"
 #include "update.hpp"
+#include "game_target.hpp"
 #include <cstddef>
 #include <string>
 
 namespace re4 {
 enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup, Profiles };
-enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview };
+enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview,PreviousGame,NextGame };
 enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate,
     DefaultControls,CustomControls,DefaultGraphics,CustomGraphics,RE9Controls };
 enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
@@ -18,7 +19,14 @@ struct DiagnosticSnapshot {
 struct HomeItem {Bilingual label,help;};
 const std::array<HomeItem,9>& installer_home_items();
 class InstallerModel {
+    struct GameHomeState {
+        unsigned selected=0;
+        InstallerStatus status=InstallerStatus::Ready;
+        std::string detail;
+    };
+    GameHomeState game_home_[2];
 public:
+    GameTarget game=GameTarget::RE4;
     Settings settings;
     InstallerPage page=InstallerPage::Home;
     unsigned selected=0,home_selected=0;
@@ -50,7 +58,7 @@ public:
     ~InstallerRenderer();
     InstallerRenderer(const InstallerRenderer&)=delete;
     InstallerRenderer& operator=(const InstallerRenderer&)=delete;
-    bool initialize(const void* font,std::size_t font_size,const char* logo_bmp,bool hidden=false);
+    bool initialize(const void* font,std::size_t font_size,const char* logo_bmp,bool hidden=false,const char* re6_logo_bmp=nullptr);
     void draw(const InstallerModel&);
     bool save_preview(const char* bmp_path);
     void close();

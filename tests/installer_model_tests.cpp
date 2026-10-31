@@ -8,6 +8,72 @@
 int main(){
     using namespace re4;
     InstallerModel m;
+    // L/R game selection must leave nested settings without installing.
+    {
+        InstallerModel navigation;
+        assert(navigation.game==GameTarget::RE4);
+        navigation.page=InstallerPage::ControlGroup;
+        navigation.selected=2;
+        navigation.home_selected=3;navigation.controls_selected=4;
+        navigation.settings.turn_gain=0.4f;navigation.settings.gyro_bias_x=1.25f;
+        navigation.settings.button_map[0]=255;navigation.settings.free_camera=true;
+        navigation.settings.texture_filtering=TextureFilter::Aniso4;
+        const auto saved_settings=navigation.settings;
+        navigation.status=InstallerStatus::Installed;navigation.detail="RE4 install detail";
+        assert(navigation.handle(UiEvent::NextGame)==InstallerAction::None);
+        assert(navigation.game==GameTarget::RE6);
+        assert(navigation.page==InstallerPage::Home && navigation.item_count()==4);
+        assert(navigation.status==InstallerStatus::Ready && navigation.detail.empty());
+        const char* labels[]={"Install RE6 module","Install RE6 overlay","Language","Exit"};
+        for(unsigned row=0;row<4;++row){
+            navigation.selected=row;
+            assert(navigation.item_label(row)==labels[row]);
+            assert(std::strlen(navigation.selected_help())>20);
+        }
+        assert(navigation.item_label(4).empty() && navigation.item_value(4).empty());
+        assert(navigation.selected_control()==ControlId::Count);
+        navigation.selected=0;
+        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::InstallGame);
+        navigation.selected=1;
+        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::InstallOverlay);
+        navigation.selected=2;
+        for(auto event:{UiEvent::QuickInstall,UiEvent::QuickOverlay,UiEvent::QuickDisable,UiEvent::Calibrate,UiEvent::ResetPreview})
+            assert(navigation.handle(event)==InstallerAction::None);
+        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::SaveSettings);
+        assert(navigation.settings.language==Language::Russian && navigation.item_label(2)=="Язык");
+        assert(navigation.item_label(0)=="Установить модуль RE6" && navigation.item_label(1)=="Установить оверлей RE6");
+        assert(navigation.item_label(3)=="Выход" && navigation.item_value(2)=="Русский");
+        assert(navigation.handle(UiEvent::Right)==InstallerAction::SaveSettings && navigation.settings.language==Language::English);
+        assert(navigation.handle(UiEvent::Left)==InstallerAction::SaveSettings && navigation.settings.language==Language::Russian);
+        navigation.selected=0;navigation.handle(UiEvent::Up);assert(navigation.selected==3);
+        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::Exit);
+        navigation.handle(UiEvent::Down);assert(navigation.selected==0);
+        assert(navigation.handle(UiEvent::Back)==InstallerAction::Exit);
+        assert(navigation.handle(UiEvent::Exit)==InstallerAction::Exit);
+        navigation.selected=2;navigation.status=InstallerStatus::Failed;navigation.detail="Missing RE6 module";
+        assert(navigation.handle(UiEvent::PreviousGame)==InstallerAction::None);
+        assert(navigation.game==GameTarget::RE4 && navigation.page==InstallerPage::Home && navigation.selected==3);
+        assert(navigation.home_selected==3 && navigation.controls_selected==4);
+        assert(navigation.settings.language==Language::Russian);
+        assert(same_profile(navigation.settings,saved_settings,ProfileDomain::Controls));
+        assert(same_profile(navigation.settings,saved_settings,ProfileDomain::Graphics));
+        assert(navigation.settings.gyro_bias_x==1.25f);
+        assert(navigation.status==InstallerStatus::Installed && navigation.detail=="RE4 install detail");
+        assert(navigation.handle(UiEvent::PreviousGame)==InstallerAction::None);
+        assert(navigation.game==GameTarget::RE6 && navigation.selected==2 && navigation.item_count()==4);
+        assert(navigation.status==InstallerStatus::Failed && navigation.detail=="Missing RE6 module");
+        navigation.installation_result("Installed RE4 Controls. Restart RE4.");
+        assert(navigation.status==InstallerStatus::Failed);
+        navigation.installation_result("Installed RE6 module. Restart RE6.");
+        assert(navigation.status==InstallerStatus::Installed && std::strstr(navigation.status_text(),"RE4")==nullptr);
+        navigation.installation_result("Installed RE6 overlay.");assert(navigation.status==InstallerStatus::OverlayInstalled);
+        assert(!navigation.allow_installation(true,true) && std::strstr(navigation.status_text(),"Resident Evil 6"));
+        // Even stale page state must never expose RE4 control mutations under RE6.
+        navigation.page=InstallerPage::Diagnostics;navigation.diagnostic.sensors=1;
+        assert(navigation.handle(UiEvent::Calibrate)==InstallerAction::None);
+        assert(navigation.page==InstallerPage::Home && !navigation.settings.gyro_enabled);
+        assert(navigation.handle(UiEvent::NextGame)==InstallerAction::None && navigation.game==GameTarget::RE4);
+    }
     assert(m.settings.language==Language::English && m.page==InstallerPage::Home && m.item_count()==9);
     for(unsigned i=0;i<9;++i)assert(!m.item_label(i).empty());
     assert(m.item_label(5)=="Graphics" && m.item_label(6)=="Updates" && m.item_label(7)=="Language" && m.item_label(8)=="Exit");

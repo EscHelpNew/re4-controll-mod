@@ -1,10 +1,11 @@
 """Rebuild the generated RomFS from a fixed allowlist."""
 from pathlib import Path
 import shutil
-FILES={'app-logo.bmp','home-launcher.bin','subsdk9','main.npdm','re4-controls.ovl'}
+FILES={'app-logo.bmp','app-logo-re6.bmp','home-launcher.bin','subsdk9','main.npdm','re4-controls.ovl'}
+RE6_FILES={'re6-subsdk9','re6-main.npdm','re6-telemetry.ovl'}
 def stage_payload(root,files):
     root=Path(root).resolve();base=root/'build';stage=base/'diagnostic-romfs'
-    if set(files)!=FILES:raise ValueError('Unexpected NRO payload files')
+    if set(files) not in (FILES,FILES|RE6_FILES):raise ValueError('Unexpected or incomplete NRO payload files')
     if not all(Path(p).is_file() for p in files.values()):raise ValueError('Build the complete module/overlay before NRO')
     resolved=stage.resolve()
     resolved.relative_to(root)

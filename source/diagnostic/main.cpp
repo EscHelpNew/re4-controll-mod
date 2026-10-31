@@ -67,7 +67,9 @@ void inspect_overlay_loader(FILE* report) {
         std::fclose(file);
     }
 }
-void inspect_installed_re4(FILE* report) {
+void inspect_installed_game(FILE* report,re4::GameTarget game) {
+    const u64 title_id=game==re4::GameTarget::RE6?0x01002A000CD48000ull:0x010099A00BC1E000ull;
+    std::fprintf(report,"installed_game=%s\n",game==re4::GameTarget::RE6?"RE6":"RE4");
     const auto ncm_rc = ncmInitialize();
     std::fprintf(report, "ncm=%08X\n", ncm_rc);
     if (R_SUCCEEDED(ncm_rc)) {
@@ -76,10 +78,10 @@ void inspect_installed_re4(FILE* report) {
             const auto opened = ncmOpenContentMetaDatabase(&db, storage);
             std::fprintf(report, "meta storage=%u rc=%08X\n", unsigned(storage), opened);
             if (R_FAILED(opened)) continue;
-            for (const auto title : {0x010099A00BC1E000ull, 0x010099A00BC1E800ull}) {
+            for (const auto title : {title_id,title_id+u64(0x800)}) {
                 NcmContentMetaKey key{};
                 const auto rc = ncmContentMetaDatabaseGetLatestContentMetaKey(&db, &key, title);
-                std::fprintf(report, "title=%016llX rc=%08X version=%u type=%u\n", title, rc, key.version, unsigned(key.type));
+                std::fprintf(report, "title=%016llX rc=%08X version=%u type=%u\n", (unsigned long long)title, rc, key.version, unsigned(key.type));
             }
             ncmContentMetaDatabaseClose(&db);
         }
@@ -94,7 +96,7 @@ void inspect_installed_re4(FILE* report) {
             Result rc = lrOpenLocationResolver(storage, &resolver);
             if (R_FAILED(rc)) continue;
             char path[FS_MAX_PATH]{};
-            rc = lrLrResolveProgramPath(&resolver, 0x010099A00BC1E000ull, path);
+            rc = lrLrResolveProgramPath(&resolver, title_id, path);
             serviceClose(&resolver.s);
             std::fprintf(report, "storage=%u resolve=%08X\n", unsigned(storage), rc);
             if (R_FAILED(rc)) continue;
@@ -102,7 +104,7 @@ void inspect_installed_re4(FILE* report) {
             if (R_FAILED(fs_rc)) continue;
             FsCodeInfo info{};
             FsFileSystem fs{};
-            rc = fsldrOpenCodeFileSystem(&info, 0x010099A00BC1E000ull, storage, path,
+            rc = fsldrOpenCodeFileSystem(&info, title_id, storage, path,
                 FsContentAttributes_None, &fs);
             std::fprintf(report, "open_code=%08X\n", rc);
             if (R_FAILED(rc)) continue;
@@ -269,7 +271,8 @@ int main(int argc, char** argv) {
                 std::fprintf(report, "last_overlay_inspection:\n%.*s\n", int(count), text);
             }
             inspect_overlay_loader(report);
-            inspect_installed_re4(report);
+            inspect_installed_game(report,re4::GameTarget::RE4);
+            inspect_installed_game(report,re4::GameTarget::RE6);
             std::fclose(report);
         }
         game.close(); pmdmntExit();
@@ -296,7 +299,8 @@ int main(int argc, char** argv) {
     const bool font_ready=R_SUCCEEDED(font_service) && R_SUCCEEDED(plGetSharedFontByType(&font,PlSharedFontType_Standard));
     const Result logo_fs=romfsInit();
     const bool graphics=font_ready && renderer.initialize(font.address,font.size,
-        R_SUCCEEDED(logo_fs)?"romfs:/app-logo.bmp":nullptr);
+        R_SUCCEEDED(logo_fs)?"romfs:/app-logo.bmp":nullptr,false,
+        R_SUCCEEDED(logo_fs)?"romfs:/app-logo-re6.bmp":nullptr);
     if(R_SUCCEEDED(logo_fs)){
         std::string home_detail;
         re4::UpdateFileOps operations;
@@ -339,7 +343,8 @@ int main(int argc, char** argv) {
         else if(down&HidNpadButton_Left)action=model.handle(Key::Left);
         else if(down&HidNpadButton_Right)action=model.handle(Key::Right);
         else if(down&HidNpadButton_A)action=model.handle(Key::Confirm);
-        else if(down&HidNpadButton_R)action=model.handle(Key::QuickInstall);
+        else if(down&HidNpadButton_L)action=model.handle(Key::PreviousGame);
+        else if(down&HidNpadButton_R)action=model.handle(Key::NextGame);
         else if(down&HidNpadButton_ZR)action=model.handle(Key::QuickOverlay);
         else if(down&HidNpadButton_Minus)action=model.handle(Key::QuickDisable);
         else if(down&HidNpadButton_Y)action=model.handle(Key::Calibrate);
@@ -355,12 +360,13 @@ int main(int argc, char** argv) {
             const bool identified=R_SUCCEEDED(pm) && R_SUCCEEDED(info)
                 && R_SUCCEEDED(pmdmntGetApplicationProcessId(&running_pid))
                 && R_SUCCEEDED(pminfoGetProgramId(&running_title,running_pid));
-            const bool allowed=model.allow_installation(identified,running_title==0x010099A00BC1E000ull);
+            const auto target_title=model.game==re4::GameTarget::RE6?0x01002A000CD48000ull:0x010099A00BC1E000ull;
+            const bool allowed=model.allow_installation(identified,running_title==target_title);
             if(allowed && action==re4::InstallerAction::DisableGame)
-                model.installation_result(re4::disable_game_files("sdmc:"));
+                model.installation_result(re4::disable_game_files("sdmc:",model.game));
             else if(allowed && R_SUCCEEDED(romfsInit())){
                 model.installation_result(action==re4::InstallerAction::InstallOverlay
-                    ?re4::install_overlay_only("romfs:","sdmc:"):re4::install_game_files("romfs:","sdmc:"));
+                    ?re4::install_overlay_only("romfs:","sdmc:",model.game):re4::install_game_files("romfs:","sdmc:",model.game));
                 romfsExit();
             }else if(allowed){model.status=re4::InstallerStatus::Failed;model.detail="Bundled game files unavailable";}
             if(R_SUCCEEDED(info))pminfoExit();

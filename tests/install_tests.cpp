@@ -1,4 +1,5 @@
 #include "re4/install.hpp"
+#include "re4/game_target.hpp"
 #include <cassert>
 #include <cstring>
 #include <filesystem>
@@ -57,6 +58,24 @@ int main() {
     for (const auto& entry : fs::directory_iterator(sd / "switch/.overlays"))
         if (entry.path().filename().string().find("re4-controls.ovl.re4-controls.disabled") == 0) ++disabled_copies;
     assert(disabled_copies == 2); // Updated overlay gets its own backup, preserving the first.
+    const auto re6 = sd / "atmosphere/contents/01002A000CD48000/exefs";
+    assert(std::strstr(re4::install_game_files(payload.string().c_str(),sd.string().c_str(),re4::GameTarget::RE6),"missing"));
+    assert(!fs::exists(re6 / "subsdk9"));
+    put(payload / "re6-subsdk9",nso);put(payload / "re6-main.npdm",npdm);put(payload / "re6-telemetry.ovl",ovl);
+    put(re6 / "main.npdm","other RE6 mod");
+    assert(std::strstr(re4::install_game_files(payload.string().c_str(),sd.string().c_str(),re4::GameTarget::RE6),"Conflict"));
+    assert(!fs::exists(re6 / "subsdk9"));fs::remove(re6 / "main.npdm");
+    assert(std::strstr(re4::install_game_files(payload.string().c_str(),sd.string().c_str(),re4::GameTarget::RE6),"Installed RE6 module"));
+    assert(fs::exists(re6 / "subsdk9")&&fs::exists(sd / "switch/.overlays/re6-telemetry.ovl"));
+    assert(!fs::exists(game / "subsdk9")&&!fs::exists(sd / "switch/.overlays/re4-controls.ovl"));
+    const auto receipt6=sd / "switch/re4-controls/installed-re6-files.bin";
+    assert(fs::exists(receipt6));
+    {std::ifstream f(receipt6,std::ios::binary);char tag[8]{};f.read(tag,8);assert(!std::memcmp(tag,"RE6INST1",8));}
+    assert(std::strstr(re4::install_game_files(payload.string().c_str(),sd.string().c_str(),static_cast<re4::GameTarget>(99)),"Invalid"));
+    assert(std::strstr(re4::disable_game_files(sd.string().c_str(),re4::GameTarget::RE6),"Disabled RE6"));
+    assert(!fs::exists(re6 / "subsdk9"));
+    assert(std::strstr(re4::install_overlay_only(payload.string().c_str(),sd.string().c_str(),re4::GameTarget::RE6),"Installed RE6 overlay"));
+    assert(!fs::exists(re6 / "subsdk9")&&fs::exists(sd / "switch/.overlays/re6-telemetry.ovl"));
     fs::remove_all(root);
     std::puts("installer: missing payload, foreign conflicts, idempotence and own update PASS");
 }

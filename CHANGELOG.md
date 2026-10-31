@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.0 (unreleased, RE6 measurement preparation)
+
+- Add L/R game pages with a violet RE6 emblem and four RE6 home actions.
+- Share language while preserving each page's selection and RE4 settings.
+- Isolate RE6 installation paths and receipts; reject missing or incomplete payloads.
+- Remove redundant home/description headings and use consistent16px panel spacing.
+- Prepare bounded telemetry records and log encoding; RE6 native hooks await verified complete game files.
+
 ## 0.9.1 (unreleased)
 
 - Ease unified stick velocity into motion, brake promptly and integrate by time for consistent frame-rate response.

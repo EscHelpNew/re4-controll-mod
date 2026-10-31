@@ -9,7 +9,7 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.9.1, unreleased**. Published Releases may
+The current source/local build is **0.10.0, unreleased**. Published Releases may
 contain an earlier version while new features are being tested.
 
 ## Features
@@ -141,3 +141,8 @@ uses libtesla (GPL-2.0-or-later). Complete pinned sources and dependency notices
 are in `third_party/`. Release artifacts include their notices.
 
 The built-in **RE9** controls profile combines a wider shoulder-camera framing, unified sticks, moving aim/knife and gyro. Choose it under **Controls → Profiles and reset → Controls profile**. The left stick moves; the right stick turns and looks using one sensitivity during walking and aiming. A/B/X/Y and PLUS/MINUS keep their original actions. Third-person distance is adjustable in Camera (native1.00, RE9 1.15). See the [layout and limits](docs/re9-profile.md).
+
+The installer also has an **RE6** page, selected with **L/R**, with separate
+module/overlay installation, shared language and exit. RE6 measurement hooks are
+pending verification against the completed game download; the current build
+does not claim to record RE6 gameplay. Missing RE6 payloads are rejected.
