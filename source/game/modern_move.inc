@@ -20,6 +20,11 @@ std::uint64_t modern_epoch=0;
 bool modern_root_done=false,modern_stepped=false,modern_pose_done=false;
 float modern_lower_yaw=0;
 std::array<re4::ModernMoveBone,9> modern_bones{};
+struct ModernAimSession {
+    std::uintptr_t actor=0,handler=0,weapon=0;
+    unsigned item=0;
+    bool ready=false;
+} modern_aim_session;
 
 bool modern_move_region(std::uintptr_t p,std::size_t size,bool write,re4::ModernMoveMemory& memory){
     if(!p||size>std::numeric_limits<std::uintptr_t>::max()-p)return false;
@@ -64,26 +69,38 @@ bool modern_move_collect(void* actor,re4::ModernMoveIdentity& identity,std::arra
 bool modern_move_frame(void* actor,re4::ModernMoveFrame& frame){
     frame.aim_enabled=settings.move_while_aiming;frame.knife_enabled=settings.move_while_knife;
     frame.reload_enabled=settings.move_while_reloading;
-    if(!frame.aim_enabled&&!frame.knife_enabled&&!frame.reload_enabled)return false;
+    if(!frame.aim_enabled&&!frame.knife_enabled&&!frame.reload_enabled){modern_aim_session={};return false;}
     const auto a=reinterpret_cast<std::uintptr_t>(actor);re4::ModernMoveMemory am;
     if(!actor||actor!=reinterpret_cast<void*>(modern_move_slot(re4::profile::player_slot))
-       ||!modern_move_region(a,0x950,false,am))return false;
+       ||!modern_move_region(a,0x950,false,am)){modern_aim_session={};return false;}
     const auto state=modern_move_slot(0xB1AE08);re4::ModernMoveMemory sm;
-    if(!modern_move_region(state,0x8700,false,sm))return false;
+    if(!modern_move_region(state,0x8700,false,sm)){modern_aim_session={};return false;}
     const auto* bytes=reinterpret_cast<const std::uint8_t*>(a);
     frame.active_player=true;frame.character=*reinterpret_cast<const std::uint8_t*>(state+0x503C);
     frame.mode=bytes[0x114];frame.routine=bytes[0x115];frame.phase=bytes[0x116];frame.subphase=bytes[0x117];
     frame.held=*reinterpret_cast<const std::uint64_t*>(main_base+re4::profile::input_flags);
     frame.native_aim=aiming_predicate&&aiming_predicate(actor)!=0;
-    frame.generic_firearm=modern_move_slot(0x1265A28)==main_base+0x31CC60;
+    const auto handler=modern_move_slot(0x1265A28);
+    frame.generic_firearm=handler==main_base+0x31CC60;
+    frame.weapon=re4::modern_weapon(handler-main_base);
     frame.frame_factor=*reinterpret_cast<const float*>(state+0xA4);
     frame.frozen=*reinterpret_cast<const std::uint8_t*>(state+0x86FF)!=0;
     frame.scripted=(*reinterpret_cast<const std::uint8_t*>(state+0x5092)&4)!=0
         ||*reinterpret_cast<const std::uint8_t*>(main_base+0x1131718+0x54)!=10;
     frame.input_live=(sensor_attributes&1)&&!*reinterpret_cast<const std::uint8_t*>(main_base+0x11C7D55)
         &&*reinterpret_cast<const int*>(main_base+0xAFF39C)==2;
+    std::uintptr_t context=0,weapon=0;
+    if(modern_move_read(a+0x938,context)&&context)modern_move_read(context+0x38,weapon);
+    const auto item=*reinterpret_cast<const std::uint8_t*>(state+0x5034);
+    if(modern_aim_session.actor!=a||modern_aim_session.handler!=handler
+       ||modern_aim_session.weapon!=weapon||modern_aim_session.item!=item)
+        modern_aim_session={a,handler,weapon,item,false};
+    if(!re4::modern_move_context_allowed(frame)||frame.routine!=6||!(frame.held&0x10)
+       ||!frame.native_aim||frame.weapon==re4::ModernWeapon::Unsupported||(frame.phase!=1&&frame.phase!=2))modern_aim_session.ready=false;
+    else if((frame.phase==1&&frame.subphase==1)||frame.phase==2)modern_aim_session.ready=true;
+    frame.aim_ready=modern_aim_session.ready;
     const auto collision=*reinterpret_cast<const std::uint16_t*>(a+0x352);
-    if((collision&0x300)!=0x300)return false;
+    if((collision&0x300)!=0x300){modern_aim_session={};return false;}
     return re4::modern_move_allowed(frame);
 }
 // Routing context, deliberately independent of left-stick magnitude and asset
@@ -144,6 +161,23 @@ bool modern_move_prepare(void* actor){
     control.modern_move_steps=control.modern_move_steps+1;control.modern_move_distance=std::hypot(delta.x,delta.z);control.modern_move_status=3;return true;
 }
 
+HOOK_DEFINE_TRAMPOLINE(AutomaticFire) {
+    static void Callback(void* actor){
+        // The first automatic round computes its ray before native root. Move
+        // at this verified action boundary so the ray uses this frame's body
+        // position; the later root still runs its original pose/physics once.
+        if(actor&&actor==modern_update_actor&&!modern_root_done
+           &&modern_move_slot(0x1265A28)==main_base+0x3270F0){
+            const auto* b=static_cast<const std::uint8_t*>(actor);
+            re4::ModernMoveFrame frame;
+            if(b[0x116]==2&&b[0x117]==0&&!*reinterpret_cast<const std::uint32_t*>(b+0x520)
+               &&modern_move_frame(actor,frame)){
+                modern_root_done=true;modern_stepped=modern_move_prepare(actor);
+            }
+        }
+        Orig(actor);
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(ModernPlayerUpdate) {
     static void Callback(void* actor){
         if(!actor||actor!=reinterpret_cast<void*>(modern_move_slot(re4::profile::player_slot))){Orig(actor);return;}
@@ -216,7 +250,8 @@ bool modern_move_matches(const std::uint8_t* memory,std::size_t size){
         {0x2B78F0,0xD102C3FF},{0x2B8370,0xD10343FF},{0x2B8700,0xD10603FF},
         {0x81D0,0xA9BD57F6},{0x2A5430,0xFC1B0FEC},{0x2A5B90,0xB9400028},
         {0x2A5B00,0xBD400020},{0x279710,0xEB01001F},{0x315E10,0x90004088},
-        {0x311678,0xD63F0100},{0x31178C,0x97F3E7D5},{0x3117A0,0x97F3D7F0}
+        {0x311678,0xD63F0100},{0x31178C,0x97F3E7D5},{0x3117A0,0x97F3D7F0},
+        {0x328190,0xD10183FF},{0x328194,0xFD0013E8},{0x328198,0xF90017F7},{0x32819C,0xA90357F6}
     };
     if(!memory)return false;
     for(const auto& site:guards){std::uint32_t value=0;if(site.offset+4>size)return false;std::memcpy(&value,memory+site.offset,4);if(value!=site.instruction)return false;}
@@ -237,4 +272,5 @@ void modern_move_install(){
     modern_native.copy_matrix=reinterpret_cast<decltype(modern_native.copy_matrix)>(main_base+0x279710);
     modern_native.healthy=reinterpret_cast<decltype(modern_native.healthy)>(main_base+0x315E10);
     ModernPlayerUpdate::InstallAtOffset(0x311400);ModernRoot::InstallAtOffset(0x2B7C60);ModernPose::InstallAtOffset(0x2B90F0);
+    AutomaticFire::InstallAtOffset(0x328190);
 }

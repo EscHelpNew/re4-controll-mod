@@ -63,6 +63,12 @@ int main(){
  assert(near(unified_stick_pitch_delta(-1.2f,.02f),.02f));
  assert(unified_stick_pitch_delta(1.2f,0)==0);
  assert(unified_stick_pitch_delta(std::numeric_limits<float>::quiet_NaN(),.1f)==0);
+ // Weapon pitch follows the native normalized range instead of the overview.
+ assert(near(unified_stick_pitch_delta(.6f,.1f,true),.1f));
+ assert(near(unified_stick_pitch_delta(-.6f,-.1f,true),-.1f));
+ assert(near(unified_stick_pitch_delta(1.5f,.1f,true),.070796327f));
+ assert(near(unified_stick_pitch_delta(-1.5f,-.1f,true),-.070796327f));
+ assert(near(unified_stick_pitch_delta(1.2f,-.02f,true),-.02f));
  ViewMatrix3x4 basis{{{2,.1f,0,44},{0,3,.2f,55},{.3f,0,4,66}}};ViewVec3 in{2,3,4},out,world0,world1;
  assert(unified_redirect_root(basis,in,1.2f,out));auto linear=basis;for(auto& row:linear.m)row[3]=0;
  assert(view_transform_point(linear,in,world0)&&view_transform_point(linear,out,world1));

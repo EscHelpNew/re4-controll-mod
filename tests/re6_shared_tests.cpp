@@ -12,7 +12,7 @@ int main(){
     std::uint32_t writer=0,reader=0;
     assert(re6::publish_settings(c,wanted,writer) && writer==2 && c.applied_sequence==0);
     assert(re6::consume_settings(c,out,reader) && reader==2 && c.applied_sequence==2);
-    assert(out.language==re6::Language::Russian && out.texture_filtering==re6::TextureFilter::Af16x&&out.anti_aliasing==re6::AntiAliasing::Fxaa3High);
+    assert(out.language==re6::Language::Russian && out.texture_filtering==re6::TextureFilter::Af16x&&out.anti_aliasing==re6::AntiAliasing::Native);
     // A delayed bootstrap reader cannot overwrite a completed live writer.
     {const auto before=c;std::uint32_t stale=0;
         assert(!re6::publish_settings(c,re6::Settings{},stale));

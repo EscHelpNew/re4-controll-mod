@@ -14,6 +14,7 @@
 #include "re4/view.hpp"
 #include "re4/modern_move.hpp"
 #include "re4/unified.hpp"
+#include "re4/scope.hpp"
 #include "re4/reticle_draw.hpp"
 #include "re4/gyro_frame.hpp"
 #include "re6/journal.hpp"
@@ -179,6 +180,8 @@ void (*native_gx_position)(float,float,float)=nullptr;
 void (*native_gx_color)(unsigned,unsigned,unsigned,unsigned)=nullptr;
 void (*native_gx_end)(unsigned)=nullptr;
 re4::UnifiedLook unified_look;
+re4::ScopeLook scoped_look;
+void reset_scoped_controls();
 float unified_look_gain=-1,unified_look_deadzone=-1,unified_aim_gain_x=-1,unified_aim_gain_y=-1;
 re4::StickCurve unified_look_curve=re4::StickCurve::Linear;
 struct UnifiedUpdate {
@@ -231,12 +234,20 @@ void* player_weapon(void* actor){
     auto* context=*reinterpret_cast<std::uint8_t**>(static_cast<std::uint8_t*>(actor)+0x938);
     return context?*reinterpret_cast<void**>(context+0x38):nullptr;
 }
+bool scoped_camera_owner(void* actor){
+    if(!actor||actor!=*reinterpret_cast<void**>(main_base+re4::profile::player_slot))return false;
+    const auto* controller=reinterpret_cast<const std::uint8_t*>(main_base+0x1131718);
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    return controller[0x54]==16&&*reinterpret_cast<const void* const*>(controller+0x7B0)==controller+0x530
+        &&state&&(state[0x5090]&0x40)&&static_cast<const std::uint8_t*>(actor)[0x115]==6;
+}
 struct GyroAimSession {
     void* actor=nullptr;
     void* weapon=nullptr;
     std::uintptr_t handler=0;
     unsigned item=0;
     bool ready=false,drain=true;
+    bool scoped=false;
 } gyro_session;
 bool gyro_aim_ready(void* actor,bool allow_arm=false){
     const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
@@ -247,8 +258,10 @@ bool gyro_aim_ready(void* actor,bool allow_arm=false){
     const auto* b=static_cast<const std::uint8_t*>(actor);
     const auto handler=b[0x115]==6?*reinterpret_cast<const std::uintptr_t*>(main_base+0x1265A28):0;
     auto* weapon=player_weapon(actor);
+    const bool scoped=scoped_camera_owner(actor);
     if(gyro_session.actor!=actor || gyro_session.weapon!=weapon || gyro_session.item!=state[0x5034]
-        || gyro_session.handler!=handler)gyro_session={actor,weapon,handler,state[0x5034],false};
+        || gyro_session.handler!=handler||gyro_session.scoped!=scoped)
+        gyro_session={actor,weapon,handler,state[0x5034],false,true,scoped};
     const bool before=gyro_session.ready;
     // These native handlers finish raising by selecting their steady aim loop
     // (1/1). Initial 1/4 is still raising, but the same state after a shot is
@@ -355,6 +368,7 @@ bool unified_aim_allowed(void* actor,bool allow_arm=false){
 }
 void unified_player_update(void* actor,void (*original)(void*)){
     publish_view_settings();
+    if(!scoped_camera_owner(actor))reset_scoped_controls();
     // A live tuning edit drains old velocity. Gain0 is an immediate stop,
     // including an already accelerated stick; orientation itself is retained.
     if(settings.camera_gain!=unified_look_gain||settings.right_deadzone!=unified_look_deadzone
@@ -614,7 +628,7 @@ void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
     const bool connected = pad.attributes & 1;
     const bool changed=connected?(sensor_pad!=id||sensor_style!=style||sensor_attributes!=(pad.attributes&21u))
         :(id==sensor_pad&&style==sensor_style&&sensor_attributes!=0);
-    if(changed){unified_look.reset();unified_aim_session={};gyro_session={};gyro_pending={};gyro.reset();gyro_frame.reset();}
+    if(changed){unified_look.reset();unified_aim_session={};reset_scoped_controls();gyro_session={};gyro_pending={};gyro.reset();gyro_frame.reset();}
     if (connected) {
         sensor_pad = id; sensor_style = style; sensor_attributes = pad.attributes & 21u;
     } else if (id == sensor_pad && style == sensor_style) sensor_attributes = 0;
@@ -1027,6 +1041,7 @@ HOOK_DEFINE_TRAMPOLINE(HudDraw) {
 };
 #include "aim_raise.inc"
 #include "modern_move.inc"
+#include "scoped_aim.inc"
 HOOK_DEFINE_TRAMPOLINE(RootDisplacement) {
     static void Callback(void* actor,void* motion,unsigned flags,re4::ViewVec3* translation,re4::ViewVec3* rotation){
         Orig(actor,motion,flags,translation,rotation);
@@ -1044,6 +1059,13 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
     static int Callback(void* actor, int mode) {
         auto* bytes = static_cast<std::uint8_t*>(actor);
         const bool ours = actor && actor == *reinterpret_cast<void**>(main_base + re4::profile::player_slot);
+        if(ours&&scoped_controls_enabled()&&scoped_camera_owner(actor)){
+            // Scoped camera owns its separate angles. Leave pending gyro for
+            // ScopeUpdate and prevent an ordinary weapon callback from also
+            // applying the same physical sticks to actor yaw.
+            ScopedInputGuard input;
+            return Orig(actor,mode);
+        }
         const auto flags=*reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags);
         const bool held=ours&&(bytes[0x115]==11?(flags&re4::kKnifeHeldMask):(flags&0x10));
         const bool modern=ours && modern_move_aim_active(actor);
@@ -1067,7 +1089,7 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
         if(unified&&unified_update&&unified_update->actor==actor&&!unified_update->consumed&&unified_aim_allowed(actor)){
             const auto d=unified_update->delta;unified_update->consumed=true;
             *yaw=re4::gyro_yaw(*yaw,d.yaw);
-            const float applied_pitch=re4::unified_stick_pitch_delta(unified_pitch,d.pitch);
+            const float applied_pitch=re4::unified_stick_pitch_delta(unified_pitch,d.pitch,true);
             unified_pitch+=applied_pitch;
             const float target=std::clamp(re4::unified_pitch_weight(unified_pitch),-1.f,1.f);
             pitch[0]=pitch[1]=target;
@@ -1181,6 +1203,8 @@ extern "C" void exl_main(void*, void*) {
     SceneDraw::InstallAtOffset(0x4ECFB0);
     AimRaise::InstallAtOffset(0x33F130);
     AimSensitivity::InstallAtOffset(0x33DF80);
+    ScopeUpdate::InstallAtOffset(0x15460);
+    ScopedZoom::InstallAtOffset(0x15568);
     AimSway::InstallAtOffset(0x33EC50);
     control.status = 1;
 }

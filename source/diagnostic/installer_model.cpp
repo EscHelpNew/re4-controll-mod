@@ -23,11 +23,11 @@ const std::array<HomeItem,3> re6_graphics_items{{
      {"Native preserves the game's filtering.\nAF improves textures at an angle.\nChanges require a game restart.",
       "Штатная: исходная фильтрация игры.\nAF улучшает текстуры под углом.\nПосле изменения перезапустите игру."}},
     {{"Anti-aliasing","Сглаживание"},
-     {"Native preserves the game's setting.\nApplied on the next RE6 launch.\nA / Left / Right: choose an AA mode.",
-      "Штатное: исходное сглаживание игры.\nПрименится при следующем запуске RE6.\nA / влево / вправо: выбрать режим."}},
+     {"RE6 keeps its native FXAA3.\nThis value is fixed.\nTexture filtering is adjusted separately.",
+      "Сглаживание: штатное FXAA3.\nЭтот параметр не изменяется.\nФильтрация регулируется отдельно."}},
     {{"Reset graphics","Сброс графики"},
-     {"Restore native filtering and AA.\nApplied on the next RE6 launch.\nThe selected language is kept. A: reset.",
-      "Вернуть штатные фильтрацию и сглаживание.\nПри следующем запуске RE6.\nЯзык сохранится. A: сбросить."}}
+     {"Restore native texture filtering.\nApplied on the next RE6 launch.\nThe selected language is kept. A: reset.",
+      "Вернуть штатную фильтрацию текстур.\nПри следующем запуске RE6.\nЯзык сохранится. A: сбросить."}}
 }};
 }
 const std::array<HomeItem,9>& installer_home_items(){
@@ -102,6 +102,7 @@ InstallerAction InstallerModel::handle(UiEvent event){
         }
         if(selected>=count)return InstallerAction::None;
         if(page==InstallerPage::Graphics){
+            if(selected==1)return InstallerAction::None; // Native FXAA3 is informational.
             if(selected==2){
                 if(event!=UiEvent::Confirm || (re6_settings.texture_filtering==re6::TextureFilter::Native
                     && re6_settings.anti_aliasing==re6::AntiAliasing::Native))return InstallerAction::None;
@@ -113,8 +114,6 @@ InstallerAction InstallerModel::handle(UiEvent event){
             const int direction=event==UiEvent::Left?-1:1;
             if(selected==0)re6_settings.texture_filtering=static_cast<re6::TextureFilter>(
                 (int(re6_settings.texture_filtering)+direction+5)%5);
-            else re6_settings.anti_aliasing=static_cast<re6::AntiAliasing>(
-                (int(re6_settings.anti_aliasing)+direction+5)%5);
             return InstallerAction::SaveRe6Graphics;
         }
         if(selected==3 && (event==UiEvent::Confirm || event==UiEvent::Left || event==UiEvent::Right)){
@@ -332,11 +331,7 @@ std::string InstallerModel::item_value(unsigned index)const{
             const auto mode=unsigned(re6_settings.texture_filtering);
             return !mode?Bilingual{"Native","Штатная"}.get(settings.language):mode<5?values[mode]:"";
         }
-        constexpr const char* values[]={"Native","Off","FXAA","FXAA3","FXAA3HQ"};
-        const auto mode=unsigned(re6_settings.anti_aliasing);
-        if(!mode)return Bilingual{"Native","Штатное"}.get(settings.language);
-        if(mode==1)return Bilingual{"Off","Выкл."}.get(settings.language);
-        return mode<5?values[mode]:"";
+        return Bilingual{"FXAA3 (native)","FXAA3 (штатное)"}.get(settings.language);
     }
     if(page==InstallerPage::Controls)return index==0?profile_name(profile_kind(settings,ProfileDomain::Controls),settings.language):"";
     if(page==InstallerPage::ControlGroup)return control_value_text(control_spec(control_group_item(control_group,index)),settings);

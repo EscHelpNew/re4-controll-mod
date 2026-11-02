@@ -7,6 +7,8 @@ constexpr std::size_t kSettingsBytes = 64;
 constexpr const char* kSettingsPath = "sdmc:/config/re4-controls/re6-settings.bin";
 enum class Language : std::uint8_t { English, Russian };
 enum class TextureFilter : std::uint8_t { Native, Af2x, Af4x, Af8x, Af16x };
+// Legacy numeric values are retained only for validating/migrating old files.
+// New saves and live settings always encode Native; RE6 keeps its stock FXAA3.
 enum class AntiAliasing : std::uint8_t { Native, Off, Fxaa, Fxaa3, Fxaa3High };
 struct Settings {
     Language language = Language::English;

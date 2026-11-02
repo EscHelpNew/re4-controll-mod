@@ -148,9 +148,23 @@ private:
     bool valid_=false;
 };
 
+enum class ModernWeapon {Unsupported,Pistol,Shotgun,Automatic,Rifle,Launcher,Mine};
+inline ModernWeapon modern_weapon(std::size_t handler){
+    switch(handler){
+        case 0x31CC60:return ModernWeapon::Pistol;
+        case 0x3351A0:return ModernWeapon::Shotgun;
+        case 0x3270F0:return ModernWeapon::Automatic;
+        case 0x332CC0:return ModernWeapon::Rifle;
+        case 0x333DF0:return ModernWeapon::Launcher;
+        case 0x342F90:return ModernWeapon::Mine;
+        default:return ModernWeapon::Unsupported;
+    }
+}
 struct ModernMoveFrame {
     bool aim_enabled=false,knife_enabled=false,reload_enabled=false,active_player=false;
     bool generic_firearm=false,native_aim=false,input_live=false,scripted=false,frozen=false;
+    ModernWeapon weapon=ModernWeapon::Unsupported;
+    bool aim_ready=false;
     unsigned character=0,mode=0,routine=0,phase=0,subphase=0;
     std::uint64_t held=0;
     float frame_factor=0,x=0,y=0;
@@ -170,8 +184,17 @@ inline bool modern_reload_allowed(const ModernMoveFrame& f){
 inline bool modern_move_allowed(const ModernMoveFrame& f){
     if(!modern_move_context_allowed(f))return false;
     if(modern_reload_allowed(f))return true;
-    if(f.routine==6)return f.aim_enabled&&f.generic_firearm&&f.native_aim&&(f.held&0x10)
-        &&((f.phase==1&&f.subphase==1)||(f.phase==2&&f.subphase<=1));
+    if(f.routine==6){
+        const auto weapon=f.generic_firearm?ModernWeapon::Pistol:f.weapon;
+        if(!f.aim_enabled||weapon==ModernWeapon::Unsupported||!f.native_aim||!(f.held&0x10))return false;
+        if(f.phase==2)return f.subphase<=(weapon==ModernWeapon::Rifle?3u:1u);
+        if(f.phase!=1)return false;
+        if(f.subphase==1)return true;
+        if(!f.aim_ready)return false; // Initial 1/4 can still be raising.
+        if(f.subphase==0)return true; // Recovery re-enters the native aim setup.
+        if(weapon==ModernWeapon::Rifle)return f.subphase==2;
+        return f.subphase==4&&(weapon==ModernWeapon::Pistol||weapon==ModernWeapon::Shotgun||weapon==ModernWeapon::Automatic);
+    }
     return f.routine==11&&f.knife_enabled&&(f.held&kKnifeHeldMask)&&f.subphase==1&&(f.phase==1||f.phase==2);
 }
 inline ModernMoveVec3 modern_move_disk(float x,float y){

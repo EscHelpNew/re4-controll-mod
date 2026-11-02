@@ -28,7 +28,9 @@ bool encode_settings(const Settings& settings, std::uint8_t* out, std::size_t si
     put32(out + 4, 1);
     put32(out + 8, unsigned(settings.language));
     out[12] = std::uint8_t(settings.texture_filtering);
-    out[13] = std::uint8_t(settings.anti_aliasing);
+    // Keep the legacy wire byte, but never send an unsupported AA override
+    // to an older module when only the installer/overlay has been updated.
+    out[13] = std::uint8_t(AntiAliasing::Native);
     put32(out + 60, checksum(out, 60));
     return true;
 }
@@ -41,7 +43,8 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
     const auto flags = get32(data + 8);
     settings.language = static_cast<Language>(flags & 1);
     settings.texture_filtering = static_cast<TextureFilter>(data[12]);
-    settings.anti_aliasing = static_cast<AntiAliasing>(data[13]);
+    if(data[13]>unsigned(AntiAliasing::Fxaa3High))return false;
+    settings.anti_aliasing = AntiAliasing::Native;
     if (!valid_settings(settings)) return false;
     out = settings;
     return true;

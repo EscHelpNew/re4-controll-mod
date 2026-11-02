@@ -94,7 +94,7 @@ int main(){
         assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None);
         assert(graphics.page==InstallerPage::Graphics && graphics.item_count()==3 && graphics.selected==0);
         assert(graphics.item_label(0)=="Texture filtering" && graphics.item_value(0)=="Native");
-        assert(graphics.item_label(1)=="Anti-aliasing" && graphics.item_value(1)=="Native");
+        assert(graphics.item_label(1)=="Anti-aliasing" && graphics.item_value(1)=="FXAA3 (native)");
         assert(graphics.item_label(2)=="Reset graphics" && graphics.item_value(2)=="A");
         assert(graphics.item_label(3).empty() && graphics.item_value(3).empty());
         assert(graphics.selected_control()==ControlId::Count);
@@ -110,20 +110,19 @@ int main(){
         assert(graphics.handle(UiEvent::Left)==InstallerAction::SaveRe6Graphics && graphics.item_value(0)=="AF 16x");
         assert(graphics.handle(UiEvent::Confirm)==InstallerAction::SaveRe6Graphics && graphics.item_value(0)=="Native");
         graphics.handle(UiEvent::Down);assert(graphics.selected==1);
-        assert(std::strstr(graphics.selected_help(),"next RE6 launch")&&!std::strstr(graphics.selected_help(),"live"));
-        const char* aa[]={"Native","Off","FXAA","FXAA3","FXAA3HQ"};
-        for(unsigned step=0;step<5;++step){
-            assert(graphics.item_value(1)==aa[step]);
-            assert(graphics.handle(UiEvent::Confirm)==InstallerAction::SaveRe6Graphics);
+        assert(std::strstr(graphics.selected_help(),"fixed"));
+        for(auto event:{UiEvent::Confirm,UiEvent::Left,UiEvent::Right}){
+            assert(graphics.item_value(1)=="FXAA3 (native)");
+            assert(graphics.handle(event)==InstallerAction::None);
+            assert(graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Native);
         }
-        assert(graphics.handle(UiEvent::Left)==InstallerAction::SaveRe6Graphics && graphics.item_value(1)=="FXAA3HQ");
         graphics.selected=0;
         assert(graphics.handle(UiEvent::Right)==InstallerAction::SaveRe6Graphics && graphics.item_value(0)=="AF 2x");
         graphics.selected=2;
         assert(std::strstr(graphics.selected_help(),"language"));
         assert(graphics.handle(UiEvent::Left)==InstallerAction::None);
         assert(graphics.handle(UiEvent::Right)==InstallerAction::None);
-        assert(graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Fxaa3High);
+        assert(graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Native);
         assert(graphics.handle(UiEvent::Confirm)==InstallerAction::SaveRe6Graphics);
         assert(graphics.re6_settings.texture_filtering==re6::TextureFilter::Native && graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Native);
         assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None);
@@ -137,9 +136,9 @@ int main(){
             assert(graphics.item_label(row)==russian_labels[row]);
             assert(std::strlen(graphics.selected_help())>40);
         }
-        assert(graphics.item_value(0)=="Штатная" && graphics.item_value(1)=="Штатное");
+        assert(graphics.item_value(0)=="Штатная" && graphics.item_value(1)=="FXAA3 (штатное)");
         graphics.selected=1;
-        assert(graphics.handle(UiEvent::Right)==InstallerAction::SaveRe6Graphics && graphics.item_value(1)=="Выкл.");
+        assert(graphics.handle(UiEvent::Right)==InstallerAction::None && graphics.item_value(1)=="FXAA3 (штатное)");
         graphics.selected=0;graphics.handle(UiEvent::Up);assert(graphics.selected==2);
         graphics.handle(UiEvent::Down);assert(graphics.selected==0);
         assert(graphics.handle(UiEvent::Back)==InstallerAction::None && graphics.page==InstallerPage::Home && graphics.selected==2);
@@ -148,7 +147,7 @@ int main(){
         assert(graphics.page==InstallerPage::Home && graphics.selected==0);
         assert(graphics.handle(UiEvent::NextGame)==InstallerAction::None && graphics.game==GameTarget::RE6);
         assert(graphics.page==InstallerPage::Home && graphics.selected==2);
-        assert(graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Off);
+        assert(graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Native);
         assert(same_profile(graphics.settings,re4_before,ProfileDomain::Controls));
         assert(same_profile(graphics.settings,re4_before,ProfileDomain::Graphics));
         assert(graphics.settings.gyro_bias_x==1.25f && graphics.settings.button_map[0]==255);
@@ -189,12 +188,12 @@ int main(){
         InstallerModel loaded;
         assert(re6::load_settings_file(re6_path,loaded.re6_settings));
         assert(loaded.re6_settings.texture_filtering==re6::TextureFilter::Af8x);
-        assert(loaded.re6_settings.anti_aliasing==re6::AntiAliasing::Fxaa3 && loaded.re6_settings.language==re6::Language::Russian);
+        assert(loaded.re6_settings.anti_aliasing==re6::AntiAliasing::Native && loaded.re6_settings.language==re6::Language::Russian);
         disk.re6_settings.texture_filtering=re6::TextureFilter::Af16x;
         assert(fs::create_directory(blocked));
         assert(!disk.save_re6_graphics(re6_path) && disk.status==InstallerStatus::Failed);
         assert(re6::load_settings_file(re6_path,loaded.re6_settings));
-        assert(loaded.re6_settings.texture_filtering==re6::TextureFilter::Af8x && loaded.re6_settings.anti_aliasing==re6::AntiAliasing::Fxaa3);
+        assert(loaded.re6_settings.texture_filtering==re6::TextureFilter::Af8x && loaded.re6_settings.anti_aliasing==re6::AntiAliasing::Native);
         std::ifstream after_file(re4_path,std::ios::binary);
         const std::string after((std::istreambuf_iterator<char>(after_file)),{});after_file.close();
         assert(after==re4_bytes && !fs::exists(std::string(re4_path)+".previous"));

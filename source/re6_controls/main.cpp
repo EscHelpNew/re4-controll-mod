@@ -14,7 +14,8 @@ const char* tr(const char* en, const char* ru) {
     return settings.language == re6::Language::Russian ? ru : en;
 }
 const char* mount_error() { return tr("Could not mount SD card", "Не удалось подключить SD"); }
-bool change(const re6::Settings& candidate) {
+bool change(re6::Settings candidate) {
+    candidate.anti_aliasing=re6::AntiAliasing::Native;
     if (!re6_overlay_storage::ready()
         || !re6::save_settings_file(re6_overlay_storage::settings_path, candidate)) {
         note = tr("Could not save settings to SD", "Не удалось сохранить настройки на SD");
@@ -72,11 +73,11 @@ const std::array<Spec, 3> graphics_specs{{
      "Native preserves the game's filtering.\nAF improves textures at an angle.\nChanges require a game restart.",
      "Штатная: исходная фильтрация игры.\nAF улучшает текстуры под углом.\nПосле изменения перезапустите игру.", GraphicsRow::Filter},
     {"Anti-aliasing", "Сглаживание",
-     "AA applies live in the main renderer.\nNative preserves the game's setting.\nA / Left / Right: choose an AA mode.",
-     "Сглаживание меняется в основном рендере.\nШтатное: исходное сглаживание игры.\nA / влево / вправо: выбрать режим.", GraphicsRow::AntiAliasing},
+     "RE6 keeps its native FXAA3.\nThis value is fixed.\nTexture filtering is adjusted separately.",
+     "Сглаживание: штатное FXAA3.\nЭтот параметр не изменяется.\nФильтрация регулируется отдельно.", GraphicsRow::AntiAliasing},
     {"Reset graphics", "Сброс графики",
-     "Restore native filtering and AA.\nAA applies live; filtering needs a restart.\nThe selected language is kept. A: reset.",
-     "Вернуть штатные фильтрацию и сглаживание.\nФильтрация: после перезапуска игры.\nЯзык сохранится. A: сбросить.", GraphicsRow::Reset}
+     "Restore native texture filtering.\nChanges require a game restart.\nThe selected language is kept. A: reset.",
+     "Вернуть штатную фильтрацию текстур.\nПосле изменения перезапустите игру.\nЯзык сохранится. A: сбросить.", GraphicsRow::Reset}
 }};
 std::string filter_text() {
     constexpr const char* values[] = {"Native", "AF 2x", "AF 4x", "AF 8x", "AF 16x"};
@@ -84,10 +85,7 @@ std::string filter_text() {
         : values[unsigned(settings.texture_filtering)];
 }
 std::string aa_text() {
-    constexpr const char* values[] = {"Native", "Off", "FXAA", "FXAA3", "FXAA3HQ"};
-    if (settings.anti_aliasing == re6::AntiAliasing::Native) return tr("Native", "Штатное");
-    if (settings.anti_aliasing == re6::AntiAliasing::Off) return tr("Off", "Выкл.");
-    return values[unsigned(settings.anti_aliasing)];
+    return tr("FXAA3 (native)","FXAA3 (штатное)");
 }
 class GraphicsGui : public tsl::Gui {
     DescriptionFrame* frame_ = nullptr;
@@ -102,6 +100,7 @@ public:
             auto* item = new tsl::elm::ListItem(tr(entry.en, entry.ru));
             item->setClickListener([this, row](u64 keys) {
                 const auto id = graphics_specs[row].id;
+                if(id==GraphicsRow::AntiAliasing)return false;
                 const bool reset = id == GraphicsRow::Reset;
                 if (reset ? !(keys & HidNpadButton_A)
                     : !(keys & (HidNpadButton_A | HidNpadButton_Left | HidNpadButton_Right))) return false;
@@ -110,9 +109,7 @@ public:
                 if (reset) {
                     candidate.texture_filtering = re6::TextureFilter::Native;
                     candidate.anti_aliasing = re6::AntiAliasing::Native;
-                } else if (id == GraphicsRow::AntiAliasing) candidate.anti_aliasing = static_cast<re6::AntiAliasing>(
-                    (int(settings.anti_aliasing) + direction + 5) % 5);
-                else candidate.texture_filtering = static_cast<re6::TextureFilter>(
+                } else candidate.texture_filtering = static_cast<re6::TextureFilter>(
                     (int(settings.texture_filtering) + direction + 5) % 5);
                 if (candidate.texture_filtering != settings.texture_filtering || candidate.anti_aliasing != settings.anti_aliasing) change(candidate);
                 update(); return true;
@@ -171,7 +168,7 @@ public:
     }
     void update() override {
         frame_->setTitle(tr("RE6 Graphics", "Графика RE6"));
-        frame_->setSubtitle(note.empty() ? tr("Filtering and anti-aliasing", "Фильтрация и сглаживание") : note);
+        frame_->setSubtitle(note.empty() ? tr("Texture filtering; native FXAA3", "Фильтрация; штатное FXAA3") : note);
         graphics_->setText(tr("Graphics", "Графика"));
         connect_->setText(tr("Connect to RE6", "Подключиться к RE6"));
         language_->setText(tr("Language", "Язык"));
@@ -183,8 +180,8 @@ public:
             "Choose English or Russian for this overlay.\nA / Left / Right: switch language.",
             "English / Русский: язык этого оверлея.\nA / влево / вправо: сменить язык."));
         else frame_->set_help(tr(
-            "Filtering changes require a game restart.\nAA applies live in the main renderer.\nA: open. B: return.",
-            "Фильтрация: после перезапуска игры.\nСглаживание: в основном рендере игры.\nA: открыть. B: назад."));
+            "Filtering changes require a game restart.\nRE6 keeps its native FXAA3.\nA: open. B: return.",
+            "Фильтрация: после перезапуска игры.\nСглаживание: штатное FXAA3.\nA: открыть. B: назад."));
     }
 };
 class GraphicsOverlay : public tsl::Overlay {
@@ -197,6 +194,7 @@ public:
             re6::Settings loaded;
             if (re6::load_settings_file(re6_overlay_storage::settings_path, loaded)) settings = loaded;
         }
+        settings.anti_aliasing=re6::AntiAliasing::Native;
         link.language = settings.language; link.initialize();
         if (mounted) {
             if (link.connect()) link.apply(settings);

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.16.1 (2026-11-02, native RE6 anti-aliasing)
+
+- Remove the manual RE6 AA render hook after hardware reports of artifacts
+  outside the original FXAA3 mode. RE6 now retains its native rendering path.
+- Show fixed `FXAA3 (native)` in the RE6 overlay and installer; A/Left/Right
+  cannot select Off, FXAA or FXAA3HQ or write settings from that status row.
+- Migrate all valid legacy RE6 AA choices to Native, retaining texture filtering
+  and language. New saves/live settings also encode Native, so an older installed
+  module receives the native setting when the new menu connects.
+- Keep native RE6 gyro, filtering, recording and all RE4 0.16.0 controls changes.
+- User confirmed 0.16.1 working on Switch after deployment, and separately
+  confirmed RE4 AF16x after a full game restart.
+
+## 0.16.0 (2026-11-02, weapon movement and scoped controls)
+
+- Restore the full native firearm/knife stick pitch range while keeping the
+  35-degree overview limit. Gyro range remains independent.
+- Enable moving aim/fire for verified pistol, shotgun, automatic, rifle,
+  launcher and mine handlers. Retain readiness through native shot recovery
+  and all four rifle bolt-cycle states; throwable and charged-special paths
+  are excluded. Existing ordinary pistol reload movement is unchanged.
+- Move before the first automatic round's native geometry, with one original
+  root/pose/collision pass and no duplicate translation.
+- Add eased right-stick and additive gyro scoped aim, retaining native pitch
+  bounds, inversion, sway and zoom-dependent slowdown. LeftY smoothly changes
+  zoom; the character remains stationary inside sniper scopes.
+- Commit zoom after the native old-value snapshot and before clamping/FOV so
+  the original magnification label and zoom feedback observe each change.
+- Add actual callback, family/state, register-preservation and frame-rate
+  regressions. These changes still require console gameplay acceptance.
+
 ## 0.15.1 (2026-10-31, steady RE6 shoulder framing)
 
 - Anchor the RE6-response third-person shoulder eye to Leon's root position and

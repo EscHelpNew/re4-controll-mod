@@ -44,6 +44,7 @@ inline Result svcGetInfo(u64* out, unsigned, unsigned, unsigned) { *out=game_tes
 inline u64 svcGetSystemTick() { return game_test::tick; }
 namespace exl::util { inline const auto& GetMainModuleInfo() { return game_test::module; } }
 namespace exl::hook { inline void Initialize() { ++game_test::initialized; } }
+namespace exl::hook {struct alignas(16) InlineFloatCtx {std::uint8_t bytes[0x300]{};};}
 template<auto Function> struct TestHook {
     // Match exlaunch's non-constexpr forwarding function, including in C++17.
     // A constexpr function-pointer stand-in changes lambda constexpr analysis.
@@ -54,3 +55,4 @@ template<auto Function> struct TestHook {
     template<class T> static void InstallAtFuncPtr(T) { ++game_test::installed; }
 };
 #define HOOK_DEFINE_TRAMPOLINE(Name) struct Name : TestHook<&test_##Name>
+#define HOOK_DEFINE_INLINE(Name) struct Name : TestHook<&test_##Name>

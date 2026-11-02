@@ -21,8 +21,14 @@ void wire(){
     for(unsigned l=0;l<2;++l)for(unsigned f=0;f<5;++f)for(unsigned aa=0;aa<5;++aa){
         value.language=static_cast<re6::Language>(l);value.texture_filtering=static_cast<re6::TextureFilter>(f);
         value.anti_aliasing=static_cast<re6::AntiAliasing>(aa);
-        Bytes b{};assert(re6::encode_settings(value,b.data(),64) && b[8]==l && b[12]==f && b[13]==aa);
-        assert(re6::decode_settings(b.data(),64,out) && equal(value,out));
+        Bytes b{};assert(re6::encode_settings(value,b.data(),64) && b[8]==l && b[12]==f && b[13]==0);
+        assert(re6::decode_settings(b.data(),64,out) && out.language==value.language
+            &&out.texture_filtering==value.texture_filtering&&out.anti_aliasing==re6::AntiAliasing::Native);
+        // Existing valid configurations migrate without losing filtering or
+        // language, even when they previously requested an unsafe AA mode.
+        b[13]=std::uint8_t(aa);seal(b);
+        assert(re6::decode_settings(b.data(),64,out)&&out.anti_aliasing==re6::AntiAliasing::Native);
+        assert(out.language==value.language&&out.texture_filtering==value.texture_filtering);
     }
     auto b=good;b[0]='4';seal(b);rejects(b);
     for(auto v:{0u,2u,0xffffffffu}){b=good;put32(b.data()+4,v);seal(b);rejects(b);}
@@ -47,7 +53,7 @@ void write(const char* p,const void* bytes,std::size_t size){FILE* f=std::fopen(
 void cleanup(){for(const auto* p:{path,previous,incoming})std::filesystem::remove(p);}
 void persistence(){
     std::filesystem::create_directories("build/re6-settings-test");cleanup();
-    re6::Settings first,second,out;second.language=re6::Language::Russian;second.texture_filtering=re6::TextureFilter::Af8x;second.anti_aliasing=re6::AntiAliasing::Fxaa3High;
+    re6::Settings first,second,out;second.language=re6::Language::Russian;second.texture_filtering=re6::TextureFilter::Af8x;
     assert(re6::save_settings_file(path,first) && std::filesystem::file_size(path)==64);
     assert(re6::save_settings_file(path,second) && re6::load_settings_file(path,out) && equal(second,out));
     auto bad=second;bad.texture_filtering=static_cast<re6::TextureFilter>(5);assert(!re6::save_settings_file(path,bad));
@@ -69,4 +75,4 @@ void persistence(){
     out=second;assert(!re6::load_settings_file(path,out) && equal(second,out));cleanup();
 }
 }
-int main(){wire();persistence();std::puts("RE6 graphics settings: native/all filter+AA modes, strict wire, save/recovery PASS");}
+int main(){wire();persistence();std::puts("RE6 graphics settings: native AA migration, all filter modes, strict wire, save/recovery PASS");}

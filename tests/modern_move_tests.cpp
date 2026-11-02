@@ -127,6 +127,7 @@ int (*aiming_predicate)(void*)=native_aim;
 void test_ModernPlayerUpdate(void*);
 std::uint32_t test_ModernRoot(void*,void*);
 void test_ModernPose(void*,int);
+void test_AutomaticFire(void*);
 void* unified_root_actor=nullptr;float unified_root_yaw=0;bool test_unified_walk=false;
 void unified_player_update(void* actor,void(*original)(void*)){original(actor);}
 bool unified_walk_root(void*,float& yaw){yaw=-1.57079632679f;return test_unified_walk;}
@@ -137,6 +138,8 @@ unsigned evaluation_count=0,healthy_value=1;
 bool simulate_nan=false;
 int phase_before_root=-1;
 float expected_local=0,hit_z=0,collision_z=0;
+bool first_automatic_shot=false;
+float first_automatic_hit=0;
 std::array<std::uint8_t,0x1E0>* active_bones=nullptr;
 std::uint8_t* active_actor=nullptr;
 float& scalar(void* p,std::size_t offset){return *reinterpret_cast<float*>(static_cast<std::uint8_t*>(p)+offset);}
@@ -144,12 +147,17 @@ void test_ModernPlayerUpdate(void* actor){
     assert(scalar(active_bones[17].data(),0xB4)==expected_local);
     order.push_back(1);
     if(phase_before_root>=0)static_cast<std::uint8_t*>(actor)[0x116]=std::uint8_t(phase_before_root);
-    assert(ModernRoot::Callback(actor,nullptr)==0x17);
+    if(first_automatic_shot)AutomaticFire::Callback(actor);
+    else assert(ModernRoot::Callback(actor,nullptr)==0x17);
     // The native weapon creates its ray/knife sweep only after native root and
     // world/IK. Native physics then processes the translated actor once.
     order.push_back(5);hit_z=scalar(actor,0xAC);
     order.push_back(6);collision_z=scalar(actor,0xAC);
     scalar(actor,0x12C)=scalar(actor,0xAC); // Native end-of-frame previous point.
+}
+void test_AutomaticFire(void* actor){
+    first_automatic_hit=scalar(actor,0xAC); // Native first shot precedes root.
+    assert(ModernRoot::Callback(actor,nullptr)==0x17);
 }
 std::uint32_t test_ModernRoot(void* actor,void*){
     order.push_back(3);ModernPose::Callback(actor,0);ModernPose::Callback(actor,0);return 0x17;
@@ -190,6 +198,7 @@ struct Fixture {
         modern_pose.discard();modern_cycle.reset();modern_bound_owner={};modern_bound_asset=modern_bound_clip=0;
         modern_update_actor=nullptr;modern_epoch=0;modern_root_done=modern_stepped=modern_pose_done=false;
         control={};settings={};sensor_attributes=1;native_aim_value=true;healthy_value=1;simulate_nan=false;phase_before_root=-1;evaluation_count=0;order.clear();expected_local=0;
+        first_automatic_shot=false;first_automatic_hit=0;modern_aim_session={};
         main_base=reinterpret_cast<std::uintptr_t>(image.data());active_actor=actor.data();active_bones=bones.data();
         game_test::memory_maps.clear();register_memory(image.data(),image.size());register_memory(state.data(),state.size());register_memory(actor.data(),actor.size());register_memory(table.data(),table.size());register_memory(bones.data(),sizeof(bones));
         for(auto* asset:{&forward,&back,&injured_forward,&injured_back})register_memory(asset->b.data(),asset->b.size());
@@ -215,6 +224,43 @@ struct Fixture {
     void update(){ModernPlayerUpdate::Callback(actor.data());}
 };
 void run(){
+    {
+        Fixture f;f.store(f.image,0x1265A28,main_base+0x3270F0);
+        f.actor[0x116]=2;f.actor[0x117]=0;first_automatic_shot=true;
+        f.update();assert(first_automatic_hit==10);
+        assert(control.modern_move_steps==1&&control.modern_pose_steps==1);
+        assert(hit_z==10&&collision_z==10); // Later root cannot translate twice.
+    }
+    // Each ordinary gun keeps its native controller while using the same one
+    // movement/root/pose pass before the original hit and collision consumers.
+    for(std::size_t handler:{0x31CC60u,0x3351A0u,0x3270F0u,0x332CC0u,0x333DF0u,0x342F90u}){
+        Fixture f;f.store(f.image,0x1265A28,main_base+handler);f.update();
+        assert(control.modern_move_steps==1&&control.modern_pose_steps==1);
+        assert(hit_z==10&&collision_z==10);
+    }
+    for(std::size_t handler:{0x31CC60u,0x3351A0u,0x3270F0u,0x332CC0u}){
+        Fixture f;f.store(f.image,0x1265A28,main_base+handler);
+        const unsigned recovery=handler==0x332CC0?2u:4u;
+        f.actor[0x117]=std::uint8_t(recovery);f.update();assert(control.modern_move_steps==0); // Raising never inherits readiness.
+        f.actor[0x117]=1;f.update();assert(control.modern_move_steps==1);
+        f.actor[0x117]=std::uint8_t(recovery);f.update();assert(control.modern_move_steps==2);
+        f.actor[0x117]=0;f.update();assert(control.modern_move_steps==3); // Native recovery setup before1/1.
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(0));f.update();
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(0x10));
+        f.actor[0x117]=std::uint8_t(recovery);f.update();assert(control.modern_move_steps==3);
+    }
+    for(unsigned sub:{0u,1u,2u,3u}){
+        Fixture f;f.store(f.image,0x1265A28,main_base+0x332CC0);
+        f.actor[0x116]=2;f.actor[0x117]=std::uint8_t(sub);f.update();assert(control.modern_move_steps==1);
+        f.actor[0x117]=4;f.update();assert(control.modern_move_steps==1);
+    }
+    for(std::size_t handler:{0x31B9F0u,0x3212E0u,0u}){
+        Fixture f;f.store(f.image,0x1265A28,main_base+handler);f.update();assert(!control.modern_move_steps);
+    }
+    {
+        Fixture f;f.store(f.image,0x1265A28,main_base+0x332CC0);f.image[0x1131718+0x54]=16;
+        control.raw_ly=1;f.update();assert(!control.modern_move_steps&&!modern_pose.pending()); // Scoped zoom cannot move the player.
+    }
     // Reload has its own option and survives aim release from initialization
     // through return blend, without replacing the native upper-body clip.
     for(unsigned sub : {0,1,2,3}){

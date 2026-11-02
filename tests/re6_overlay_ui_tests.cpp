@@ -68,7 +68,7 @@ void navigation_and_languages(){
     assert(list(group)->children.size()==3 && !find(group,"Language"));
     auto* filter=find(group,"Texture filtering");auto* aa=find(group,"Anti-aliasing");auto* reset=find(group,"Reset graphics");assert(filter && aa && reset);
     assert(help(*page,group,filter)!=help(*page,group,reset));
-    assert(help(*page,group,aa).find("live")!=std::string::npos);assert(saves==old_saves && sends==old_sends);tsl::goBack();
+    assert(help(*page,group,aa).find("fixed")!=std::string::npos);assert(saves==old_saves && sends==old_sends);tsl::goBack();
     events.clear();assert(language->click(HidNpadButton_Right) && settings.language==re6::Language::Russian);
     assert(events==std::vector<std::string>({"save","apply"}));
     assert(f->title=="Графика RE6" && find(f,"Графика") && find(f,"Подключиться к RE6"));
@@ -76,7 +76,7 @@ void navigation_and_languages(){
     assert(graphics->click(HidNpadButton_A));page=tsl::navigation.back().get();group=static_cast<tsl::elm::OverlayFrame*>(page->root);
     filter=find(group,"Фильтрация текстур");aa=find(group,"Сглаживание");reset=find(group,"Сброс графики");assert(filter && aa && reset && !find(group,"Язык"));
     assert(filter->value=="Штатная" && help(*page,group,filter).find("Штатная")==0);
-    assert(aa->value=="Штатное" && help(*page,group,aa).find("Сглаживание")==0);
+    assert(aa->value=="FXAA3 (штатное)" && help(*page,group,aa).find("Сглаживание")==0);
     assert(help(*page,group,reset).find("Вернуть")==0);tsl::goBack();
     assert(language->click(HidNpadButton_Left) && settings.language==re6::Language::English);
     assert(language->click(HidNpadButton_A) && settings.language==re6::Language::Russian);
@@ -92,24 +92,25 @@ void filtering_reset_and_save_failure(){
     for(unsigned i=0;i<5;++i){assert(unsigned(settings.texture_filtering)==i && filter->value==values[i]);events.clear();assert(filter->click(HidNpadButton_A));assert(events==std::vector<std::string>({"save","apply"}));}
     assert(settings.texture_filtering==re6::TextureFilter::Native);
     assert(filter->click(HidNpadButton_Left) && settings.texture_filtering==re6::TextureFilter::Af16x);
-    const char* aa_values[]={"Native","Off","FXAA","FXAA3","FXAA3HQ"};
-    for(unsigned i=0;i<5;++i){assert(unsigned(settings.anti_aliasing)==i && aa->value==aa_values[i]);events.clear();assert(aa->click(HidNpadButton_A));assert(events==std::vector<std::string>({"save","apply"}));assert(settings.texture_filtering==re6::TextureFilter::Af16x);}
-    assert(settings.anti_aliasing==re6::AntiAliasing::Native);
-    assert(aa->click(HidNpadButton_Left) && settings.anti_aliasing==re6::AntiAliasing::Fxaa3High);
-    assert(filter->click(HidNpadButton_Left) && settings.texture_filtering==re6::TextureFilter::Af8x && settings.anti_aliasing==re6::AntiAliasing::Fxaa3High);
+    const auto aa_saves=saves,aa_sends=sends;
+    for(auto key:{HidNpadButton_A,HidNpadButton_Left,HidNpadButton_Right}){
+        assert(!aa->click(key)&&settings.anti_aliasing==re6::AntiAliasing::Native);
+        assert(saves==aa_saves&&sends==aa_sends&&aa->value=="FXAA3 (native)");
+    }
+    assert(filter->click(HidNpadButton_Left)&&settings.texture_filtering==re6::TextureFilter::Af8x);
     settings.language=re6::Language::Russian;assert(!reset->click(HidNpadButton_Right));
     assert(reset->click(HidNpadButton_A) && settings.texture_filtering==re6::TextureFilter::Native && settings.anti_aliasing==re6::AntiAliasing::Native && settings.language==re6::Language::Russian);
-    assert(aa->click(HidNpadButton_Right) && aa->value=="Выкл.");
+    assert(!aa->click(HidNpadButton_Right) && aa->value=="FXAA3 (штатное)");
     assert(reset->click(HidNpadButton_A) && settings.anti_aliasing==re6::AntiAliasing::Native && settings.language==re6::Language::Russian);
-    assert(filter->value=="Штатная" && aa->value=="Штатное");save_success=false;const auto old_sends=sends;
+    assert(filter->value=="Штатная" && aa->value=="FXAA3 (штатное)");save_success=false;const auto old_sends=sends;
     assert(filter->click(HidNpadButton_Right) && settings.texture_filtering==re6::TextureFilter::Native && sends==old_sends);
-    assert(aa->click(HidNpadButton_Right) && settings.anti_aliasing==re6::AntiAliasing::Native && sends==old_sends);
+    assert(!aa->click(HidNpadButton_Right) && settings.anti_aliasing==re6::AntiAliasing::Native && sends==old_sends);
     assert(f->subtitle.find("SD")!=std::string::npos);save_success=true;delete f;
 }
 void startup_and_mount_failure(){
     GraphicsOverlay overlay;tsl::Overlay& lifecycle=overlay;have_saved=true;
     for(unsigned i=0;i<5;++i){persisted={};persisted.texture_filtering=static_cast<re6::TextureFilter>(i);persisted.anti_aliasing=static_cast<re6::AntiAliasing>(4-i);settings={};const auto old_sends=sends,old_connects=connects,old_saves=saves;
-        lifecycle.initServices();assert(settings.texture_filtering==persisted.texture_filtering && sent.texture_filtering==persisted.texture_filtering && settings.anti_aliasing==persisted.anti_aliasing && sent.anti_aliasing==persisted.anti_aliasing);
+        lifecycle.initServices();assert(settings.texture_filtering==persisted.texture_filtering && sent.texture_filtering==persisted.texture_filtering && settings.anti_aliasing==re6::AntiAliasing::Native && sent.anti_aliasing==re6::AntiAliasing::Native);
         assert(sends==old_sends+1 && connects==old_connects+1 && saves==old_saves);lifecycle.exitServices();}
     have_saved=false;settings.texture_filtering=re6::TextureFilter::Af16x;settings.anti_aliasing=re6::AntiAliasing::Fxaa;const auto old_sends=sends;lifecycle.initServices();
     assert(sends==old_sends+1 && sent.texture_filtering==re6::TextureFilter::Native && sent.anti_aliasing==re6::AntiAliasing::Native && sent.language==re6::Language::English);lifecycle.exitServices();
@@ -129,4 +130,4 @@ bool load_settings_file(const char* p,Settings& s){assert(std::string(p)=="r6ovl
 void Re6GameLink::initialize(){++initializes;}void Re6GameLink::close(){++closes;}
 bool Re6GameLink::connect(){++connects;message=connect_success?"Connected to RE6":"Start RE6";return connect_success;}
 bool Re6GameLink::apply(const re6::Settings& s){++sends;sent=s;events.push_back("apply");message="Applied";return true;}
-int main(){graphics_illustrations();navigation_and_languages();filtering_reset_and_save_failure();startup_and_mount_failure();std::puts("RE6 graphics UI:root/groups, Cyrillic help, all filter/AA modes, transactional saves and native startup PASS");}
+int main(){graphics_illustrations();navigation_and_languages();filtering_reset_and_save_failure();startup_and_mount_failure();std::puts("RE6 graphics UI:root/groups, Cyrillic help, filter modes, fixed native FXAA3, transactional saves and native startup PASS");}

@@ -20,10 +20,10 @@ where to look; they are not screenshots of each selected mod mode.
 | Option | Choices | Application |
 |---|---|---|
 | Texture filtering | Native, AF2x, AF4x, AF8x, AF16x | Restart RE6 |
-| Anti-aliasing | Native, Off, FXAA, FXAA3, FXAA3HQ | Live in the primary renderer |
-| Reset graphics | Restore both options to Native | Filtering still needs restart |
+| Anti-aliasing | FXAA3 (native), fixed | Original game rendering |
+| Reset graphics | Restore native texture filtering | Restart RE6 |
 
-Both defaults are Native. Configuration is independent of RE4 and stored in
+Filtering defaults to Native. Configuration is independent of RE4 and stored in
 `sdmc:/config/re4-controls/re6-settings.bin`, with backup recovery. A failed
 save leaves the active settings unchanged. On cold launch the module reads
 these settings before selecting its per-process sampler policy; the overlay
@@ -35,12 +35,16 @@ comparison samplers retain their original descriptors. Those flags do not
 distinguish world textures from trilinear render-target samplers, so both can
 be affected.
 
-AA overrides only the verified current primary scene resource while its native
-render call consumes the mode. Its previous value is restored afterward, unless
-the engine changed it. The global renderer default is not overwritten. Native
-SMAA resources, unsupported objects and concurrent/reentrant override attempts
-retain the original behavior. Forced FXAA is limited to resources already using
-a native FXAA mode; native-off resources are kept off. No new AA buffers are allocated.
+RE6 anti-aliasing stays native, using the game's stock FXAA3. The AA row is an
+informational value, not a selector. Off, FXAA and FXAA3HQ were removed after
+hardware reports of artifacts; the module no longer hooks or writes the AA
+render path. Valid old settings files automatically migrate their AA value to
+Native while retaining language and filtering. New saves/live updates send only
+Native, including when connecting to an older module. Other native scene modes
+remain owned by the engine; the mod does not force FXAA3 into originally-off scenes.
+
+To update from an older build, close RE6 and use **RE6 → Install RE6 module** in
+the new installer. That updates the game module and both menus together.
 
 Shadows and draw distance are not exposed: their safe live owner and complete
 consumer paths are not yet verified. Host tests and exact instruction guards

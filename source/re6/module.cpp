@@ -29,9 +29,8 @@ __attribute__((used,section(".data.re6controls"))) volatile re6::SharedControl g
 re6::Settings graphics_settings;
 std::uint32_t graphics_sequence=0;
 std::atomic_flag graphics_settings_guard=ATOMIC_FLAG_INIT;
-std::atomic_flag aa_render_guard=ATOMIC_FLAG_INIT;
 std::atomic<bool> graphics_loaded{false};
-std::atomic<unsigned> graphics_request{0},graphics_aa_request{0},graphics_latched{255},sampler_calls{0},sampler_overrides{0};
+std::atomic<unsigned> graphics_request{0},graphics_latched{255},sampler_calls{0},sampler_overrides{0};
 bool graphics_mounted=false;
 unsigned graphics_attempts=0;
 std::uint64_t graphics_retry=0;
@@ -69,7 +68,6 @@ void poll_graphics_settings(){
   graphics_control.applied_sequence=graphics_sequence;
  }
  graphics_request.store(unsigned(graphics_settings.texture_filtering),std::memory_order_release);
- graphics_aa_request.store(unsigned(graphics_settings.anti_aliasing),std::memory_order_release);
  graphics_loaded.store(true,std::memory_order_release);
  // Bootstrap is the only module-side publisher. Expose the block only after
  // that publisher has stopped; the overlay is then the sole settings writer.
@@ -193,35 +191,7 @@ HOOK_DEFINE_TRAMPOLINE(Re6SamplerCreate){static void Callback(void* object,const
   sampler_overrides.fetch_add(1,std::memory_order_relaxed);Orig(object,local);
  }else Orig(object,descriptor);
 }};
-HOOK_DEFINE_TRAMPOLINE(Re6AaRender){static void Callback(void* context,void* scene,std::uint32_t pass,const char* label){
- if(!observer_active.load(std::memory_order_acquire)){Orig(context,scene,pass,label);return;}
- poll_graphics_settings();
- const auto requested=graphics_aa_request.load(std::memory_order_acquire);
- if(!requested||requested>4||aa_render_guard.test_and_set(std::memory_order_acquire)){
-  Orig(context,scene,pass,label);return;
- }
- struct Unlock{~Unlock(){aa_render_guard.clear(std::memory_order_release);}} unlock;
- const auto address=reinterpret_cast<std::uintptr_t>(scene);
- std::uintptr_t renderer=0,renderer_type=0,primary=0,type=0;
- std::uint32_t native=0;
- MemoryInfo region{};std::uint32_t page=0;
- const bool supported=address<=UINTPTR_MAX-0x5E8&&read_at(observer_main+0x2A5FD90,renderer)&&renderer&&renderer<=UINTPTR_MAX-0x1099770
-   &&read_at(renderer,renderer_type)&&(renderer_type==observer_main+0x28C05C8||renderer_type==observer_main+0x25B66A8)
-   &&read_at(renderer+0x1099768,primary)&&primary==address
-   &&read_at(address,type)&&type==observer_main+0x28B1378
-   &&read_at(address+0x5E4,native)&&native<=3
-   &&R_SUCCEEDED(svcQueryMemory(&region,&page,address+0x5E4))&&(region.perm&3)==3
-   &&address+0x5E4>=region.addr&&address+0x5E4-region.addr<=region.size&&region.size-(address+0x5E4-region.addr)>=4;
- if(!supported||(!native&&requested>1)){Orig(context,scene,pass,label);return;}
- const auto applied=requested-1;
- auto* field=reinterpret_cast<std::uint32_t*>(address+0x5E4);
- *field=applied;
- Orig(context,scene,pass,label); // Native mode selection is consumed synchronously into draw commands.
- std::uintptr_t after_type=0;std::uint32_t after=0;
- if(read_at(address,after_type)&&after_type==type&&read_at(address+0x5E4,after)&&after==applied
-   &&R_SUCCEEDED(svcQueryMemory(&region,&page,address+0x5E4))&&(region.perm&3)==3
-   &&address+0x5E4>=region.addr&&address+0x5E4-region.addr<=region.size&&region.size-(address+0x5E4-region.addr)>=4)*field=native;
-}};
+
 }
 extern "C" void exl_main(void*,void*){
  u64 title=0;
@@ -244,7 +214,6 @@ extern "C" void exl_main(void*,void*){
  Re6DualPad::InstallAtFuncPtr(reinterpret_cast<PadFunction>(sdk.m_Total.m_Start+re6::profile::sdk_dual));
  Re6CameraUpdate::InstallAtOffset(re6::profile::camera_update);
  Re6SamplerCreate::InstallAtOffset(0x1673C20);
- Re6AaRender::InstallAtOffset(0x1234840);
  observer_active.store(true,std::memory_order_release);
 }
 extern "C" NORETURN void exl_exception_entry(){EXL_ABORT("RE6 observer exception");}

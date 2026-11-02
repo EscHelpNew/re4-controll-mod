@@ -66,9 +66,9 @@ bool Re6GameLink::connect(){
                     if(!re6::decode_settings(c.settings,sizeof(c.settings),applied))continue;
                     address_=m.addr+page+j;process_=pid;diagnostics=c;
                     char text[448];std::snprintf(text,sizeof(text),
-                        "RE6 abi=%u sequence=%u applied=%u source=%u frames=%llu\nfilter=%u samplers=%u overrides=%u AA_requested=%u",
+                        "RE6 abi=%u sequence=%u applied=%u source=%u frames=%llu\nfilter=%u samplers=%u overrides=%u",
                         c.abi,c.sequence,c.applied_sequence,c.settings_source,(unsigned long long)c.frames,
-                        c.graphics_filter_latched,c.sampler_calls,c.sampler_overrides,unsigned(applied.anti_aliasing));
+                        c.graphics_filter_latched,c.sampler_calls,c.sampler_overrides);
                     details=text;message=tr("Connected to RE6 module","Подключено к модулю RE6");return true;
                 }
             }

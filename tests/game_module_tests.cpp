@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 namespace re4 {struct ViewVec3;}
+namespace exl::hook {struct InlineFloatCtx;}
 namespace {
 struct NpadState;
 void test_FullPad(NpadState*, const std::uint32_t&);
@@ -22,6 +23,9 @@ void test_HudDraw(void*);
 void test_ModernPlayerUpdate(void*);
 unsigned test_ModernRoot(void*,void*);
 void test_ModernPose(void*,int);
+void test_AutomaticFire(void*);
+void test_ScopeUpdate(void*);
+void test_ScopedZoom(exl::hook::InlineFloatCtx*);
 void test_RootDisplacement(void*,void*,unsigned,re4::ViewVec3*,re4::ViewVec3*);
 int test_AimSensitivity(void*, int);
 void test_AimSway(void*, unsigned, float*, float*);
@@ -81,6 +85,33 @@ unsigned test_ModernRoot(void* actor,void*){
  ModernPose::Callback(actor,0);return 17;
 }
 void test_ModernPose(void*,int){++modern_original_poses;}
+void test_AutomaticFire(void*){}
+unsigned scope_original_calls=0;
+bool scope_inputs_suppressed=false;
+bool scope_zoom_feedback=false;
+[[maybe_unused]] void test_ScopeUpdate(void* scope){
+    ++scope_original_calls;
+    auto* b=static_cast<std::uint8_t*>(scope);
+    auto* axes=reinterpret_cast<std::int32_t*>(main_base+0x124E9C8);
+    auto* directions=reinterpret_cast<std::uint32_t*>(main_base+0x124E9DC);
+    auto* zoom_input=reinterpret_cast<std::int8_t*>(main_base+0x124E9D1);
+    scope_inputs_suppressed=axes[0]==0&&axes[1]==0&&!*zoom_input&&!(*directions&0x6F);
+    auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
+    auto& zoom=*reinterpret_cast<float*>(b+0x13C);
+    const float previous_zoom=zoom; // Native15490 snapshots old zoom for HUD feedback.
+    zoom=std::clamp(zoom+float(*zoom_input)*.001f+((*directions&0x20)?.05f:0)-((*directions&0x40)?.05f:0),0.f,1.f);
+    exl::hook::InlineFloatCtx context{};
+    std::memcpy(context.bytes,&zoom,sizeof(zoom));
+    std::memcpy(context.bytes+0x200+19*8,&scope,sizeof(scope));
+    ScopedZoom::Callback(&context);
+    std::memcpy(&zoom,context.bytes,sizeof(zoom));
+    *reinterpret_cast<float*>(b+0x118)+=float(axes[1])*(-.000872664626f)*(1-.9f*zoom);
+    *reinterpret_cast<float*>(actor+0xB4)+=float(axes[0])*(-.000872664626f)*(1-.9f*zoom);
+    *reinterpret_cast<float*>(b+0xC8)=45+zoom*(b[0x159]==1?-42.f:-36.f);
+    scope_zoom_feedback=zoom!=previous_zoom;
+    *directions|=0x100; // Preserve unrelated native changes on restoration.
+}
+void test_ScopedZoom(exl::hook::InlineFloatCtx*){}
 std::vector<re4::SensorState> sensor_batch;
 std::uint8_t sampler_seen[20]{};
 std::uint32_t shadow_flags_seen=0;
@@ -255,6 +286,7 @@ struct Fixture {
         free_orbit.reset();camera_context=nullptr;
         unified_look.reset();unified_update=nullptr;unified_pitch=0;unified_pitch_actor=0;unified_pitch_route=0;
         unified_aim_session={};unified_new_aim=false;unified_command_frame=0;unified_command_tick=0;
+        reset_scoped_controls();scoped_zoom_target=nullptr;modern_aim_session={};
         unified_root_actor=nullptr;unified_camera_calculation=false;
         native_view_test=submit_models=short_laser_ray=simulate_weapon_sway=false;laser_endpoint={0,0,-1000};camera_native_calls=basis_native_calls=laser_native_calls=hud_native_calls=ortho_native_calls=0;
         submitted_models.clear();hud_rects.clear();test_weapon=test_other_model=nullptr;
@@ -335,9 +367,129 @@ struct Fixture {
         s.angular_velocity[0]=s.angular_velocity[1]=-1/6.28318530718f;
         sensor_batch={s};
     }
+    std::uint8_t* scope_mode(){
+        view_mode();aim();auto* scope=image.data()+0x1131718+0x530;
+        image[0x1131718+0x54]=16;
+        *reinterpret_cast<void**>(image.data()+0x1131718+0x7B0)=scope;
+        input_state[0x5090]|=0x40;
+        *reinterpret_cast<std::uintptr_t*>(image.data()+0x1265A28)=main_base+0x332CC0;
+        *reinterpret_cast<float*>(scope+0x124)=-1.22173059f;
+        *reinterpret_cast<float*>(scope+0x130)=1.22173059f;
+        *reinterpret_cast<float*>(scope+0xC8)=45;
+        *reinterpret_cast<float*>(input_state.data()+0xA4)=1;
+        *reinterpret_cast<int*>(image.data()+0xAFF39C)=2;sensor_attributes=1;
+        settings.unified_controls=true;return scope;
+    }
 };
 }
 int main(){
+    {
+        Fixture f;auto* scope=f.scope_mode();control.raw_ry=1;control.raw_ly=1;
+        ScopeUpdate::Callback(scope);
+        for(unsigned n=0;n<480;++n){game_test::tick+=640000;ScopeUpdate::Callback(scope);}
+        assert(near(*reinterpret_cast<float*>(scope+0x118),-1.22173059f));
+        assert(*reinterpret_cast<float*>(scope+0x13C)==1&&near(*reinterpret_cast<float*>(scope+0xC8),9));
+        scope[0x159]=1;control.raw_ry=-1;control.raw_ly=-1;
+        for(unsigned n=0;n<240;++n){game_test::tick+=640000;ScopeUpdate::Callback(scope);}
+        assert(near(*reinterpret_cast<float*>(scope+0x118),1.22173059f));
+        assert(*reinterpret_cast<float*>(scope+0x13C)==0&&near(*reinterpret_cast<float*>(scope+0xC8),45));
+        *reinterpret_cast<float*>(scope+0x13C)=1;control.raw_ly=0;
+        settings.right_aim_gain_y=0;game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        assert(near(*reinterpret_cast<float*>(scope+0xC8),3));
+    }
+    {
+        Fixture f;auto* scope=f.scope_mode();settings.gyro_enabled=true;
+        *reinterpret_cast<int*>(f.input_type)=-1;control.raw_ry=.5f;
+        ScopeUpdate::Callback(scope);game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        assert(*reinterpret_cast<float*>(scope+0x118)>0); // Stick follows native inversion.
+        settings.right_aim_gain_y=0;gyro_pending={0,.1f};assert(gyro_aim_ready(f.actor,true));
+        const float before=*reinterpret_cast<float*>(scope+0x118);
+        game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        assert(near(*reinterpret_cast<float*>(scope+0x118),before-.1f)); // Gyro inversion stays independent.
+        const auto yaw=f.yaw();f.flags()=0;ScopeUpdate::Callback(scope);
+        f.flags()=0x10;control.raw_rx=1;game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        assert(near(f.yaw(),yaw)); // Release/re-entry cannot replay a prior velocity.
+    }
+    {
+        Fixture f;auto* scope=f.scope_mode();scoped_session={};f.actor[0x117]=4;
+        control.raw_rx=1;control.raw_ly=1;ScopeUpdate::Callback(scope);
+        game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        assert(f.yaw()==0&&*reinterpret_cast<float*>(scope+0x13C)==0); // Raising is not ready.
+        f.actor[0x117]=1;ScopeUpdate::Callback(scope);game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        const float before=f.yaw();assert(before<0);
+        f.input_state[0x86FF]=1;ScopeUpdate::Callback(scope);f.input_state[0x86FF]=0;
+        game_test::tick+=640000;ScopeUpdate::Callback(scope);assert(near(f.yaw(),before));
+    }
+    {
+        // Inline zoom only touches saved s0 and the exact active scope owner.
+        Fixture f;auto* scope=f.scope_mode();exl::hook::InlineFloatCtx context{};
+        std::memset(context.bytes,0xA5,sizeof(context.bytes));
+        const auto wrong=reinterpret_cast<std::uintptr_t>(scope)+4;
+        std::memcpy(context.bytes+0x200+19*8,&wrong,sizeof(wrong));
+        auto expected=context;ScopedZoomTarget target{scope,.6f};scoped_zoom_target=&target;
+        ScopedZoom::Callback(&context);assert(!std::memcmp(&context,&expected,sizeof(context)));
+        const auto owner=reinterpret_cast<std::uintptr_t>(scope);
+        std::memcpy(context.bytes+0x200+19*8,&owner,sizeof(owner));expected=context;
+        std::memcpy(expected.bytes,&target.zoom,sizeof(target.zoom));ScopedZoom::Callback(&context);
+        assert(!std::memcmp(&context,&expected,sizeof(context))&&near(*reinterpret_cast<float*>(scope+0x13C),.6f));
+        scoped_zoom_target=nullptr;
+    }
+    for(bool measured:{false,true}){
+        Fixture f;f.view_mode();f.aim();
+        auto* scope=f.image.data()+0x1131718+0x530;
+        f.image[0x1131718+0x54]=16;
+        *reinterpret_cast<void**>(f.image.data()+0x1131718+0x7B0)=scope;
+        f.input_state[0x5090]|=0x40;
+        *reinterpret_cast<std::uintptr_t*>(f.image.data()+0x1265A28)=main_base+0x332CC0;
+        *reinterpret_cast<float*>(scope+0x124)=-1.22173059f;
+        *reinterpret_cast<float*>(scope+0x130)=1.22173059f;
+        *reinterpret_cast<float*>(scope+0xC8)=45;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        *reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;sensor_attributes=1;
+        settings.unified_controls=true;settings.re6_response=measured;
+        auto* axes=reinterpret_cast<int*>(f.image.data()+0x124E9C8);axes[0]=63;axes[1]=-63;
+        auto* zoom_byte=reinterpret_cast<std::int8_t*>(f.image.data()+0x124E9D1);*zoom_byte=63;
+        auto* directions=reinterpret_cast<std::uint32_t*>(f.image.data()+0x124E9DC);*directions=0x6F;
+        control.raw_rx=.5f;control.raw_ry=.5f;control.raw_ly=.5f;scope_original_calls=0;
+        ScopeUpdate::Callback(scope);assert(scope_inputs_suppressed&&scope_original_calls==1);
+        assert(f.yaw()==0&&*reinterpret_cast<float*>(scope+0x118)==0);
+        assert(*zoom_byte==63&&axes[0]==63&&axes[1]==-63&&*directions==0x16F);
+        game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        const float yaw=f.yaw(),pitch=*reinterpret_cast<float*>(scope+0x118),zoom=*reinterpret_cast<float*>(scope+0x13C);
+        assert(yaw<0&&yaw>-.04f&&pitch<0&&pitch>-.04f);
+        assert(zoom>0&&zoom<.03f&&near(*reinterpret_cast<float*>(scope+0xC8),45-36*zoom));
+        assert(scope_zoom_feedback);
+        ScopeUpdate::Callback(scope);assert(near(f.yaw(),yaw)&&near(*reinterpret_cast<float*>(scope+0x13C),zoom));
+        // Ordinary aim must leave gyro for the scope's separate pitch storage.
+        settings.gyro_enabled=true;assert(gyro_aim_ready(f.actor,true));gyro_pending={.01f,.02f};
+        AimSensitivity::Callback(f.actor,0);assert(near(f.yaw(),yaw)&&near(gyro_pending.pitch,.02f));
+        control.raw_rx=0;control.raw_ry=0;control.raw_ly=0;
+        game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        assert(gyro_pending.yaw==0&&gyro_pending.pitch==0);
+        const auto after=f.yaw();ScopeUpdate::Callback(scope);assert(near(f.yaw(),after));
+        // Zero sensitivity discards old velocity immediately, independently of zoom.
+        settings.gyro_enabled=false;settings.right_aim_gain_x=settings.right_aim_gain_y=0;
+        control.raw_rx=1;control.raw_ry=1;game_test::tick+=640000;ScopeUpdate::Callback(scope);
+        assert(near(f.yaw(),after));
+        // All controls disabled: exactly one original call with native inputs.
+        settings.unified_controls=settings.analog_enabled=settings.move_while_aiming=false;
+        const unsigned before=scope_original_calls;ScopeUpdate::Callback(scope);
+        assert(scope_original_calls==before+1&&!scope_inputs_suppressed&&f.yaw()!=after);
+    }
+    // Weapon controls must retain the native +/-1 pitch range. The overview's
+    // 35-degree comfort band must not prevent aiming a firearm/knife downward.
+    for(unsigned routine:{6u,11u})for(float sign:{-1.f,1.f}){
+        Fixture f;f.view_mode();f.aim();
+        if(routine==11){f.actor[0x115]=11;f.flags()=re4::kKnifeHeldMask;}
+        settings.unified_controls=true;settings.analog_enabled=false;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        modern_probe=true;control.raw_ry=sign;ModernPlayerUpdate::Callback(f.actor);
+        for(unsigned n=0;n<80;++n){game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);}
+        assert(near(unified_pitch,sign*1.570796327f));
+        assert(near(f.pitch()[0],sign)&&near(f.pitch()[1],sign));
+        modern_probe=false;
+    }
     for(bool aiming:{false,true}){
         Fixture f;f.view_mode();if(aiming){f.aim();f.camera()[0x26C]=0;}
         settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
@@ -477,15 +629,19 @@ int main(){
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
         modern_probe=aim;ModernPlayerUpdate::Callback(f.actor);unified_pitch=.6f;
         f.pitch()[0]=f.pitch()[1]=re4::unified_pitch_weight(.6f);control.raw_ry=1;
-        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,.610865238f));
-        for(unsigned i=0;i<5;++i){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,.610865238f));}
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        assert(aim?unified_pitch>.610865238f:near(unified_pitch,.610865238f));
+        for(unsigned i=0;i<5;++i){
+            const float previous=unified_pitch;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+            assert(aim?unified_pitch>previous:near(unified_pitch,.610865238f));
+        }
         modern_probe=false;
     }
     {
         Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.analog_enabled=false;settings.gyro_enabled=true;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;*reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
         modern_probe=true;ModernPlayerUpdate::Callback(f.actor);unified_pitch=1.2f;f.pitch()[0]=f.pitch()[1]=.763943727f;
-        assert(gyro_aim_ready(f.actor,true));gyro_pending={0,.1f};control.raw_ry=1;
+        assert(gyro_aim_ready(f.actor,true));gyro_pending={0,.1f};control.raw_ry=0;
         game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,1.3f));
         control.raw_ry=0;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(near(unified_pitch,1.3f));
         control.raw_ry=-1;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);assert(unified_pitch>1.2f&&unified_pitch<1.3f);
@@ -1144,7 +1300,7 @@ int main(){
         game_test::program=re4::profile::title_id;f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
         assert(control.status==2 && game_test::installed==0);
         f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
-        assert(control.status==1 && game_test::installed==27 && game_test::initialized==1);
+        assert(control.status==1 && game_test::installed==30 && game_test::initialized==1);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }

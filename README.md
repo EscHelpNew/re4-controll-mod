@@ -9,13 +9,13 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current source/local build is **0.15.1**. Published Releases may
-contain an earlier version while new features are being tested.
+The current version is **0.16.1**. The user confirmed this build working on their
+Switch after deployment. RE4 AF16x was also confirmed after a full game restart.
 
 ## Features
 
 - A separate [RE6 Graphics overlay](docs/re6-graphics.md) with native defaults,
-  anisotropic filtering and the game's FXAA variants. Native RE6 gyro is retained.
+  anisotropic filtering and fixed native FXAA3. Native RE6 gyro is retained.
 - Graphics settings for both games in the standalone installer, with illustrated
   help in the installer and overlays. Highlighted areas on official game frames
   show where each option matters; these are not captured comparisons of mod settings.
@@ -31,6 +31,8 @@ contain an earlier version while new features are being tested.
 
 - Proportional turning, walking, camera and firearm aiming.
 - Separate left/right aiming sensitivities and adjustable stick deadzones.
+- Full native stick pitch for knife/firearm aiming; overview keeps its 35-degree band.
+- Smooth sniper scoped right-stick/gyro aim and left-stick zoom; scoped play stays stationary.
 - Linear, exponential, logarithmic and blended response curves.
 - Remap 20 game-visible buttons, including menus and QTE, with swaps, duplicate
   targets or unbound buttons. The overlay keeps its physical controls.
@@ -71,7 +73,9 @@ The new view, reticle and movement modes start **Off**. Enable them independentl
 in Controls. First-person view uses Camera sensitivity for continuous right-stick
 look. Move while aiming/Move with knife retain the game's attack timing and
 collision pipeline. These paths target Leon's ordinary firearms and knife;
-special weapon handlers and other characters are excluded. The0.7 native paths
+verified pistol, shotgun, automatic, rifle, launcher and mine handlers are supported;
+throwable/charged-special handlers and other characters are excluded. Scoped
+rifle views stay stationary, with leftY zoom and rightXY/gyro aiming. The0.7 native paths
 have automated callback tests; console visual/collision acceptance is still pending.
 
 In **Control settings → Button mapping**, select a physical button and its game
@@ -159,8 +163,9 @@ are in `third_party/`. Release artifacts include their notices.
 The built-in **RE6** controls profile combines measured overview/aiming response,
 unified sticks, moving aim/knife/reload and gyro. Choose it in the first Controls
 row. The left stick moves; the right stick turns and looks. A/B/X/Y and PLUS/MINUS
-keep their original actions. Right-stick vertical look stops at±35°; gyro retains
-its separate native range. Default restores original controls with gyro off.
+keep their original actions. Overview stick pitch stops at±35°; firearm/knife
+aiming retains the full native range and scopes retain their own pitch limits.
+Gyro retains its separate native range. Default restores original controls with gyro off.
 Previous RE9 settings remain available as Custom; RE9 is no longer a preset.
 
 The installer also has an **RE6** page, selected with **L/R**, with separate

@@ -59,6 +59,14 @@ constexpr Site sites[] = {
     // Generic raise initializer ABI and its actor-argument call boundary.
     , {0x33F130,0xD100C3FF},{0x33F134,0xF9000BF3},{0x33F138,0xA9027BFD}
     , {0x33F13C,0x910083FD},{0x31D554,0x940086F7}
+    // Scope update ABI and automatic first-shot boundary.
+    , {0x15460,0xD10303FF},{0x15464,0x6D052BEB},{0x15468,0xF9003BF9}
+    , {0x1546C,0x6D0623E9},{0x15470,0xA9085FF8}
+    , {0x15568,0x1E202008},{0x1556C,0x54000085},{0x15570,0xB900029F},{0x15574,0x1E2703E0}
+    , {0x328190,0xD10183FF},{0x328194,0xFD0013E8},{0x328198,0xF90017F7},{0x32819C,0xA90357F6}
+    // Exact weapon dispatch tables: throwable/charged handlers stay excluded.
+    , {0x31CC78,0x911D6108},{0x327108,0x9133A108},{0x332CD8,0x913F6108}
+    , {0x333E08,0x91014108},{0x3351B8,0x91040108},{0x342FA8,0x91266108}
 };
 inline bool matches(const std::uint8_t* memory, std::size_t size) {
     if (!memory || size < build_id_offset + sizeof(build_id)

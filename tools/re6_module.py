@@ -100,7 +100,7 @@ def build(root, sdk, run):
     if hook.count('if(i > HookMax)') != 1:
         raise ValueError('Unexpected exlaunch trampoline allocator revision')
     hook_source.write_text(hook.replace('if(i > HookMax)', 'if(i >= HookMax)'), encoding='utf-8')
-    # Six hooks fit the default4096-byte pool (20 slots). No RE4 modules or
+    # Five hooks fit the default4096-byte pool (20 slots). No RE4 modules or
     # RE4 hook-count/pool substitutions are staged into this build.
     temporary = root / 'build/re6-tmp'
     temporary.mkdir(exist_ok=True)

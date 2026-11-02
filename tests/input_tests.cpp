@@ -80,6 +80,14 @@ int main() {
     std::memcpy(expected_context, &scaled_s0, sizeof(scaled_s0));
     scale_saved_s0(saved_context, 0.25f);
     assert(!std::memcmp(saved_context, expected_context, sizeof(saved_context)));
+    const std::uintptr_t scope_owner=0x123456789ABCull;
+    std::memcpy(saved_context+0x200+19*8,&scope_owner,sizeof(scope_owner));
+    std::memcpy(expected_context,saved_context,sizeof(saved_context));
+    const float scope_zoom_value=.37f;
+    std::memcpy(expected_context,&scope_zoom_value,sizeof(scope_zoom_value));
+    set_saved_s0(saved_context,scope_zoom_value);
+    assert(saved_x(saved_context,19)==scope_owner&&saved_x(saved_context,31)==0);
+    assert(!std::memcmp(saved_context,expected_context,sizeof(saved_context))); // Other FP lanes and every GP untouched.
     std::vector<std::uint8_t> image(profile::build_id_offset + 32, 0);
     assert(!profile::matches(image.data(), image.size()));
     std::memcpy(image.data() + profile::build_id_offset, profile::build_id, 32);
