@@ -1,4 +1,6 @@
 #include "re4/installer_ui.hpp"
+#include "re4/settings_file.hpp"
+#include <cmath>
 #include <cstring>
 namespace re4 {
 namespace {
@@ -45,11 +47,11 @@ const std::array<HomeItem,9>& installer_home_items(){
          {"Stick response, sensitivity, deadzones\nand firearm-only gyro aiming.",
           "Кривые стиков, чувствительность, мёртвые\nзоны и гироскоп при наведении из оружия."}},
         {{"Controller diagnostics","Проверка контроллера"},
-         {"Check raw sticks, gyro and calibration.\nHold ZL to preview motion aiming.",
-          "Проверить стики, гироскоп и калибровку.\nУдерживайте ZL для проверки прицела."}},
+         {"Check raw sticks, gyro and calibration.\nPress ZL to open gyro debug mode.",
+          "Проверить стики, гироскоп и калибровку.\nНажмите ZL для режима отладки гироскопа."}},
         {{"Graphics","Графика"},
-         {"Manual graphics settings, native by default.\nFiltering and AA require a game restart.",
-          "Ручная графика, штатная по умолчанию.\nФильтрация и AA: перезапуск игры."}},
+         {"Default / Quality / Custom graphics.\nFull restart: HOME > X > Close, then start.\nMenu / overlay alone is not enough.",
+          "Графика: штатная / качественная / своя.\nПолный перезапуск: HOME > X > Закрыть.\nОдного меню / оверлея недостаточно."}},
         {{"Updates","Обновления"},
          {"Download a new app from GitHub Releases.\nWi-Fi is required. The previous app is kept.",
           "Скачать новую версию из GitHub Releases.\nНужен Wi-Fi. Предыдущая версия сохраняется."}},
@@ -64,8 +66,9 @@ const std::array<HomeItem,9>& installer_home_items(){
 }
 unsigned InstallerModel::item_count()const{
     if(game==GameTarget::RE6)return page==InstallerPage::Home?5:page==InstallerPage::Graphics?3:0;
+    if(page==InstallerPage::GyroTest)return control_group_count(ControlGroup::Gyro)+1;
     if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
-    if(page==InstallerPage::ControlGroup)return control_group_count(control_group);
+    if(page==InstallerPage::ControlGroup)return control_group_count(control_group)+(control_group==ControlGroup::Gyro?1:0);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
     if(page==InstallerPage::MappingTargets)return kButtonCount+1;
     return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlGroup::Count)+1:page==InstallerPage::Updates?2:0;
@@ -73,9 +76,32 @@ unsigned InstallerModel::item_count()const{
 ControlId InstallerModel::selected_control()const{
     if(game==GameTarget::RE6)return ControlId::Count;
     if(page==InstallerPage::Controls && selected==0)return ControlId::Profile;
+    if(page==InstallerPage::GyroTest)return control_group_item(ControlGroup::Gyro,selected);
     return page==InstallerPage::ControlGroup?control_group_item(control_group,selected):ControlId::Count;
 }
+UiEvent InstallerModel::x_shortcut()const{return page==InstallerPage::GyroTest?UiEvent::Calibrate:UiEvent::ResetPreview;}
+UiEvent InstallerModel::y_shortcut()const{return page==InstallerPage::GyroTest?UiEvent::ResetPreview:UiEvent::Calibrate;}
 InstallerAction InstallerModel::handle(UiEvent event){
+    if(page==InstallerPage::GyroTest){
+        if(event==UiEvent::Back || event==UiEvent::Exit){close_gyro_test();return event==UiEvent::Exit?InstallerAction::Exit:InstallerAction::None;}
+        if(event==UiEvent::Up || event==UiEvent::Down){
+            const auto count=item_count();selected=(selected+(event==UiEvent::Down?1:count-1))%count;return InstallerAction::None;
+        }
+        if(event==UiEvent::ResetPreview)return InstallerAction::ResetPreview;
+        if(event==UiEvent::Calibrate){
+            if(diagnostic.sensors)return InstallerAction::Calibrate;
+            status=InstallerStatus::NoSensor;return InstallerAction::None;
+        }
+        if(selected>=item_count())selected=0;
+        if(selected==item_count()-1)return event==UiEvent::Confirm?InstallerAction::SaveGyroTest:InstallerAction::None;
+        const auto id=selected_control();const auto& spec=control_spec(id);
+        if(event==UiEvent::Left || event==UiEvent::Right || (event==UiEvent::Confirm && spec.kind!=ControlKind::Slider))
+            change_control(gyro_test_draft_,id,event==UiEvent::Left?-1:1);
+        return InstallerAction::None;
+    }
+    if(game==GameTarget::RE4 && page==InstallerPage::Diagnostics && event==UiEvent::OpenGyroTest){
+        open_gyro_test();return InstallerAction::None;
+    }
     if(event==UiEvent::PreviousGame || event==UiEvent::NextGame){
         auto& old=game_home_[game==GameTarget::RE6?1:0];
         old.selected=page==InstallerPage::Home?selected:home_selected;
@@ -185,8 +211,9 @@ InstallerAction InstallerModel::handle(UiEvent event){
         const auto& spec=graphics_specs()[selected];
         if(spec.id==GraphicsId::Profile){
             if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
-            return profile_kind(settings,ProfileDomain::Graphics)==ProfileKind::Default?
-                InstallerAction::CustomGraphics:InstallerAction::DefaultGraphics;
+            const auto kind=next_graphics_profile(profile_kind(settings,ProfileDomain::Graphics),event==UiEvent::Left?-1:1);
+            return kind==ProfileKind::Quality?InstallerAction::QualityGraphics:
+                kind==ProfileKind::Custom?InstallerAction::CustomGraphics:InstallerAction::DefaultGraphics;
         }
         if(spec.kind==ControlKind::Action)return event==UiEvent::Confirm && reset_graphics(settings)?InstallerAction::SaveSettings:InstallerAction::None;
         if(event!=UiEvent::Left && event!=UiEvent::Right && !(event==UiEvent::Confirm && spec.kind!=ControlKind::Slider))return InstallerAction::None;
@@ -206,6 +233,10 @@ InstallerAction InstallerModel::handle(UiEvent event){
         return InstallerAction::None;
     }
     if(page==InstallerPage::ControlGroup){
+        if(control_group==ControlGroup::Gyro && selected==control_group_count(control_group)){
+            if(event==UiEvent::Confirm)open_gyro_test();
+            return InstallerAction::None;
+        }
         const auto id=selected_control();
         if(id==ControlId::Count)return InstallerAction::None;
         const auto& spec=control_spec(id);
@@ -233,6 +264,7 @@ InstallerAction InstallerModel::handle(UiEvent event){
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
+    if(page==InstallerPage::GyroTest)return Bilingual{"GYRO DEBUG MODE","РЕЖИМ ОТЛАДКИ ГИРОСКОПА"}.get(settings.language);
     if(game==GameTarget::RE6 && page!=InstallerPage::Graphics)
         return Bilingual{"MOD INSTALLER","УСТАНОВКА МОДА"}.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_group_spec(control_group).label.get(settings.language);
@@ -283,6 +315,11 @@ const char* InstallerModel::status_text()const{
     return messages[index<sizeof(messages)/sizeof(*messages)?index:unsigned(InstallerStatus::Failed)].get(settings.language);
 }
 const char* InstallerModel::selected_help()const{
+    if(page==InstallerPage::GyroTest){
+        const auto id=selected_control();
+        return id==ControlId::Count?Bilingual{"Save the tested settings and return.\nB: cancel changes. Y: center. X: calibrate.",
+            "Сохранить настройки и вернуться.\nB: отмена. Y: по центру. X: калибровка."}.get(settings.language):control_help_text(control_spec(id),gyro_test_draft_);
+    }
     if(game==GameTarget::RE6){
         if(page==InstallerPage::Graphics)return re6_graphics_items[selected<3?selected:0].help.get(settings.language);
         return page==InstallerPage::Home?re6_home_items[selected<5?selected:0].help.get(settings.language):"";
@@ -303,16 +340,20 @@ const char* InstallerModel::selected_help()const{
     if(page==InstallerPage::Controls)return selected==0?control_help_text(control_spec(ControlId::Profile),settings):control_group_spec(static_cast<ControlGroup>(selected-1)).help.get(settings.language);
     if(page==InstallerPage::ControlGroup){
         const auto id=selected_control();
-        return id==ControlId::Count?"":control_help_text(control_spec(id),settings);
+        return id==ControlId::Count?(control_group==ControlGroup::Gyro?Bilingual{"Test gyro settings on a static scene.\nSave and apply, or B to cancel.",
+            "Проверить гироскоп на статичном кадре.\nСохранить настройки или B для отмены."}.get(settings.language):""):control_help_text(control_spec(id),settings);
     }
-    return Bilingual{"ZL: gyro preview  A: gyro on/off\nY: calibrate  X: reset preview",
-                     "ZL: проверка  A: гироскоп вкл./выкл.\nY: калибровать  X: сбросить прицел"}.get(settings.language);
+    return Bilingual{"ZL: open gyro debug mode  A: gyro on/off\nY: calibrate  X: center preview",
+                     "ZL: режим отладки  A: гироскоп вкл./выкл.\nY: калибровать  X: сбросить прицел"}.get(settings.language);
 }
 std::string InstallerModel::item_label(unsigned index)const{
     if(index>=item_count())return "";
     if(game==GameTarget::RE6)return (page==InstallerPage::Graphics?re6_graphics_items[index]:re6_home_items[index]).label.get(settings.language);
+    if(page==InstallerPage::GyroTest){
+        return index==item_count()-1?Bilingual{"Save and apply","Сохранить и применить"}.get(settings.language):control_spec(control_group_item(ControlGroup::Gyro,index)).label.get(settings.language);
+    }
     if(page==InstallerPage::Controls)return index==0?control_spec(ControlId::Profile).label.get(settings.language):control_group_spec(static_cast<ControlGroup>(index-1)).label.get(settings.language);
-    if(page==InstallerPage::ControlGroup)return control_spec(control_group_item(control_group,index)).label.get(settings.language);
+    if(page==InstallerPage::ControlGroup)return control_group==ControlGroup::Gyro && index==control_group_count(control_group)?Bilingual{"Debug mode","Режим отладки"}.get(settings.language):control_spec(control_group_item(control_group,index)).label.get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_label(index,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_label(index,settings.language);
@@ -323,6 +364,7 @@ std::string InstallerModel::item_label(unsigned index)const{
 }
 std::string InstallerModel::item_value(unsigned index)const{
     if(index>=item_count())return "";
+    if(page==InstallerPage::GyroTest)return index==item_count()-1?"A":control_value_text(control_spec(control_group_item(ControlGroup::Gyro,index)),gyro_test_draft_);
     if(game==GameTarget::RE6){
         if(page==InstallerPage::Home)return index==3?(settings.language==Language::Russian?"Русский":"English"):"";
         if(index==2)return "A";
@@ -334,7 +376,7 @@ std::string InstallerModel::item_value(unsigned index)const{
         return Bilingual{"FXAA3 (native)","FXAA3 (штатное)"}.get(settings.language);
     }
     if(page==InstallerPage::Controls)return index==0?profile_name(profile_kind(settings,ProfileDomain::Controls),settings.language):"";
-    if(page==InstallerPage::ControlGroup)return control_value_text(control_spec(control_group_item(control_group,index)),settings);
+    if(page==InstallerPage::ControlGroup)return control_group==ControlGroup::Gyro && index==control_group_count(control_group)?"A":control_value_text(control_spec(control_group_item(control_group,index)),settings);
     if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);
     if(page==InstallerPage::Mapping)return mapping_row_value(index,settings);
     if(page==InstallerPage::MappingTargets)return index==mapping_target_index(settings,mapping_source)?"*":"";
@@ -361,5 +403,27 @@ bool InstallerModel::save_re6_graphics(const char* path){
     const bool saved=re6::save_settings_file(path,re6_settings);
     status=saved?InstallerStatus::Saved:InstallerStatus::Failed;
     return saved;
+}
+void InstallerModel::open_gyro_test(){
+    gyro_test_origin_=page;gyro_test_origin_selected_=selected;
+    gyro_test_draft_=settings;page=InstallerPage::GyroTest;selected=0;status=InstallerStatus::Ready;
+}
+void InstallerModel::close_gyro_test(){
+    page=gyro_test_origin_;selected=gyro_test_origin_selected_;gyro_test_draft_=settings;
+    diagnostic.calibration_remaining=0;
+}
+const Settings& InstallerModel::preview_settings()const{return page==InstallerPage::GyroTest?gyro_test_draft_:settings;}
+bool InstallerModel::save_gyro_test(const char* path){
+    if(page!=InstallerPage::GyroTest)return false;
+    if(!valid_settings(gyro_test_draft_) || !save_profiled_settings(path,gyro_test_draft_)){
+        status=InstallerStatus::Failed;return false;
+    }
+    settings=gyro_test_draft_;close_gyro_test();status=InstallerStatus::Saved;return true;
+}
+void InstallerModel::calibrated(float bias_x,float bias_y){
+    if(!std::isfinite(bias_x)||!std::isfinite(bias_y))return;
+    auto& target=page==InstallerPage::GyroTest?gyro_test_draft_:settings;
+    target.gyro_bias_x=bias_x;target.gyro_bias_y=bias_y;
+    status=page==InstallerPage::GyroTest?InstallerStatus::Ready:InstallerStatus::Calibrated;
 }
 }

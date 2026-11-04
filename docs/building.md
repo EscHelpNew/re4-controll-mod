@@ -32,6 +32,15 @@ be copied into source, RomFS, examples or release directories.
 
 ## Checks and release
 
+Every fix build must increase the PATCH component of MAJOR.MINOR.PATCH, even
+before publication. Never reuse a version for changed fix binaries: fixing
+0.17.0 produces 0.17.1. Set the version only in
+[`include/re4/version.hpp`](../include/re4/version.hpp); `tools/version.py` and
+the build/package tools derive it from that header. Add the matching CHANGELOG
+entry and `docs/releases/vX.Y.Z.md`, update current-version documentation, then
+rebuild and validate the artifacts with the new embedded version. Earlier test
+results remain tied to their original binary and version.
+
 Host tests cover input/settings, actual game callbacks, actual overlay IPC/UI,
 installer transactions, real SDL rendering, HOME installation, OTA workers and
 public packaging. ARM builds separately check hook context ABI and linking.

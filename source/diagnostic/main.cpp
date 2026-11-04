@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include "re4/installer_ui.hpp"
 #include "re4/calibration.hpp"
+#include "re4/gyro_preview.hpp"
 #include "re4/home_launcher.hpp"
 #include "re4/version.hpp"
 #include "re6/log_server.hpp"
@@ -19,6 +20,7 @@
 #include "re4/install.hpp"
 #include "game_link.hpp"
 #include "storage.hpp"
+#include "app_exit.hpp"
 extern "C" {
 #include "remote_reload.h"
 #include "reload_main.h"
@@ -245,6 +247,7 @@ struct Sensors {
 
 int main(int argc, char** argv) {
     if (game_reload_early_bridge()) return 0;
+    const re4::AppExitPolicy exit_policy(NXDK_TITLE_ID);
     AppletStorage ordinary{};
     if (game_reload_take_user_channel(&ordinary)) appletStorageClose(&ordinary);
     configure_reload(argc, argv);
@@ -329,7 +332,7 @@ int main(int argc, char** argv) {
         model.detail=renderer.error();renderer.close();
         consoleInit(nullptr);
     }
-    re4::GyroFilter integrator;
+    re4::GyroPreview preview;
     re4::UpdateWorker updater;
     float aim_x=0,aim_y=0;
     re4::GyroCalibration calibration;
@@ -362,9 +365,20 @@ int main(int argc, char** argv) {
         else if(down&HidNpadButton_R)action=model.handle(Key::NextGame);
         else if(down&HidNpadButton_ZR)action=model.handle(Key::QuickOverlay);
         else if(down&HidNpadButton_Minus)action=model.handle(Key::QuickDisable);
-        else if(down&HidNpadButton_Y)action=model.handle(Key::Calibrate);
-        else if(down&HidNpadButton_X)action=model.handle(Key::ResetPreview);
-        if(action==re4::InstallerAction::Exit)break;
+        else if(down&HidNpadButton_Y)action=model.handle(model.y_shortcut());
+        else if(down&HidNpadButton_X)action=model.handle(model.x_shortcut());
+        else if(down&HidNpadButton_ZL)action=model.handle(Key::OpenGyroTest);
+        if(action==re4::InstallerAction::Exit){
+            if(!exit_policy.own_home())break;
+            const Result rc=exit_policy.request_home_exit();
+            std::fprintf(stderr,"[exit] own HOME exit rejected rc=%08lX\n",(unsigned long)rc);
+            char detail[160];
+            std::snprintf(detail,sizeof(detail),settings.language==re4::Language::Russian
+                ?"Ошибка выхода: %08lX. Нажмите + ещё раз или HOME."
+                :"Exit failed: %08lX. Press + to retry or HOME.",(unsigned long)rc);
+            model.status=re4::InstallerStatus::Failed;model.detail=detail;
+            continue;
+        }
         if(action==re4::InstallerAction::CheckUpdates)updater.check();
         if(action==re4::InstallerAction::InstallUpdate)updater.install();
         if(action==re4::InstallerAction::CancelUpdate)updater.cancel();
@@ -388,24 +402,31 @@ int main(int argc, char** argv) {
             if(R_SUCCEEDED(pm))pmdmntExit();
         }
         if(action==re4::InstallerAction::SaveSettings)
-            model.status=re4::save_profiled_settings(re4::kSettingsPath,settings)
+            model.status=(model.game==re4::GameTarget::RE4 && model.page==re4::InstallerPage::Graphics
+                && model.selected!=unsigned(re4::GraphicsId::Reset)?re4::save_edited_graphics(re4::kSettingsPath,settings):
+                re4::save_profiled_settings(re4::kSettingsPath,settings))
                 ?re4::InstallerStatus::Saved:re4::InstallerStatus::Failed;
         if(action==re4::InstallerAction::SaveRe6Graphics)
             model.save_re6_graphics();
+        if(action==re4::InstallerAction::SaveGyroTest)
+            model.save_gyro_test();
         if(action==re4::InstallerAction::DefaultControls || action==re4::InstallerAction::CustomControls
             || action==re4::InstallerAction::RE6Controls
-            || action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics){
-            const bool graphics_profile=action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics;
+            || action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics
+            || action==re4::InstallerAction::QualityGraphics){
+            const bool graphics_profile=action==re4::InstallerAction::DefaultGraphics || action==re4::InstallerAction::CustomGraphics
+                || action==re4::InstallerAction::QualityGraphics;
             const bool custom=action==re4::InstallerAction::CustomControls || action==re4::InstallerAction::CustomGraphics;
             const auto result=re4::switch_profile(re4::kSettingsPath,settings,
                 graphics_profile?re4::ProfileDomain::Graphics:re4::ProfileDomain::Controls,
                 action==re4::InstallerAction::RE6Controls?re4::ProfileKind::RE6:
+                action==re4::InstallerAction::QualityGraphics?re4::ProfileKind::Quality:
                 custom?re4::ProfileKind::Custom:re4::ProfileKind::Default);
             model.status=result==re4::ProfileResult::Applied || result==re4::ProfileResult::Unchanged?
                 re4::InstallerStatus::Saved:re4::InstallerStatus::Failed;
             model.profile_note=re4::profile_result_text(result,settings.language);
         }
-        if(action==re4::InstallerAction::ResetPreview)aim_x=aim_y=0;
+        if(action==re4::InstallerAction::ResetPreview){aim_x=aim_y=0;preview.reset();}
         if(action==re4::InstallerAction::Calibrate && sensors.count){
             calibration.begin();
             model.status=re4::InstallerStatus::Calibrating;
@@ -414,29 +435,29 @@ int main(int argc, char** argv) {
         const bool page_changed=previous_page!=model.page;
         if(sensor_changed || page_changed){
             if(calibration.remaining())model.status=sensors.count?re4::InstallerStatus::Ready:re4::InstallerStatus::NoSensor;
-            integrator.reset();calibration.cancel();aim_x=aim_y=0;
+            preview.reset();calibration.cancel();aim_x=aim_y=0;
         }
-        if(model.page!=re4::InstallerPage::Diagnostics)calibration.cancel();
+        const bool gyro_test=model.page==re4::InstallerPage::GyroTest;
+        if(model.page!=re4::InstallerPage::Diagnostics && !gyro_test)calibration.cancel();
         HidSixAxisSensorState samples[16]{};
         const size_t sample_count=sensors.read(samples);
-        re4::AimDelta movement;
+        const auto& preview_settings=model.preview_settings();
+        preview.begin_frame(armGetSystemTick(),preview_settings,gyro_test && sensors.count
+            && !page_changed && !sensor_changed && !calibration.remaining());
         for(size_t i=sample_count;i>0;--i){
             const auto& sample=samples[i-1];
             const float yaw=-sample.angular_velocity.y*tau,pitch=-sample.angular_velocity.x*tau;
             if((sample.attributes&1) && calibration.add(sample.sampling_number,yaw,pitch)){
-                settings.gyro_bias_x=calibration.bias_x();settings.gyro_bias_y=calibration.bias_y();
-                model.status=re4::save_profiled_settings(re4::kSettingsPath,settings)
+                model.calibrated(calibration.bias_x(),calibration.bias_y());
+                if(!gyro_test)model.status=re4::save_profiled_settings(re4::kSettingsPath,settings)
                     ?re4::InstallerStatus::Calibrated:re4::InstallerStatus::Failed;
+                preview.reset();aim_x=aim_y=0;
             }
-            const bool active=model.page==re4::InstallerPage::Diagnostics && !page_changed && !sensor_changed
-                && settings.gyro_enabled && (sample.attributes&1) && !calibration.remaining() && (padGetButtons(&pad)&HidNpadButton_ZL);
-            const auto delta=integrator.update({sample.sampling_number,sample.delta_time,
-                yaw-settings.gyro_bias_x,pitch-settings.gyro_bias_y},active,
-                settings.gyro_speed*settings.gyro_gain_x*(settings.invert_x?-1:1),
-                settings.gyro_speed*settings.gyro_gain_y*(settings.invert_y?-1:1),settings.gyro_deadzone_dps);
-            movement.yaw+=delta.yaw;movement.pitch+=delta.pitch;
+            preview.push({sample.sampling_number,sample.delta_time,yaw,pitch},sample.attributes&1);
         }
-        aim_x+=movement.yaw;aim_y+=movement.pitch;
+        const auto movement=preview.finish_frame();
+        const auto position=re4::clamp_gyro_preview_position({aim_x+movement.yaw,aim_y+movement.pitch});
+        aim_x=position.yaw;aim_y=position.pitch;
         const auto left=padGetStickPos(&pad,0),right=padGetStickPos(&pad,1);
         auto& d=model.diagnostic;
         d.connected=padIsConnected(&pad);d.network=R_SUCCEEDED(sockets);
@@ -460,13 +481,17 @@ int main(int argc, char** argv) {
             (unsigned long)sensors.style,(long)left.x,(long)left.y,(long)right.x,(long)right.y,
             unsigned(sample_count),(unsigned long)sensors.result);
     }
+    // The receiver retains process lifetime: finish must precede SDL/service
+    // teardown. No resident receiver means normal libnx cleanup can continue.
+    if(appletGetAppletType()==AppletType_Application)
+        (void)appletSetFocusHandlingMode(AppletFocusHandlingMode_NoSuspend);
+    game_reload_main_finish();
     sensors.stop();
     updater.close();
     renderer.close();
     if(R_SUCCEEDED(font_service))plExit();
     if(!graphics)consoleExit(nullptr);
     re6::stop_log_server();
-    game_reload_main_finish();
     if(R_SUCCEEDED(sockets))socketExit();
     return 0;
 }

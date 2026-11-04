@@ -1,0 +1,6 @@
+﻿Mode: built-in imagegen edit
+Reference: assets/icon-original.png
+Output: assets/icon-re.png
+
+Prompt:
+Edit this existing application icon. Preserve its square composition, solid black background, bright pure red circular crosshair ring and four crosshair marks exactly in the same positions and visual style. Replace ONLY the red numeral 4 in the center with the uppercase letters RE. The two letters should be large, bold, geometric, slightly angular like the existing 4, centered together within the ring, clearly readable at small Nintendo Switch icon size, solid vivid red like the ring. Keep comfortable black space between RE and the ring. No numeral 4 remaining. No extra words, no subtitle, no gradients, no shadows, no texture, no additional symbols. Deliver the same black and red app icon with RE at center.

@@ -63,6 +63,10 @@ def tests():
     run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
          'tests/sensor_tests.cpp', '-o', OUT / 'sensor_tests.exe'])
     native('sensor_tests.exe')
+    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static',
+         '-Itests/app_exit_stubs', '-Isource/diagnostic', 'tests/app_exit_tests.cpp',
+         '-o', OUT / 'app_exit_tests.exe'])
+    native('app_exit_tests.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/game_stubs', '-Iinclude', 'tests/game_module_tests.cpp',
          'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'game_module_tests.exe'])
@@ -115,7 +119,7 @@ def tests():
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/modern_move_tests.cpp','source/input.cpp','-o',OUT/'modern_move_tests.exe'])
     native('modern_move_tests.exe')
-    for name in ('unified_tests','scope_tests','gyro_frame_tests','reticle_draw_tests','re6_journal_tests'):
+    for name in ('unified_tests','scope_tests','gyro_frame_tests','gyro_preview_tests','reticle_draw_tests','re6_journal_tests'):
         run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
              'tests/'+name+'.cpp','source/input.cpp','-o',OUT/(name+'.exe')])
         native(name+'.exe')
@@ -241,7 +245,7 @@ def diagnostic():
         're6-telemetry.ovl':OUT/'experimental/switch/.overlays/re6-telemetry.ovl',
         're6-controls.ovl':OUT/'experimental/switch/.overlays/re6-controls.ovl'})
     payload=stage_payload(ROOT,payload_files)
-    icon = prepare_app_icon(ROOT / 'assets/icon-original.png', OUT / 'icon.jpg')
+    icon = prepare_app_icon(ROOT / 'assets/icon-re.png', OUT / 'icon.jpg')
     run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp), '--icon=' + str(icon),
          '--romfsdir=' + str(payload)])
     digest = hashlib.sha256(nro.read_bytes()).hexdigest()
@@ -339,7 +343,7 @@ def overlay():
     output.parent.mkdir(parents=True, exist_ok=True)
     nacp = OUT / 're4-controls-overlay.nacp'
     run([sdk_tool('nacptool'), '--create', 'RE4 Controls', 're4-controls', VERSION, nacp])
-    icon = prepare_app_icon(ROOT / 'assets/icon-original.png', OUT / 'icon.jpg')
+    icon = prepare_app_icon(ROOT / 'assets/icon-re.png', OUT / 'icon.jpg')
     run([sdk_tool('elf2nro'), elf, output, '--nacp=' + str(nacp), '--icon=' + str(icon)])
     print('Built EXPERIMENTAL overlay:', output)
 

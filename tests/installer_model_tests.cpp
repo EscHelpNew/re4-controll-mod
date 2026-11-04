@@ -7,11 +7,104 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #undef assert
 #define assert(condition) do { if(!(condition)){std::fprintf(stderr,"installer model line %d: %s\n",__LINE__,#condition);std::exit(1);} } while(false)
 int main(){
     using namespace re4;
     InstallerModel m;
+    // A diagnostic test edits a draft; cancelling must preserve live settings.
+    {
+        InstallerModel test;test.page=InstallerPage::Diagnostics;test.selected=0;
+        test.diagnostic.sensors=1;
+        assert(test.handle(test.x_shortcut())==InstallerAction::ResetPreview);
+        assert(test.handle(test.y_shortcut())==InstallerAction::Calibrate);
+        const auto original=test.settings.gyro_enabled;
+        assert(test.handle(UiEvent::OpenGyroTest)==InstallerAction::None);
+        assert(test.page==InstallerPage::GyroTest && test.item_count()==8);
+        assert(test.handle(UiEvent::Confirm)==InstallerAction::None);
+        assert(test.preview_settings().gyro_enabled!=original && test.settings.gyro_enabled==original);
+        std::array<std::uint8_t,kSettingsBytes> before_reset{},after_reset{};
+        assert(encode_settings(test.preview_settings(),before_reset.data(),before_reset.size()));
+        test.selected=7;assert(test.selected_control()==ControlId::Count);
+        assert(!test.item_label(7).empty() && test.item_value(7)=="A");
+        assert(test.handle(UiEvent::Left)==InstallerAction::None);
+        assert(test.handle(UiEvent::Right)==InstallerAction::None);
+        assert(test.handle(test.y_shortcut())==InstallerAction::ResetPreview);
+        assert(test.handle(test.x_shortcut())==InstallerAction::Calibrate);
+        assert(test.page==InstallerPage::GyroTest && test.selected==7);
+        assert(encode_settings(test.preview_settings(),after_reset.data(),after_reset.size()));
+        assert(before_reset==after_reset && test.settings.gyro_enabled==original);
+        test.handle(UiEvent::Back);
+        assert(test.page==InstallerPage::Diagnostics && test.selected==0 && test.settings.gyro_enabled==original);
+    }
+    // Both entry points share a draft and return to the exact origin on save/cancel.
+    {
+        namespace fs=std::filesystem;
+        const fs::path dir="build/installer-gyro-test";fs::create_directories(dir);
+        const auto path=(dir/"settings.bin").string();
+        InstallerModel test;test.settings.language=Language::Russian;
+        test.settings.turn_gain=.4f;test.settings.left_deadzone=.17f;
+        test.settings.texture_filtering=TextureFilter::Aniso4;
+        assert(save_settings_file(path.c_str(),test.settings));
+        std::ifstream input(path,std::ios::binary);
+        const std::string before{std::istreambuf_iterator<char>(input),{}};input.close();
+        test.page=InstallerPage::ControlGroup;test.control_group=ControlGroup::Gyro;
+        test.selected=control_group_count(ControlGroup::Gyro);
+        const auto origin=test.selected;
+        assert(test.item_count()==8 && test.selected_control()==ControlId::Count);
+        assert(!test.item_label(origin).empty() && std::strlen(test.selected_help())>20);
+        test.handle(UiEvent::Confirm);assert(test.page==InstallerPage::GyroTest && test.item_count()==8);
+        for(unsigned i=0;i<7;++i){
+            test.selected=i;assert(test.selected_control()==control_group_item(ControlGroup::Gyro,i));
+            assert(!test.item_label(i).empty() && !test.item_value(i).empty());
+        }
+        test.selected=0;test.handle(UiEvent::Confirm);
+        test.selected=1;test.handle(UiEvent::Right);
+        assert(std::fabs(test.preview_settings().gyro_speed-.9f)<.000001f && test.settings.gyro_speed==.8f);
+        test.calibrated(.25f,-.5f);
+        assert(test.preview_settings().gyro_bias_x==.25f && test.settings.gyro_bias_x==0);
+        test.handle(UiEvent::NextGame);assert(test.page==InstallerPage::GyroTest && test.game==GameTarget::RE4);
+        test.handle(UiEvent::PreviousGame);assert(test.page==InstallerPage::GyroTest);
+        assert(test.handle(UiEvent::ResetPreview)==InstallerAction::ResetPreview);
+        test.diagnostic.sensors=0;assert(test.handle(test.x_shortcut())==InstallerAction::None);
+        assert(test.status==InstallerStatus::NoSensor);
+        test.diagnostic.sensors=1;assert(test.handle(test.x_shortcut())==InstallerAction::Calibrate);
+        test.selected=7;
+        std::array<std::uint8_t,kSettingsBytes> before_reset{},after_reset{};
+        assert(encode_settings(test.preview_settings(),before_reset.data(),before_reset.size()));
+        assert(test.selected_control()==ControlId::Count && std::strlen(test.selected_help())>20);
+        assert(test.handle(test.y_shortcut())==InstallerAction::ResetPreview);
+        assert(encode_settings(test.preview_settings(),after_reset.data(),after_reset.size()));
+        assert(before_reset==after_reset && test.page==InstallerPage::GyroTest);
+        test.selected=test.item_count()-1;assert(test.selected_control()==ControlId::Count);
+        assert(test.handle(UiEvent::Confirm)==InstallerAction::SaveGyroTest);
+        const auto missing=(dir/"missing"/"settings.bin").string();
+        assert(!test.save_gyro_test(missing.c_str()) && test.page==InstallerPage::GyroTest);
+        assert(test.status==InstallerStatus::Failed && !test.settings.gyro_enabled);
+        assert(test.preview_settings().gyro_enabled);
+        std::ifstream unchanged(path,std::ios::binary);
+        assert(std::string(std::istreambuf_iterator<char>(unchanged),{})==before);unchanged.close();
+        test.calibrated(11,0);assert(!test.save_gyro_test(path.c_str()));
+        test.calibrated(.25f,-.5f);
+        assert(test.save_gyro_test(path.c_str()));
+        assert(test.page==InstallerPage::ControlGroup && test.selected==origin);
+        Settings loaded;assert(load_settings_file(path.c_str(),loaded));
+        assert(loaded.gyro_enabled && loaded.gyro_bias_x==.25f && loaded.gyro_bias_y==-.5f);
+        assert(loaded.turn_gain==.4f && loaded.left_deadzone==.17f && loaded.texture_filtering==TextureFilter::Aniso4);
+        test.handle(UiEvent::Confirm);test.selected=0;test.handle(UiEvent::Confirm);
+        test.calibrated(2,3);test.handle(UiEvent::Back);
+        assert(test.page==InstallerPage::ControlGroup && test.selected==origin);
+        assert(test.settings.gyro_enabled && test.settings.gyro_bias_x==.25f);
+        test.page=InstallerPage::Diagnostics;test.selected=3;test.handle(UiEvent::OpenGyroTest);
+        test.selected=0;test.handle(UiEvent::Confirm);
+        assert(test.handle(UiEvent::Exit)==InstallerAction::Exit);
+        assert(test.page==InstallerPage::Diagnostics && test.selected==3 && test.settings.gyro_enabled);
+        assert(!test.save_gyro_test(path.c_str()));
+        // Known test files only; retain the directory and any unrelated files.
+        for(const auto* suffix:{"",".previous",".incoming",".controls-custom",".controls-custom.previous",".graphics-custom",".graphics-custom.previous"})
+            fs::remove(path+suffix);
+    }
     // L/R game selection must leave nested settings without installing.
     {
         InstallerModel navigation;
@@ -227,9 +320,9 @@ int main(){
             assert(m.selected_control()==ControlId::Count);
         }else{
             assert(m.page==InstallerPage::ControlGroup);
-            assert(m.item_count()==control_group_count(m.control_group));
+            assert(m.item_count()==control_group_count(m.control_group)+(m.control_group==ControlGroup::Gyro?1:0));
             assert(m.selected_control()==control_group_item(m.control_group,0));
-            for(unsigned row=0;row<m.item_count();++row){
+            for(unsigned row=0;row<control_group_count(m.control_group);++row){
                 m.selected=row;
                 assert(m.selected_control()==control_group_item(m.control_group,row));
                 for(auto language:{Language::English,Language::Russian}){
@@ -353,7 +446,7 @@ int main(){
     assert(m.settings.free_camera && m.settings.button_map[0]==255 && m.settings.draw_distance_scale==1);
     assert(m.settings.turn_gain==0.3f && m.settings.gyro_bias_y==0.7f);
     m.selected=unsigned(GraphicsId::Profile);
-    assert(m.handle(UiEvent::Right)==InstallerAction::CustomGraphics);
+    assert(m.handle(UiEvent::Right)==InstallerAction::QualityGraphics);
     m.selected=unsigned(GraphicsId::Reset);
     assert(m.handle(UiEvent::Confirm)==InstallerAction::None);
     m.settings.language=Language::Russian;assert(m.item_label(0)=="Фильтрация текстур");

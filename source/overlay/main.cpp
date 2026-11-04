@@ -21,8 +21,10 @@ void record_connection() {
         std::fprintf(file,"%s\n",link.details.c_str());std::fclose(file);
     }
 }
-void change() {
-    const bool saved=overlay_storage::ready() && re4::save_profiled_settings(overlay_storage::settings_path,settings);
+void change(bool graphics_edited=false) {
+    const bool saved=overlay_storage::ready() && (graphics_edited?
+        re4::save_edited_graphics(overlay_storage::settings_path,settings):
+        re4::save_profiled_settings(overlay_storage::settings_path,settings));
     link.language=settings.language;
     link.apply(settings);
     note=saved?link.message:tr("Could not save settings to SD","Не удалось сохранить настройки на SD");
@@ -32,10 +34,6 @@ void apply_profile(re4::ProfileDomain domain,re4::ProfileKind next){
         re4::ProfileResult::SaveFailed;
     if(result==re4::ProfileResult::Applied){link.language=settings.language;link.apply(settings);}
     note=re4::profile_result_text(result,settings.language);
-}
-void change_profile(re4::ProfileDomain domain){
-    apply_profile(domain,re4::profile_kind(settings,domain)==re4::ProfileKind::Default?
-        re4::ProfileKind::Custom:re4::ProfileKind::Default);
 }
 class DescriptionFrame : public tsl::elm::OverlayFrame {
     const char* description_="Select a setting to see its description.";
@@ -159,10 +157,14 @@ public:
                 if(entry.kind==re4::ControlKind::Action && !(keys&HidNpadButton_A))return false;
                 const bool arrows=keys&(HidNpadButton_Left|HidNpadButton_Right);
                 if(!arrows && !(entry.kind!=re4::ControlKind::Slider && (keys&HidNpadButton_A)))return false;
-                if(id==re4::GraphicsId::Profile){change_profile(re4::ProfileDomain::Graphics);update();return true;}
+                if(id==re4::GraphicsId::Profile){
+                    apply_profile(re4::ProfileDomain::Graphics,re4::next_graphics_profile(
+                        re4::profile_kind(settings,re4::ProfileDomain::Graphics),(keys&HidNpadButton_Left)?-1:1));
+                    update();return true;
+                }
                 const bool changed=id==re4::GraphicsId::Reset?re4::reset_graphics(settings):
                     re4::change_graphics(settings,id,(keys&HidNpadButton_Left)?-1:1);
-                if(changed){note.clear();change();}
+                if(changed){note.clear();change(id!=re4::GraphicsId::Reset);}
                 update();return true;
             });
             list->addItem(item);rows_.push_back(item);
@@ -172,7 +174,7 @@ public:
     }
     void update()override{
         frame_->setTitle(tr("Graphics","Графика"));
-        frame_->setSubtitle(std::string(re4::kVersion)+tr(" - Manual graphics settings"," - Ручные настройки графики"));
+        frame_->setSubtitle(std::string(re4::kVersion)+tr(" - Graphics profiles"," - Профили графики"));
         for(unsigned row=0;row<rows_.size();++row){
             const auto& spec=re4::graphics_specs()[row];
             rows_[row]->setText(spec.label.get(settings.language));
@@ -332,8 +334,8 @@ public:
         graphics_->setValue(re4::profile_name(re4::profile_kind(settings,re4::ProfileDomain::Graphics),settings.language));
         if(getFocusedElement()==language_){frame_->set_help(re4::control_spec(re4::ControlId::Language).help.get(settings.language));return;}
         frame_->set_help(getFocusedElement()==graphics_?tr(
-            "Independent graphics profile and settings.\nFiltering and AA require a game restart.",
-            "Отдельный профиль и настройки графики.\nФильтрация и AA: перезапуск игры."):tr(
+            "Full restart: HOME > X > Close, then start.\nMenu / overlay alone is not enough.",
+            "Полный перезапуск: HOME > X > Закрыть.\nОдного меню / оверлея недостаточно."):tr(
             "Controls: Default, RE6 or your last Custom.\nGraphics have a separate saved profile.\nA: open. B: return.",
             "Управление: исходное, RE6 или своё.\nУ графики отдельный сохранённый профиль.\nA: открыть. B: назад."));
     }

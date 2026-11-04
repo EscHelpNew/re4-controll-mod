@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def build(keys: Path) -> None:
     sys.path.insert(0, str(ROOT))
     from tools.prepare_icon import prepare
+    from tools.version import get_version
     from nton.constants import Directories, Files
     output = (ROOT / 'build/forwarder-stage' / uuid.uuid4().hex).resolve()
     published = (ROOT / 'build/forwarder').resolve()
@@ -35,7 +36,7 @@ def build(keys: Path) -> None:
     if config['title_id'] in ('0000000000000000', '010099A00BC1E000'):
         raise ValueError('Configure the diagnostic application\'s own nonzero title ID')
     icon = output / 'icon.jpg'
-    prepare(ROOT / 'assets/icon-original.png', icon)
+    prepare(ROOT / 'assets/icon-re.png', icon)
     from nton.main import main
     log = ROOT / 'build/forwarder-build.log'
     with log.open('w', encoding='utf-8') as stream:
@@ -43,7 +44,7 @@ def build(keys: Path) -> None:
             main(['build', str(ROOT / 'build/re4-controls.nro'), '--sdmc',
                   '/switch/re4-controls/bridge.nro', '--id', config['title_id'],
                   '--name', config['name'], '--publisher', config['author'],
-                  '--icon', str(icon)], standalone_mode=False)
+                  '--version', get_version(), '--icon', str(icon)], standalone_mode=False)
     packages = list(output.glob('*.nsp'))
     if len(packages) != 1:
         raise RuntimeError('Forwarder build did not produce exactly one NSP; inspect private build log')

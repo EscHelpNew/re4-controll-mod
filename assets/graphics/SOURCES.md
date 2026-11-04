@@ -38,3 +38,25 @@ performed. Menu region outlines are separate UI elements. These pictures show
 illustrative scenes, not before/after results or captures of a selected mod
 setting. Generated arrays are embedded in the build; no network fetch occurs
 at runtime.
+
+## Gyro test background
+
+`gyro-test-background.png` is an **AI-edited derivative** of `re4-source.jpg`,
+adapted for a static controller test on 2026-11-04 with OpenAI ImageGen. The
+requested edit removes the baked laser line and dot so the application can draw
+its own moving marker. It is not an unchanged official screenshot or a gameplay
+capture made with the mod. ImageGen also resampled the frame; other scene details
+may differ from the source. The source JPEG above remains unchanged.
+
+The output PNG is RGB, 1672 x 941, SHA-256
+`bb548643949ea97a0570ef2619f9036d16a97d4f90ce106a5e3630369527c127`.
+`gyro-test-background.json` records the source identity, derived-image hash,
+dimensions and edit attribution; `gyro-test-background.prompt.txt` preserves the
+exact edit request. CAPCOM's copyright still applies to the derivative; the
+software license does not apply to this game imagery.
+
+The same generator checks the derived source size (at most 4 MiB), hash and
+dimensions, fits the complete frame to 1280 x 720, and converts it to RGB565 in a
+separate generated header used only by the installer renderer. It does not change
+the official 320 x 180 graphics thumbnails. The gyro test moves only the
+application marker: the scene, weapon, camera and HUD remain a static image.

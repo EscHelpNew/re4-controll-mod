@@ -299,6 +299,72 @@ void re6_recipe_and_custom_restore() {
     CHECK(!load_custom_profile(builtin_file.c_str(), ProfileDomain::Controls, restarted));
     CHECK(encoded_equal(restarted, before));
 }
+void quality_graphics_and_custom_restore() {
+    // Quality has its own identity; Controls' existing RE6 value remains reserved.
+    const auto quality = static_cast<ProfileKind>(4);
+    const auto file = path("quality.bin");
+    auto active = custom();
+    CHECK(save_profiled_settings(file.c_str(), active));
+    const auto graphics = bytes(file + ".graphics-custom");
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Graphics, quality) == ProfileResult::Applied);
+    CHECK(active.texture_filtering == TextureFilter::Aniso16);
+    CHECK(active.anti_aliasing == AntiAliasing::HandheldSsaa);
+    CHECK(active.draw_distance_scale == 1.75f && active.shadow_mode == ShadowMode::Native);
+    CHECK(active.turn_gain == 0.43f && active.language == Language::Russian);
+    CHECK(active.gyro_bias_x == 1.2f && active.calibration_request == 17);
+    CHECK(profile_kind(active, ProfileDomain::Graphics) == quality);
+    CHECK(bytes(file + ".graphics-custom") == graphics);
+    Settings saved_controls;
+    CHECK(load_custom_profile(file.c_str(), ProfileDomain::Controls, saved_controls));
+    CHECK(saved_controls.turn_gain == 0.43f && saved_controls.camera_gain == 0.72f);
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Graphics, quality) == ProfileResult::Unchanged);
+    Settings restarted;
+    CHECK(load_settings_file(file.c_str(), restarted));
+    CHECK(profile_kind(restarted, ProfileDomain::Graphics) == quality);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Graphics, ProfileKind::Default) == ProfileResult::Applied);
+    CHECK(restarted.texture_filtering == TextureFilter::Native && restarted.anti_aliasing == AntiAliasing::Native);
+    CHECK(restarted.shadow_mode == ShadowMode::Native && restarted.draw_distance_scale == 1);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Graphics, ProfileKind::Custom) == ProfileResult::Applied);
+    CHECK(restarted.texture_filtering == TextureFilter::Aniso4 && restarted.draw_distance_scale == 1.5f);
+    CHECK(switch_profile(file.c_str(), restarted, ProfileDomain::Controls, quality) == ProfileResult::SaveFailed);
+    CHECK(bytes(file + ".graphics-custom") == graphics);
+
+    // A pre-upgrade Custom sidecar may already contain the new Quality recipe.
+    Settings old_custom;
+    old_custom.texture_filtering = TextureFilter::Aniso16;
+    old_custom.anti_aliasing = AntiAliasing::HandheldSsaa;
+    old_custom.draw_distance_scale = 1.75f;
+    const auto legacy = path("quality-legacy.bin");
+    CHECK(save_settings_file((legacy + ".graphics-custom").c_str(), old_custom));
+    Settings restored;
+    CHECK(load_custom_profile(legacy.c_str(), ProfileDomain::Graphics, restored));
+    CHECK(restored.texture_filtering == TextureFilter::Aniso16 && restored.anti_aliasing == AntiAliasing::HandheldSsaa);
+    CHECK(restored.draw_distance_scale == 1.75f);
+    const auto before = bytes(legacy + ".graphics-custom");
+    CHECK(save_settings_file(legacy.c_str(), old_custom));
+    CHECK(switch_profile(legacy.c_str(), old_custom, ProfileDomain::Graphics, ProfileKind::Default) == ProfileResult::Applied);
+    CHECK(bytes(legacy + ".graphics-custom") == before);
+    CHECK(switch_profile(legacy.c_str(), old_custom, ProfileDomain::Graphics, ProfileKind::Custom) == ProfileResult::Applied);
+    CHECK(old_custom.texture_filtering == TextureFilter::Aniso16 && old_custom.draw_distance_scale == 1.75f);
+
+    // Manual edits matching either built-in remain a usable Custom snapshot.
+    CHECK(save_edited_graphics(file.c_str(), Settings{}));
+    CHECK(switch_profile(file.c_str(), active, ProfileDomain::Graphics, ProfileKind::Quality) == ProfileResult::Unchanged);
+    Settings manual_default = quality_graphics_profile();
+    CHECK(switch_profile(file.c_str(), manual_default, ProfileDomain::Graphics, ProfileKind::Custom) == ProfileResult::Applied);
+    CHECK(manual_default.texture_filtering == TextureFilter::Native && manual_default.anti_aliasing == AntiAliasing::Native);
+    CHECK(manual_default.draw_distance_scale == 1 && manual_default.shadow_mode == ShadowMode::Native);
+    CHECK(save_edited_graphics(file.c_str(), quality_graphics_profile()));
+    CHECK(switch_profile(file.c_str(), manual_default, ProfileDomain::Graphics, ProfileKind::Custom) == ProfileResult::Applied);
+    CHECK(manual_default.texture_filtering == TextureFilter::Aniso16 && manual_default.draw_distance_scale == 1.75f);
+    CHECK(!save_edited_graphics(nullptr, manual_default) && !save_edited_graphics("", manual_default));
+    const auto saved = bytes(file);
+    const auto saved_custom = bytes(file + ".graphics-custom");
+    fs::create_directory(file + ".graphics-custom.incoming");
+    CHECK(!save_edited_graphics(file.c_str(), Settings{}));
+    CHECK(bytes(file) == saved && bytes(file + ".graphics-custom") == saved_custom);
+    fs::remove(file + ".graphics-custom.incoming");
+}
 }
 int main() {
     fs::remove_all(root); fs::create_directories(root);
@@ -306,6 +372,7 @@ int main() {
     invalid_custom_is_unchanged(); recovery(); failed_snapshot_preserves_active();
     builtin_saves_preserve_existing_custom(); native_default_and_legacy_migration();
     re6_recipe_and_custom_restore();
+    quality_graphics_and_custom_restore();
     fs::remove_all(root);
     if (failures) { std::fprintf(stderr, "%d profile checks failed\n", failures); return 1; }
     std::puts("profiles: independent domains, canonical identity, migration, recovery and failed writes PASS");

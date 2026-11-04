@@ -154,10 +154,12 @@ class ForwarderTests(unittest.TestCase):
             with TemporaryDirectory(prefix='re4 forwarder test ') as temp:
                 root=tool.ROOT=Path(temp)
                 (root/'assets').mkdir();(root/'build/forwarder').mkdir(parents=True)
+                (root/'include/re4').mkdir(parents=True)
+                (root/'include/re4/version.hpp').write_text('namespace re4 { inline constexpr const char* kVersion="2.3.4"; }\n')
                 # Match the same canonical root through another path spelling;
                 # Windows CI similarly expands RUNNER~1 into runneradmin.
                 tool.ROOT=root/'assets'/'..'
-                (root/'assets/icon-original.png').write_bytes((ROOT/'assets/icon-original.png').read_bytes())
+                (root/'assets/icon-re.png').write_bytes((ROOT/'assets/icon-re.png').read_bytes())
                 (root/'build/forwarder/old.nsp').write_bytes(b'previous-launcher')
                 (root/'build/re4-controls.nro').write_bytes(b'own-nro')
                 (root/'test.keys').write_bytes(b'FAKE_TEST_DATA')
@@ -169,10 +171,13 @@ class ForwarderTests(unittest.TestCase):
                 def build(args,standalone_mode):
                     self.assertFalse(standalone_mode)
                     self.assertIn('/switch/re4-controls/bridge.nro',args)
+                    self.assertIn('--version',args)
+                    self.assertEqual(args[args.index('--version')+1],'2.3.4')
                     if fail: raise RuntimeError('simulated builder failure')
                     (constants.Directories.output/'new-own.nsp').write_bytes(b'new-launcher')
                 main.main=build
                 with patch.dict(sys.modules,{'nton.constants':constants,'nton.main':main}), \
+                        patch('tools.version.ROOT',root), \
                         patch.object(sys,'path',list(sys.path)),redirect_stdout(StringIO()):
                     if fail:
                         with self.assertRaises(RuntimeError):tool.build(root/'test.keys')

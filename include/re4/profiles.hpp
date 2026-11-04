@@ -3,16 +3,20 @@
 
 namespace re4 {
 enum class ProfileDomain { Controls, Graphics };
-enum class ProfileKind { Default = 0, Custom = 1, RE6 = 3 };
+enum class ProfileKind { Default = 0, Custom = 1, RE6 = 3, Quality = 4 };
 enum class ProfileResult { Applied, Unchanged, MissingCustom, SaveFailed };
 
 Settings default_controls_profile();
 ProfileKind next_control_profile(ProfileKind current, int direction);
+ProfileKind next_graphics_profile(ProfileKind current, int direction);
 Settings re6_profile();
+Settings quality_graphics_profile();
 void copy_profile(Settings& destination, const Settings& source, ProfileDomain domain);
 bool same_profile(const Settings& first, const Settings& second, ProfileDomain domain);
 ProfileKind profile_kind(const Settings& settings, ProfileDomain domain);
 bool save_profiled_settings(const char* path, const Settings& settings);
+// A manual graphics edit retains Custom even when values match a built-in.
+bool save_edited_graphics(const char* path, const Settings& settings);
 bool load_custom_profile(const char* path, ProfileDomain domain, Settings& out);
 ProfileResult switch_profile(const char* path, Settings& active, ProfileDomain domain, ProfileKind kind);
 }

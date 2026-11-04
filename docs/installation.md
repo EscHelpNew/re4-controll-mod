@@ -12,11 +12,15 @@ The executable profile is checked before hooks are enabled.
 
 ## Install the standalone NRO
 
-The local0.6.0 build also has **Graphics** settings. Defaults match the game.
-Filtering and handheld900p SSAA require restarting RE4; SSAA leaves docked
-rendering native. Object distance scales loaded geometry culling only, and the
-shadow switch controls rendered shadows. Graphics still needs visual/FPS checks
-on hardware. Update module and overlay together with **Install / update mod**.
+Release **0.17.2** includes independent RE4 **Default / Custom / Quality**
+graphics presets. Default restores native graphics; Quality selects AF16x,
+handheld 900p-to-720p SSAA, object distance 1.75x and native shadows. Docked
+rendering remains native. Custom preserves your last manual graphics choices.
+Object distance changes loaded geometry culling only. To apply graphics fully,
+close RE4 through **HOME → X → Close** and relaunch it; returning to the game
+menu or reopening the overlay is insufficient. Quality image quality and
+performance still require hardware checks. Update module and overlay together
+with **Install / update mod**.
 
 1. Copy `re4-controls.nro` from the release to
    `sdmc:/switch/re4-controls/re4-controls.nro`.
@@ -64,9 +68,21 @@ Settings are saved on SD and apply without restarting the game:
 - **Gyro deadzone** is measured in degrees/second; default0.50. Two readings
   separated by10ms of sensor time are averaged. Both gyro inversions default to on.
 
-The standalone **Controller diagnostics** page shows raw sticks and motion.
-Hold ZL for the aiming preview. Y calibrates a stationary controller and saves
-the bias; X resets the preview. Each setting has a focused description.
+The standalone **Controller diagnostics** page shows all four stick axes and raw
+motion. Numeric left/right deadzones and muted red hatching mark each axis's zero
+interval (axial deadzones). Press **ZL** once to open **Gyro test**; it is also under
+**Control settings → Gyro → Debug mode** in the app. No hold is required.
+The transparent list edits gyro enabled, speed, deadzone (degrees/second), X/Y
+gains and X/Y inversions. The eight rows are these seven settings and **Save and
+apply**. In Gyro test, **X** calibrates a stationary controller. **Y** returns the
+live dot to its default position (810, 350), zeroes preview angles and clears
+pending motion, keeping all settings unchanged.
+Changes, including calibration, preview immediately without writing
+the settings file. Choose **Save and apply** to validate and save, then return to
+the entry page and selection; **B** cancels. Save failure keeps the mode open and
+active settings unchanged. The fixed Leon background and dot projection are an
+illustration; the filter and angular integration use the game's gyro path.
+Outside Gyro test, diagnostics retains **Y** for calibration and **X** for preview reset.
 
 ## Update over Wi-Fi
 
@@ -76,8 +92,34 @@ and embedded version before replacing both app images. Previous images are kept,
 and failed publication attempts restore the old files when possible.
 
 Reopen RE4 Controls after installation. With RE4 closed, choose **Install / update
-mod** to install the new bundled game module and overlay. A private repository or
-missing release returns an unavailable message; users should never enter a token.
+mod** to install the new bundled game module and overlay. For RE6, close RE6 and
+choose **Install RE6 module** on its page. Updating the app alone does not update
+installed modules or overlays. A private repository or missing release returns
+an unavailable message; users should never enter a token.
+
+## Manual update, including the same version
+
+1. Close RE4 Controls and both RE4 and RE6 completely before replacing files.
+   Close suspended games through **HOME → X → Close**.
+2. Download `re4-controls.nro` and `re4-controls-sd.zip` from the **same release**.
+   Copy the downloaded NRO and the two NROs inside the ZIP to these paths,
+   replacing all three even when their displayed version is unchanged:
+
+   ```text
+   re4-controls.nro → sdmc:/switch/re4-controls/re4-controls.nro
+   ZIP: switch/re4-controls/bridge.nro → sdmc:/switch/re4-controls/bridge.nro
+   ZIP: switch/re4-controls/game.nro → sdmc:/switch/re4-controls/game.nro
+   ```
+
+3. Reopen RE4 Controls in application mode; it prepares its own HOME shortcut.
+   With the games still closed, choose **RE4 → Install / update mod** and, if
+   installed, **RE6 → Install RE6 module** to replace the modules and overlays.
+4. Launch the game again and connect its overlay to the game.
+
+Replacing only `re4-controls.nro` can leave the HOME shortcut loading an older
+`bridge.nro` or `game.nro`, particularly for same-version replacements. Keep all
+three app images together. Saved settings and calibration are preserved; do not
+delete the settings files or reset settings to update.
 
 ## Remove the mod
 
@@ -97,8 +139,19 @@ The own HOME application can be removed separately from System Settings.
 мёртвые зоны стиков —0.05; максимальная скорость стиков —1.00.
 
 Обновление: «Обновления → Проверить обновления → Скачать / установить», затем
-откройте приложение заново и обновите мод при закрытой игре. Ключи и токены
-пользователю не нужны. Отключение мода: «Отключить мод» при закрытой RE4.
+откройте приложение заново и обновите мод при закрытой игре. Для RE6 выберите
+«Установить модуль RE6» на её странице. Само обновление приложения не заменяет
+установленные игровые модули и оверлеи.
+
+При ручной замене, даже на ту же версию, полностью закройте приложение и обе
+игры. Из одного релиза скопируйте `re4-controls.nro` и файлы `bridge.nro` /
+`game.nro` из SD ZIP в `sdmc:/switch/re4-controls/`, заменив все три. Снова
+откройте приложение и обновите модули RE4/RE6 при закрытых играх. Настройки и
+калибровка сохраняются. Для полного применения графики RE4 требуется
+**HOME → X → Закрыть** и новый запуск игры.
+
+Ключи и токены пользователю не нужны. Отключение мода: «Отключить мод» при
+закрытой RE4.
 
 The package is experimental. Special weapons and every scripted/QTE state have
 not been exhaustively checked. Developer build/reload instructions and dependency

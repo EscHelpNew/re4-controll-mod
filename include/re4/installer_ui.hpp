@@ -7,10 +7,10 @@
 #include <string>
 
 namespace re4 {
-enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup };
-enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview,PreviousGame,NextGame };
+enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup, GyroTest };
+enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview,PreviousGame,NextGame,OpenGyroTest };
 enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate,
-    DefaultControls,CustomControls,DefaultGraphics,CustomGraphics,RE6Controls,SaveRe6Graphics };
+    DefaultControls,CustomControls,DefaultGraphics,CustomGraphics,RE6Controls,SaveRe6Graphics,QualityGraphics,SaveGyroTest };
 enum class InstallerStatus { Ready,Saved,Installed,OverlayInstalled,Disabled,GameRunning,Conflict,Failed,Calibrating,Calibrated,NoSensor };
 struct DiagnosticSnapshot {
     bool connected=false,network=false;
@@ -26,6 +26,11 @@ class InstallerModel {
         std::string detail;
     };
     GameHomeState game_home_[2];
+    Settings gyro_test_draft_;
+    InstallerPage gyro_test_origin_=InstallerPage::Diagnostics;
+    unsigned gyro_test_origin_selected_=0;
+    void open_gyro_test();
+    void close_gyro_test();
 public:
     GameTarget game=GameTarget::RE4;
     Settings settings=default_controls_profile();
@@ -42,6 +47,8 @@ public:
     std::string profile_note;
     unsigned item_count()const;
     ControlId selected_control()const;
+    UiEvent x_shortcut()const;
+    UiEvent y_shortcut()const;
     InstallerAction handle(UiEvent);
     const char* status_text()const;
     const char* page_title()const;
@@ -51,6 +58,10 @@ public:
     void installation_result(const char* result);
     bool allow_installation(bool process_identified,bool re4_running);
     bool save_re6_graphics(const char* path=re6::kSettingsPath);
+    const Settings& preview_settings()const;
+    bool save_gyro_test(const char* path=kSettingsPath);
+    // Calibration changes the draft while testing; the caller saves ordinary diagnostics.
+    void calibrated(float bias_x,float bias_y);
 };
 
 class InstallerRenderer {

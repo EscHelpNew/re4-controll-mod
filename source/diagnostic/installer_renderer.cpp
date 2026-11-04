@@ -7,6 +7,8 @@
 #include "re4/version.hpp"
 #include "re4/input.hpp"
 #include "re4/graphics_preview_image.hpp"
+#include "re4/gyro_test_background.hpp"
+#include "re4/gyro_preview.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -45,6 +47,7 @@ struct InstallerRenderer::Impl {
     SDL_Texture* logo=nullptr;
     SDL_Texture* re6_logo=nullptr;
     SDL_Texture* graphics_images[2]{};
+    SDL_Texture* gyro_image=nullptr;
     stbtt_fontinfo font{};
     std::map<std::uint64_t,Glyph> glyphs;
     std::vector<std::uint32_t> preview;
@@ -56,6 +59,73 @@ struct InstallerRenderer::Impl {
     }
     void border(SDL_Rect rect,SDL_Color c){
         SDL_SetRenderDrawColor(renderer,c.r,c.g,c.b,c.a);SDL_RenderDrawRect(renderer,&rect);
+    }
+    void deadzone_band(int y,float deadzone){
+        if(!std::isfinite(deadzone))return;
+        const int half=int(std::lround(214.f*std::clamp(deadzone,0.f,0.95f)));
+        if(!half)return;
+        const SDL_Rect area{350-half,y,2*half+1,9};
+        fill(area,{52,26,22,255});
+        SDL_RenderSetClipRect(renderer,&area);
+        SDL_SetRenderDrawColor(renderer,94,43,34,255);
+        for(int x=area.x-8;x<area.x+area.w;x+=6)
+            SDL_RenderDrawLine(renderer,x,y+8,x+8,y);
+        SDL_RenderSetClipRect(renderer,nullptr);
+    }
+    void circle(int x,int y,int radius,SDL_Color color){
+        SDL_SetRenderDrawColor(renderer,color.r,color.g,color.b,color.a);
+        for(int row=-radius;row<=radius;++row){
+            const int span=int(std::sqrt(float(radius*radius-row*row)));
+            SDL_RenderDrawLine(renderer,x-span,y+row,x+span,y+row);
+        }
+    }
+    void gyro_test(const InstallerModel& m){
+        if(!gyro_image){
+            auto* surface=SDL_CreateRGBSurfaceWithFormatFrom(const_cast<std::uint16_t*>(gyro_background::pixels),
+                gyro_background::kWidth,gyro_background::kHeight,16,gyro_background::kWidth*2,SDL_PIXELFORMAT_RGB565);
+            if(surface){gyro_image=SDL_CreateTextureFromSurface(renderer,surface);SDL_FreeSurface(surface);}
+        }
+        if(gyro_image)SDL_RenderCopy(renderer,gyro_image,nullptr,nullptr);
+        else text(tr(m,"Static frame unavailable","Статичный кадр недоступен"),420,250,24,cream);
+        fill({20,20,350,526},{10,12,9,166});border({20,20,350,526},{146,143,121,100});
+        fill({20,552,350,152},{10,12,9,184});
+        text(tr(m,"GYRO TEST","ТЕСТ ГИРОСКОПА"),36,34,27,cream,318);
+        text(tr(m,"Static game frame","Статичный игровой кадр"),390,24,18,cream,750);
+        for(unsigned row=0;row<m.item_count();++row){
+            const int y=row<7?82+int(row)*52:456;
+            if(row==m.selected){fill({28,y,334,row<7?49:42},{77,31,25,180});fill({28,y,3,row<7?49:42},red);}
+            if(row==7)text(m.item_label(row),39,y+10,21,cream,312);
+            else{
+                text(m.item_label(row),39,y+6,18,row==m.selected?cream:muted,218,true,2);
+                const auto value=m.item_value(row);
+                text(value,351-int(measure(value,18)),y+18,18,cream,90);
+            }
+        }
+        text(m.selected_help(),36,509,14,cream,318,true,2);
+        char out[256];
+        text(tr(m,"RAW GYRO (rot/s)","ГИРОСКОП RAW (об/с)"),36,560,15,muted,318);
+        std::snprintf(out,sizeof(out),"%+.3f  %+.3f  %+.3f",m.diagnostic.gyro_rate[0],m.diagnostic.gyro_rate[1],m.diagnostic.gyro_rate[2]);
+        text(out,36,582,19,cream,318);
+        std::snprintf(out,sizeof(out),"PREVIEW  X %+.3f  Y %+.3f rad",m.diagnostic.gyro_preview[0],m.diagnostic.gyro_preview[1]);
+        text(out,36,614,15,cream,318);
+        std::snprintf(out,sizeof(out),"%s  %u  |  %s %u",tr(m,"SENSORS","ДАТЧИКИ"),m.diagnostic.sensors,
+                      tr(m,"SAMPLES","ЗАМЕРЫ"),m.diagnostic.samples);
+        text(out,36,641,13,muted,318);
+        text(!m.diagnostic.connected||!m.diagnostic.sensors?
+             tr(m,"No gyro sensor","Нет датчика гироскопа"):m.status_text(),36,663,15,cream,318);
+        if(m.diagnostic.calibration_remaining){
+            const unsigned left=std::min(200u,m.diagnostic.calibration_remaining);
+            fill({36,691,318,4},{35,38,29,255});fill({36,691,int(318*(200-left)/200),4},red);
+        }
+        text(tr(m,"UP/DOWN: select    LEFT/RIGHT: change    A: confirm",
+                  "Вверх/вниз: выбор    Влево/вправо: изменить    A: подтвердить"),390,662,17,cream,850);
+        text(tr(m,"X: calibrate    Y: center    B: cancel",
+                  "X: калибровать    Y: по центру    B: отменить"),390,688,17,cream,850);
+        const auto position=clamp_gyro_preview_position({m.diagnostic.gyro_preview[0],m.diagnostic.gyro_preview[1]});
+        const int x=int(std::lround(gyro_preview::origin_x-position.yaw*gyro_preview::pixels_per_radian));
+        const int y=int(std::lround(gyro_preview::origin_y-position.pitch*gyro_preview::pixels_per_radian));
+        circle(x,y,9,{12,14,11,255});circle(x,y,8,{236,225,192,255});
+        circle(x,y,6,{12,14,11,255});circle(x,y,4,{240,56,40,255});
     }
     void graphics_picture(const InstallerModel& m){
         const unsigned index=m.game==GameTarget::RE6?1:0;
@@ -169,11 +239,15 @@ struct InstallerRenderer::Impl {
         text(tr(m,"LIVE INPUT","ПОКАЗАНИЯ КОНТРОЛЛЕРА"),76,184,17,muted);
         text(m.diagnostic.connected?tr(m,"CONTROLLER CONNECTED","КОНТРОЛЛЕР ПОДКЛЮЧЁН")
                                      :tr(m,"NO CONTROLLER","КОНТРОЛЛЕР НЕ ПОДКЛЮЧЁН"),76,223,22,cream);
+        std::snprintf(out,sizeof(out),"%s %.2f   |   %s %.2f",tr(m,"LEFT DEADZONE","МЁРТВАЯ ЗОНА ЛЕВОГО"),m.settings.left_deadzone,
+                      tr(m,"RIGHT DEADZONE","ПРАВОГО"),m.settings.right_deadzone);
+        text(out,78,253,13,muted,690);
         for(unsigned i=0;i<4;++i){
             const int y=273+int(i)*49;
             static const char* axes[]={"LX","LY","RX","RY"};
             text(axes[i],78,y,20,muted);
             fill({136,y+8,428,9},{11,13,10,255});
+            deadzone_band(y+8,i<2?m.settings.left_deadzone:m.settings.right_deadzone);
             const float value=std::clamp(m.diagnostic.raw[i],-1.f,1.f);
             const int mid=350,delta=int(value*214);
             fill({value<0?mid+delta:mid,y+8,std::abs(delta),9},cream);
@@ -244,6 +318,11 @@ void InstallerRenderer::draw(const InstallerModel& m){
     const bool re6=m.game==GameTarget::RE6;
     const auto accent=re6?purple:red;
     SDL_SetRenderDrawColor(p.renderer,10,12,9,255);SDL_RenderClear(p.renderer);
+    if(m.page==InstallerPage::GyroTest){
+        p.gyro_test(m);
+        if(p.hidden)SDL_RenderReadPixels(p.renderer,nullptr,SDL_PIXELFORMAT_RGBA32,p.preview.data(),width*4);
+        SDL_RenderPresent(p.renderer);return;
+    }
     if(p.background)SDL_RenderCopy(p.renderer,p.background,nullptr,nullptr);
     auto* logo=re6?p.re6_logo:p.logo;
     if(logo){const SDL_Rect dest{42,23,128,128};SDL_RenderCopy(p.renderer,logo,nullptr,&dest);}
@@ -337,6 +416,7 @@ void InstallerRenderer::close(){
     if(impl_->logo)SDL_DestroyTexture(impl_->logo);
     if(impl_->re6_logo)SDL_DestroyTexture(impl_->re6_logo);
     for(auto* texture:impl_->graphics_images)if(texture)SDL_DestroyTexture(texture);
+    if(impl_->gyro_image)SDL_DestroyTexture(impl_->gyro_image);
     if(impl_->background)SDL_DestroyTexture(impl_->background);
     if(impl_->renderer)SDL_DestroyRenderer(impl_->renderer);
     if(impl_->window)SDL_DestroyWindow(impl_->window);

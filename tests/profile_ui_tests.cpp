@@ -86,6 +86,40 @@ int main(){
         tsl::goBack();
     }
     delete root;
+    settings=default_controls_profile();note.clear();files.clear();sends=0;
+    GraphicsGui graphics;
+    auto* graphics_root=static_cast<tsl::elm::OverlayFrame*>(graphics.createUI());
+    auto* graphics_profile=row(graphics_root,"Graphics profile");
+    assert(graphics_profile->value=="Default");
+    assert(graphics_profile->click(HidNpadButton_Right));
+    assert(graphics_profile->value=="Quality" && settings.texture_filtering==TextureFilter::Aniso16);
+    assert(settings.anti_aliasing==AntiAliasing::HandheldSsaa && settings.draw_distance_scale==1.75f);
+    assert(settings.shadow_mode==ShadowMode::Native && !settings.analog_enabled && !settings.gyro_enabled);
+    assert(!files.count(std::string(overlay_storage::settings_path)+".graphics-custom"));
+    assert(graphics_profile->click(HidNpadButton_Left) && graphics_profile->value=="Default");
+    const auto old_sends=sends;
+    assert(graphics_profile->click(HidNpadButton_Left));
+    assert(graphics_profile->value=="Default" && sends==old_sends && note.find("empty")!=std::string::npos);
+    settings.draw_distance_scale=1.5f;settings.language=Language::Russian;
+    assert(save_profiled_settings(overlay_storage::settings_path,settings));graphics.update();
+    assert(graphics_profile->value=="Пользовательский");
+    assert(graphics_profile->click(HidNpadButton_Left) && graphics_profile->value=="Качество");
+    assert(graphics_profile->click(HidNpadButton_Right) && graphics_profile->value=="Пользовательский");
+    assert(settings.draw_distance_scale==1.5f && settings.texture_filtering==TextureFilter::Native);
+    writable=false;const auto unsent=sends;
+    assert(graphics_profile->click(HidNpadButton_Right));
+    assert(graphics_profile->value=="Пользовательский" && sends==unsent && settings.draw_distance_scale==1.5f);
+    writable=true;
+    // Editing the final field to match Quality must still save the last edit as Custom.
+    settings=quality_graphics_profile();settings.texture_filtering=TextureFilter::Aniso8;
+    graphics.update();
+    assert(row(graphics_root,"Texture filtering")->click(HidNpadButton_Right));
+    assert(settings.texture_filtering==TextureFilter::Aniso16);
+    assert(graphics_profile->click(HidNpadButton_Left)); // Quality -> Default.
+    assert(graphics_profile->click(HidNpadButton_Left)); // Restore that last edited Custom.
+    assert(settings.texture_filtering==TextureFilter::Aniso16 && settings.anti_aliasing==AntiAliasing::HandheldSsaa);
+    assert(settings.draw_distance_scale==1.75f);
+    delete graphics_root;
     InstallerModel model;model.page=InstallerPage::Controls;
     assert(model.item_count()==8 && model.item_value(0)=="Default" && model.selected_control()==ControlId::Profile);
     assert(model.handle(UiEvent::Confirm)==InstallerAction::RE6Controls);
@@ -105,8 +139,14 @@ int main(){
     assert(std::string(model.selected_help())==model.profile_note);
     model.handle(UiEvent::Down);assert(model.profile_note.empty());
     model.page=InstallerPage::Graphics;model.selected=unsigned(GraphicsId::Profile);
-    assert(model.handle(UiEvent::Right)==InstallerAction::CustomGraphics);
+    assert(model.handle(UiEvent::Right)==InstallerAction::QualityGraphics);
     model.settings.shadow_mode=ShadowMode::Off;
     assert(model.handle(UiEvent::Confirm)==InstallerAction::DefaultGraphics);
+    model.settings=quality_graphics_profile();
+    assert(model.item_value(unsigned(GraphicsId::Profile))=="Quality");
+    assert(model.handle(UiEvent::Right)==InstallerAction::CustomGraphics);
+    assert(model.handle(UiEvent::Left)==InstallerAction::DefaultGraphics);
+    model.settings={};
+    assert(model.handle(UiEvent::Right)==InstallerAction::QualityGraphics);
     std::puts("profile UI: three inline profiles, missing Custom, save failures, bilingual navigation and domain scope PASS");
 }

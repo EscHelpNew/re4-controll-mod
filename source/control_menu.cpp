@@ -216,8 +216,8 @@ const std::array<GraphicsSpec,unsigned(GraphicsId::Count)>& graphics_specs(){
             {"Rendered shadows: Native or Off.\nCast, self and foot shadows.\nBaked texture lighting stays unchanged.",
              "Отрисовываемые тени: штатные/выкл.\nТени сцены, самотени и тени под ногами.\nОсвещение в текстурах сохраняется."}},
         {GraphicsId::Profile,ControlKind::Selector,{"Graphics profile","Профиль графики"},
-            {"Default or your last Custom graphics.\nEditing graphics saves Custom automatically.\nControls and calibration are preserved.\nFiltering and AA: restart the game.",
-             "По умолчанию / пользовательский.\nИзменения сохраняются в пользовательский.\nУправление и калибровка сохраняются.\nФильтрация и AA: перезапуск игры."}},
+            {"Default / Quality / last Custom graphics.\nQuality: AF16x, SSAA, objects 1.75x.\nFull restart: HOME > X > Close, then start.\nMenu / overlay alone is not enough.",
+             "По умолчанию / Качество / Пользовательский.\nКачество: AF16x, SSAA, объекты 1.75x.\nПолный перезапуск: HOME > X > Закрыть.\nОдного меню / оверлея недостаточно."}},
         {GraphicsId::Reset,ControlKind::Action,{"Reset graphics","Сбросить графику"},
             {"A: restore native graphics only.\nFiltering, AA, shadows: Native.\nObject distance: 1.00x.\nControls and mappings are preserved.",
              "A: вернуть только штатную графику.\nФильтрация, сглаживание, тени: штатные.\nДальность объектов: 1.00x.\nУправление и назначения сохраняются."}}
@@ -273,6 +273,7 @@ const char* control_help_text(const ControlSpec& item,const Settings& settings){
 }
 const char* profile_name(ProfileKind kind,Language language){
     if(kind==ProfileKind::RE6)return "RE6";
+    if(kind==ProfileKind::Quality)return Bilingual{"Quality","Качество"}.get(language);
     return (kind==ProfileKind::Default?Bilingual{"Default","По умолчанию"}:
         Bilingual{"Custom","Пользовательский"}).get(language);
 }

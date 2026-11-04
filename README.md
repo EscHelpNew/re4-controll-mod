@@ -1,6 +1,6 @@
 # RE4 Controls for Nintendo Switch
 
-<img src="assets/icon-original.png" width="128" alt="RE4 Controls">
+<img src="assets/icon-re.png" width="128" alt="RE4 Controls">
 
 Smooth stick controls and motion aiming for the original Nintendo Switch release
 of **Resident Evil 4**. Includes an English/Russian overlay, a standalone installer
@@ -9,8 +9,12 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current version is **0.16.1**. The user confirmed this build working on their
-Switch after deployment. RE4 AF16x was also confirmed after a full game restart.
+The current release version is **[0.17.2](docs/releases/v0.17.2.md)** (2026-11-04).
+Final host tests and the ARM64 build for 0.17.2 passed. Physical validation of
+the preview direction and broader hardware acceptance remain pending.
+The user confirmed basic HOME exit in local 0.17.1. That check and the earlier
+0.16.1/AF16x confirmation do not validate the new gyro preview direction, presets
+or Quality image quality/performance.
 
 ## Features
 
@@ -39,8 +43,9 @@ Switch after deployment. RE4 AF16x was also confirmed after a full game restart.
 - Adjustable camera return speed and a continuous 360-degree free camera.
 - A Graphics menu with Native defaults: bilinear/trilinear/AF2x-16x filtering,
   handheld900p SSAA, loaded-object culling distance and rendered shadows.
-- Default/RE6/Custom controls profiles and independent Default/Custom graphics profiles. Editing a setting
-  saves Custom; selecting Default keeps your last Custom for later restoration.
+- Default/RE6/Custom controls profiles and independent RE4 Default/Custom/Quality
+  graphics presets. Manual graphics edits save Custom; selecting Default or Quality
+  keeps your last Custom for later restoration.
 - Optional first-person view, preserving native scopes and scripted cameras.
 - Optional dot/crosshair reticle with three sizes, projected from the weapon ray.
 - Optional movement while aiming, using the knife or reloading: left stick moves, right
@@ -48,12 +53,19 @@ Switch after deployment. RE4 AF16x was also confirmed after a full game restart.
 - Additive gyro aiming **only while aiming a firearm**; independent X/Y gains,
   motion speed, calibration and a deadzone in degrees/second.
 - Gyro filtering averages two readings separated by 10 ms of sensor time, with continuous output on every fresh sample.
+- Controller diagnostics with numeric left/right stick deadzones and a standalone
+  gyro test scene with editable settings, live preview and explicit save/cancel.
 - Frame-clock interpolation adds10ms presentation delay to avoid uneven sensor-batch steps.
 - Motion during ordinary weapon raising is discarded; aiming starts after native readiness without replaying that motion.
 - Live settings, help for every control, English/Russian language selection.
 - Separate settings groups and a main-menu language selector.
 - Live reticle preview while editing its shape or size, with a labelled enlarged sample.
 - A standalone installer that creates its own HOME shortcut with the supplied icon.
+- RE artwork for the NRO/HOME icon, with the original 4 inside the RE4 page and
+  the existing 6 inside the RE6 page.
+- Revised exit handling for the own HOME launcher: B from the app's main menu
+  or + requests a return to HOME. A failed request keeps the app visible with
+  an error code and a retry option. Basic exit was user-confirmed in local 0.17.1.
 - In-app HTTPS updates with size, SHA-256, application identity and version checks.
 
 Stick speed is capped at the game's native maximum. Default stick deadzones
@@ -68,6 +80,32 @@ calibration. An empty Custom profile becomes available after editing a setting.
 Controls starts with a profile row, changed with A or Left/Right. The groups are
 Sticks, Aiming, Gyro, Camera, Reticle, Button mapping and Reset. Language is selected only on the main menu. In Reticle,
 the picture updates as you change form or size; Off shows no marker.
+
+In the standalone app, **Controller diagnostics** shows all four stick axes with
+the configured left/right deadzone values. Muted red hatching marks each axis's
+zero interval; the stick deadzone is axial. Press **ZL** once to open **Gyro test**,
+or choose **Control settings → Gyro → Debug mode**. Motion preview stays active
+without holding ZL. The transparent list edits the current gyro enabled state,
+speed, deadzone (degrees/second), X/Y gains and X/Y inversions. **X** calibrates a
+stationary controller in Gyro test. The eight rows are seven settings and
+**Save and apply**. **Y** returns the live red dot to its
+default position (810, 350), zeroes the preview angles and clears pending motion;
+settings stay unchanged. **Save and apply** validates
+and saves the draft, then returns to the exact entry page and selection. **B**
+discards the draft and returns there. A save error keeps the test open and the
+active settings unchanged; edits and calibration affect only the preview until saved.
+Outside Gyro test, diagnostics keeps **Y** for calibration and **X** for preview reset.
+
+Version 0.17.2 corrects the app preview's horizontal direction to match game
+aiming. Game gyro behavior, saved inversion settings and sensitivities are
+preserved; no settings migration or reset is needed.
+
+The scene is a fixed classic RE4 Leon illustration, edited from an official frame
+to remove the baked laser and dot. Only the preview dot moves. Raw motion is shown
+in rotations/second and accumulated preview angles in radians at lower left. The
+preview uses the game's gyro filter and frame integration; scene projection is
+illustrative and does not reproduce the game's world geometry or FOV. See the
+[test requirements](docs/testing.md) for pending console acceptance.
 
 The new view, reticle and movement modes start **Off**. Enable them independently
 in Controls. First-person view uses Camera sensitivity for continuous right-stick
@@ -85,11 +123,29 @@ look angle). **Free camera 360** adds continuous right-stick rotation with no
 return, using Camera sensitivity and the chosen curve. Smooth sticks must be on.
 Pitch remains within the native vertical range; normal weapon aiming remains separate.
 
-Graphics are manual and default to the original game. Filtering and AA require
-restarting RE4. Handheld SSAA renders900p to720p; docked rendering stays native.
-Object distance scales the loaded room's fog-limited culling range0.50x-2.00x;
-it does not load extra rooms or alter fog/LOD. Shadows can remain Native or be
-disabled; no shadow-resolution override is included. Higher settings cost GPU time.
+RE4 **Graphics → Graphics profile** offers these independent presets in the
+installer and overlay:
+
+| Preset | Texture filtering | Anti-aliasing | Object distance | Shadows |
+|---|---|---|---|---|
+| Default | Native | Native | 1.00x | Native |
+| Custom | Last manual setting | Last manual setting | Last manual setting | Last manual setting |
+| Quality | AF16x | Handheld SSAA | 1.75x | Native |
+
+Default restores the original game graphics. Quality uses the existing handheld
+SSAA path: 900p rendering downsampled to 720p in handheld mode; docked rendering
+stays native. Manually editing graphics saves Custom. Switching to Default or
+Quality preserves that configuration so Custom can restore it later.
+
+**For graphics changes to apply fully, close RE4 completely: HOME → X → Close,
+then launch the game again.** Returning to the game menu or reopening the overlay
+is insufficient; filtering and AA are latched for the game session.
+
+Manual filtering choices include bilinear/trilinear/AF2x–16x. Object distance
+scales the loaded room's fog-limited culling range 0.50x–2.00x; it does not load
+extra rooms or alter fog/LOD. Shadows can remain Native or be disabled; no
+shadow-resolution override is included. Higher settings cost GPU time. Quality
+image quality and performance in 0.17.2 still require console validation.
 
 ## Supported game
 
@@ -124,7 +180,14 @@ details are in [docs/installation.md](docs/installation.md).
 
 Open **RE4 Controls → Updates → Check for updates**. If a newer release exists,
 choose **Download / install**. Reopen the app after installation, then choose
-**Install / update mod** while RE4 is closed to update its bundled game module.
+**Install / update mod** while RE4 is closed to update its bundled game module
+and overlay. For RE6, use **Install RE6 module** while RE6 is closed.
+
+For a manual update, including replacement with the same version, close the app
+and both games, then replace all three app images from the same release:
+`re4-controls.nro`, `bridge.nro` and `game.nro`. Reopen the app and install the
+bundled modules again. Saved settings are preserved. See the
+[exact paths and update steps](docs/installation.md#manual-update-including-the-same-version).
 
 Updates use the public releases of this repository. No GitHub token or console key
 is required. A private repository or missing release produces an unavailable message.

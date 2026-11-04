@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.17.2 (2026-11-04, gyro preview horizontal direction)
+
+- Correct the app's gyro preview X projection and its asymmetric angular bounds
+  to match game aiming: positive native yaw projects left. The game overlay's
+  direction was already correct; only the app preview was reversed.
+- Preserve game gyro behavior, inversion flags, gains, wire/settings formats
+  and saved values. No settings migration or reset is needed.
+- Include all changes since published 0.16.1; local 0.17.0 and 0.17.1 were not
+  published. Final host tests and the ARM64 build for 0.17.2 passed; physical
+  direction validation and broader hardware acceptance remain pending.
+
+## 0.17.1 (local, unpublished; HOME exit and RE4 page artwork)
+
+- Restore the original 4 inside the RE4 installer page; keep the RE6 page's 6
+  and the global NRO/HOME icon's RE.
+- Route B from the main menu and + exits from the verified own HOME launcher through
+  managed Horizon exit before UI cleanup, including launches without a debug
+  token. Keep the UI and error code visible if the request fails; retain normal
+  hbmenu return for other launchers. The user confirmed basic HOME exit in this
+  local build after deployment; this does not validate all exit paths or gyro/graphics.
+- Include the features developed in local 0.17.0 below; 0.17.0 was not published.
+- Increase PATCH for every fix build; never reuse a version for changed fix binaries.
+
+## 0.17.0 (local, unpublished; RE artwork, RE4 graphics presets and gyro test)
+
+- Replace the application icon's 4 with RE while retaining the red crosshair;
+  preserve the original artwork and use the new asset for app/HOME packaging.
+- Add independent RE4 Default/Custom/Quality graphics presets in the installer
+  and overlay. Default restores Native filtering, AA and shadows, distance 1.00x.
+- Quality selects AF16x, existing Handheld SSAA, distance 1.75x and Native shadows.
+  SSAA renders 900p to 720p in handheld mode only; docked rendering remains native.
+- Preserve the last manual Custom graphics configuration across built-in preset
+  transitions, saves and reloads, independently of controls/language/calibration.
+- Explain that full graphics application requires HOME → X → Close and relaunch;
+  returning to a game menu or reopening the overlay is insufficient.
+- Show configured left/right stick deadzones numerically on all four diagnostics
+  axes, with muted red hatching for the axial zero intervals.
+- Open the app's Gyro test with one ZL press from diagnostics or Debug mode in
+  Control settings → Gyro. Use a fixed classic Leon scene without a baked laser
+  or dot, and a live red preview dot driven by the game's gyro filter/integration.
+- Preview seven current gyro settings and calibration in a draft; X calibrates,
+  Y returns the dot to (810, 350), zeroes preview angles and clears pending motion
+  without changing settings; B cancels. The eight rows are seven settings and
+  Save and apply, which validates and persists before returning
+  to the exact origin; a failed save leaves the test open and active settings intact.
+- Keep diagnostics shortcuts outside Gyro test: Y calibrates and X resets preview.
+- Label raw motion in rotations/second and accumulated preview angles in radians;
+  the background projection is illustrative, with no game-FOV or performance claim.
+- Host tests and the ARM64 build passed. Hardware acceptance of 0.17.0, including
+  the new presets, icon, Quality image quality/performance and gyro test, remains
+  pending. These local results do not validate the final 0.17.1 binaries.
+  The user's 0.16.1 confirmation does not cover these changes.
+
 ## 0.16.1 (2026-11-02, native RE6 anti-aliasing)
 
 - Remove the manual RE6 AA render hook after hardware reports of artifacts

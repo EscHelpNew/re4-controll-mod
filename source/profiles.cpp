@@ -44,6 +44,19 @@ ProfileKind next_control_profile(ProfileKind current, int direction) {
     for (unsigned i = 0; i < 3; ++i) if (kinds[i] == current) index = i;
     return kinds[(index + (direction < 0 ? 2 : 1)) % 3];
 }
+ProfileKind next_graphics_profile(ProfileKind current, int direction) {
+    constexpr ProfileKind kinds[]{ProfileKind::Default, ProfileKind::Quality, ProfileKind::Custom};
+    unsigned index = 0;
+    for (unsigned i = 0; i < 3; ++i) if (kinds[i] == current) index = i;
+    return kinds[(index + (direction < 0 ? 2 : 1)) % 3];
+}
+Settings quality_graphics_profile() {
+    Settings settings;
+    settings.texture_filtering = TextureFilter::Aniso16;
+    settings.anti_aliasing = AntiAliasing::HandheldSsaa;
+    settings.draw_distance_scale = 1.75f;
+    return settings;
+}
 Settings re6_profile() {
     Settings settings;
     settings.analog_enabled = true;
@@ -91,6 +104,7 @@ bool same_profile(const Settings& first, const Settings& second, ProfileDomain d
 ProfileKind profile_kind(const Settings& settings, ProfileDomain domain) {
     if (same_profile(settings, domain == ProfileDomain::Controls ? default_controls_profile() : Settings{}, domain)) return ProfileKind::Default;
     if (domain == ProfileDomain::Controls && same_profile(settings, re6_profile(), domain)) return ProfileKind::RE6;
+    if (domain == ProfileDomain::Graphics && same_profile(settings, quality_graphics_profile(), domain)) return ProfileKind::Quality;
     return ProfileKind::Custom;
 }
 bool save_profiled_settings(const char* path, const Settings& settings) {
@@ -111,23 +125,33 @@ bool save_profiled_settings(const char* path, const Settings& settings) {
     // Sidecars are individually recoverable, not a multi-file transaction.
     return save_settings_file(path, settings);
 }
+bool save_edited_graphics(const char* path, const Settings& settings) {
+    if (!path || !*path || !valid_settings(settings)) return false;
+    return save_settings_file(snapshot_path(path, ProfileDomain::Graphics).c_str(), settings)
+        && save_profiled_settings(path, settings);
+}
 bool load_custom_profile(const char* path, ProfileDomain domain, Settings& out) {
     if (!path || !*path || !valid_domain(domain)) return false;
     const auto sidecar = snapshot_path(path, domain);
     Settings snapshot;
-    if (!load_settings_file(sidecar.c_str(), snapshot)
-        || profile_kind(snapshot, domain) != ProfileKind::Custom) return false;
+    if (!load_settings_file(sidecar.c_str(), snapshot)) return false;
+    const auto kind = profile_kind(snapshot, domain);
+    // A manual graphics edit (including an old release's Quality-equivalent
+    // Custom) remains recoverable even when its values match a built-in.
+    if (domain == ProfileDomain::Controls && kind != ProfileKind::Custom) return false;
     copy_profile(out, snapshot, domain);
     return true;
 }
 ProfileResult switch_profile(const char* path, Settings& active, ProfileDomain domain, ProfileKind kind) {
     if (!valid_domain(domain)
-        || (kind != ProfileKind::Default && kind != ProfileKind::Custom && kind != ProfileKind::RE6)
-        || ((kind == ProfileKind::RE6) && domain != ProfileDomain::Controls))
+        || (kind != ProfileKind::Default && kind != ProfileKind::Custom && kind != ProfileKind::RE6 && kind != ProfileKind::Quality)
+        || ((kind == ProfileKind::RE6) && domain != ProfileDomain::Controls)
+        || ((kind == ProfileKind::Quality) && domain != ProfileDomain::Graphics))
         return ProfileResult::SaveFailed;
     Settings next = active;
     if (kind == ProfileKind::Default) copy_profile(next, domain == ProfileDomain::Controls ? default_controls_profile() : Settings{}, domain);
     else if (kind == ProfileKind::RE6) copy_profile(next, re6_profile(), domain);
+    else if (kind == ProfileKind::Quality) copy_profile(next, quality_graphics_profile(), domain);
     else if (!load_custom_profile(path, domain, next)) return ProfileResult::MissingCustom;
     if (same_profile(active, next, domain)) return ProfileResult::Unchanged;
     if (!save_profiled_settings(path, next)) return ProfileResult::SaveFailed;

@@ -1,0 +1,12 @@
+{
+  "game": "Resident Evil 4 (original game, Nintendo Switch port)",
+  "source_file": "re4-source.jpg",
+  "source_sha256": "3d15e1e1ba3eab561172e2ec7c2e5fc31803654ff417d842145e110a98bdc41e",
+  "sha256": "bb548643949ea97a0570ef2619f9036d16a97d4f90ce106a5e3630369527c127",
+  "width": 1672,
+  "height": 941,
+  "copyright": "CAPCOM CO., LTD. All rights reserved.",
+  "edit_tool": "OpenAI ImageGen",
+  "edit_date": "2026-11-04",
+  "description": "AI-edited derivative of the official frame: baked laser line and dot removed for a moving application marker. Other scene details may differ from the source."
+}
