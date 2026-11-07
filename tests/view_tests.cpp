@@ -11,6 +11,31 @@ void same(re4::ViewVec3 a,re4::ViewVec3 b){CHECK(close(a.x,b.x)&&close(a.y,b.y)&
 int main(){
     using namespace re4;
     const float nan=std::numeric_limits<float>::quiet_NaN();
+    const ViewMatrix3x4 aim_basis{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
+    const ViewQfpsOutput center{{-400,2300,-2760},{},{0,1210,1410},0,45};
+    const ViewQfpsOutput high{{-400,600,-2600},{},{0,2770,1380},0,45};
+    float previous=-10;
+    for(unsigned i=0;i<=1000;++i){
+        const float weight=i/1000.f;
+        auto current=center;
+        current.eye0.y=center.eye0.y+(high.eye0.y-center.eye0.y)*weight;
+        current.eye0.z=center.eye0.z+(high.eye0.z-center.eye0.z)*weight;
+        current.target.y=center.target.y+(high.target.y-center.target.y)*weight;
+        current.target.z=center.target.z+(high.target.z-center.target.z)*weight;
+        float resolved=0;CHECK(re6_aim_view_pitch(current,center,aim_basis,weight*1.570796327f,resolved));
+        CHECK(resolved>=previous-.000001f);previous=resolved;
+    }
+    float pitch=12;
+    CHECK(re6_aim_view_pitch(center,center,aim_basis,0,pitch)&&close(pitch,0));
+    CHECK(re6_aim_view_pitch(high,center,aim_basis,1.570796327f,pitch));
+    CHECK(close(pitch,float(std::atan2(2170.,std::hypot(400.,3980.)))));
+    for(float command:{nan,2.f,-2.f}){pitch=12;CHECK(!re6_aim_view_pitch(high,center,aim_basis,command,pitch)&&pitch==12);}
+    auto invalid=high;invalid.target=invalid.eye0;pitch=12;
+    CHECK(!re6_aim_view_pitch(invalid,center,aim_basis,1,pitch)&&pitch==12);
+    invalid=center;invalid.target=invalid.eye0;
+    CHECK(!re6_aim_view_pitch(high,invalid,aim_basis,1,pitch)&&pitch==12);
+    invalid=high;invalid.target.y=nan;
+    CHECK(!re6_aim_view_pitch(invalid,center,aim_basis,1,pitch)&&pitch==12);
     const ViewMatrix3x4 basis{{{0,0,2,100},{0,3,0,-20},{-4,0,0,50}}};
     ViewVec3 world{},local{};
     CHECK(view_transform_point(basis,{10,20,30},world));same(world,{160,40,10});

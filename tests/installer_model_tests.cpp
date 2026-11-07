@@ -13,6 +13,74 @@
 int main(){
     using namespace re4;
     InstallerModel m;
+    // Game is independent of Controls/Graphics and saves each toggle immediately.
+    {
+        namespace fs=std::filesystem;
+        const auto path=(fs::path("build")/"installer-game-settings.bin").string();
+        InstallerModel game;assert(!game.settings.enemy_health_bars && !game.settings.enemy_health_numbers);
+        for(auto lang:{Language::English,Language::Russian}){
+            game.settings.language=lang;game.selected=6;
+            assert(game.item_label(5)==(lang==Language::English?"Graphics":"Графика"));
+            assert(game.item_label(6)==(lang==Language::English?"Game":"Игра"));
+            assert(game.handle(UiEvent::Left)==InstallerAction::None);
+            assert(game.handle(UiEvent::Right)==InstallerAction::None);
+            assert(game.handle(UiEvent::Confirm)==InstallerAction::None);
+            assert(game.page==InstallerPage::Game && game.item_count()==2 && game.selected==0);
+            assert(std::string(game.page_title())==(lang==Language::English?"Game":"Игра"));
+            assert(game.item_label(0)==(lang==Language::English?"Enemy health bars":"Полоска здоровья врагов"));
+            assert(game.selected_control()==ControlId::Count && game.item_label(2).empty() && game.item_value(2).empty());
+            assert(game.item_label(1)==(lang==Language::English?"Health numbers":"Числа здоровья"));
+            assert(game.item_value(1)==(lang==Language::English?"Unavailable":"Недоступно"));
+            assert(std::string(game.selected_help()).find(lang==Language::English?"aiming":"прицел")!=std::string::npos);
+            assert(game.item_value(0)==(lang==Language::English?"Off":"Выкл."));
+            assert(game.handle(UiEvent::Up)==InstallerAction::None && game.selected==1);
+            assert(std::string(game.selected_help()).find(lang==Language::English?"Enable enemy health bars first":"Сначала включите полоски здоровья врагов")!=std::string::npos);
+            for(auto event:{UiEvent::Confirm,UiEvent::Left,UiEvent::Right}){
+                assert(game.handle(event)==InstallerAction::None && !game.settings.enemy_health_numbers);
+            }
+            assert(game.handle(UiEvent::Down)==InstallerAction::None && game.selected==0);
+            for(auto event:{UiEvent::Confirm,UiEvent::Left,UiEvent::Right,UiEvent::Confirm}){
+                const auto before=game.settings.enemy_health_bars;
+                assert(game.handle(event)==InstallerAction::SaveSettings);
+                assert(game.settings.enemy_health_bars!=before && game.settings.language==lang);
+                assert(game.item_value(0)==(game.settings.enemy_health_bars?(lang==Language::English?"On":"Вкл."):(lang==Language::English?"Off":"Выкл.")));
+                assert(save_profiled_settings(path.c_str(),game.settings));
+                Settings loaded;assert(load_settings_file(path.c_str(),loaded));
+                assert(loaded.enemy_health_bars==game.settings.enemy_health_bars && loaded.language==lang);
+            }
+            assert(game.handle(UiEvent::Confirm)==InstallerAction::SaveSettings && game.settings.enemy_health_bars);
+            assert(game.handle(UiEvent::Down)==InstallerAction::None && game.selected==1);
+            assert(game.item_value(1)==(lang==Language::English?"Off":"Выкл."));
+            assert(std::string(game.selected_help()).find(lang==Language::English?"weapon firepower units":"единицах мощности оружия")!=std::string::npos);
+            for(auto event:{UiEvent::Confirm,UiEvent::Left,UiEvent::Right}){
+                const auto before=game.settings.enemy_health_numbers;
+                assert(game.handle(event)==InstallerAction::SaveSettings && game.settings.enemy_health_numbers!=before);
+                assert(game.item_value(1)==(game.settings.enemy_health_numbers?(lang==Language::English?"On":"Вкл."):(lang==Language::English?"Off":"Выкл.")));
+                assert(save_profiled_settings(path.c_str(),game.settings));
+                Settings loaded;assert(load_settings_file(path.c_str(),loaded));
+                assert(loaded.enemy_health_numbers==game.settings.enemy_health_numbers && loaded.enemy_health_bars);
+            }
+            game.handle(UiEvent::Up);assert(game.selected==0);
+            assert(game.handle(UiEvent::Confirm)==InstallerAction::SaveSettings && !game.settings.enemy_health_bars);
+            game.handle(UiEvent::Down);
+            assert(game.item_value(1)==(lang==Language::English?"Unavailable":"Недоступно"));
+            for(auto event:{UiEvent::Confirm,UiEvent::Left,UiEvent::Right})assert(game.handle(event)==InstallerAction::None && game.settings.enemy_health_numbers);
+            game.handle(UiEvent::Up);game.handle(UiEvent::Confirm);game.handle(UiEvent::Down);
+            assert(game.item_value(1)==(lang==Language::English?"On":"Вкл."));
+            game.handle(UiEvent::Confirm);assert(!game.settings.enemy_health_numbers);
+            game.handle(UiEvent::Up);game.handle(UiEvent::Confirm);assert(!game.settings.enemy_health_bars);
+            assert(game.handle(UiEvent::QuickInstall)==InstallerAction::None);
+            assert(game.handle(UiEvent::Back)==InstallerAction::None);
+            assert(game.page==InstallerPage::Home && game.selected==6);
+            assert(game.item_label(8)==(lang==Language::English?"Language":"Язык"));
+            game.selected=0;game.handle(UiEvent::Up);assert(game.selected==9);
+            assert(game.handle(UiEvent::Confirm)==InstallerAction::Exit);
+        }
+        game.selected=6;game.handle(UiEvent::Confirm);game.handle(UiEvent::NextGame);
+        assert(game.game==GameTarget::RE6 && game.page==InstallerPage::Home && game.item_count()==5);
+        game.handle(UiEvent::PreviousGame);assert(game.selected==6 && game.item_count()==10);
+        for(const auto* suffix:{"",".previous",".incoming"})fs::remove(path+suffix);
+    }
     // A diagnostic test edits a draft; cancelling must preserve live settings.
     {
         InstallerModel test;test.page=InstallerPage::Diagnostics;test.selected=0;
@@ -249,7 +317,7 @@ int main(){
         assert(std::strlen(graphics.selected_help())>20);
         assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None); // Invalid rows cannot mutate a valid row.
         for(auto stale:{InstallerPage::Controls,InstallerPage::ControlGroup,InstallerPage::Diagnostics,
-            InstallerPage::Mapping,InstallerPage::MappingTargets,InstallerPage::Updates}){
+            InstallerPage::Mapping,InstallerPage::MappingTargets,InstallerPage::Updates,InstallerPage::Game}){
             graphics.page=stale;graphics.selected=0;
             assert(graphics.item_count()==0 && graphics.item_label(0).empty() && graphics.item_value(0).empty());
             assert(std::strlen(graphics.selected_help())==0);
@@ -293,9 +361,9 @@ int main(){
         for(const auto* path:{re4_path,re6_path,blocked,"build/installer-re6-graphics-test/re6.bin.previous"})fs::remove(path);
         fs::remove(root);
     }
-    assert(m.settings.language==Language::English && m.page==InstallerPage::Home && m.item_count()==9);
-    for(unsigned i=0;i<9;++i)assert(!m.item_label(i).empty());
-    assert(m.item_label(5)=="Graphics" && m.item_label(6)=="Updates" && m.item_label(7)=="Language" && m.item_label(8)=="Exit");
+    assert(m.settings.language==Language::English && m.page==InstallerPage::Home && m.item_count()==10);
+    for(unsigned i=0;i<10;++i)assert(!m.item_label(i).empty());
+    assert(m.item_label(5)=="Graphics" && m.item_label(6)=="Game" && m.item_label(7)=="Updates" && m.item_label(8)=="Language" && m.item_label(9)=="Exit");
     assert(m.handle(UiEvent::Confirm)==InstallerAction::InstallGame);
     m.selected=3;assert(m.handle(UiEvent::Confirm)==InstallerAction::None && m.page==InstallerPage::Controls);
     assert(m.item_count()==8 && m.selected==0); // Controls opens categories, never the complete catalogue.
@@ -451,10 +519,10 @@ int main(){
     assert(m.handle(UiEvent::Confirm)==InstallerAction::None);
     m.settings.language=Language::Russian;assert(m.item_label(0)=="Фильтрация текстур");
     assert(m.handle(UiEvent::Back)==InstallerAction::None && m.page==InstallerPage::Home && m.selected==5);
-    m.selected=7;assert(m.handle(UiEvent::Left)==InstallerAction::SaveSettings && m.settings.language==Language::English);
+    m.selected=8;assert(m.handle(UiEvent::Left)==InstallerAction::SaveSettings && m.settings.language==Language::English);
     assert(m.handle(UiEvent::Confirm)==InstallerAction::SaveSettings && m.settings.language==Language::Russian);
     assert(m.handle(UiEvent::Right)==InstallerAction::SaveSettings && m.settings.language==Language::English);
-    m.selected=8;assert(m.handle(UiEvent::Confirm)==InstallerAction::Exit);
+    m.selected=9;assert(m.handle(UiEvent::Confirm)==InstallerAction::Exit);
         m.selected=4;m.handle(UiEvent::Confirm);assert(m.page==InstallerPage::Diagnostics);
     assert(m.handle(UiEvent::QuickDisable)==InstallerAction::None);
     assert(m.handle(UiEvent::Calibrate)==InstallerAction::None);
@@ -474,7 +542,7 @@ int main(){
     assert(!m.allow_installation(false,false) && m.status==InstallerStatus::Failed);
     assert(!m.allow_installation(true,true) && m.status==InstallerStatus::GameRunning);
     assert(m.allow_installation(true,false));
-    m.page=InstallerPage::Home;m.selected=6;
+    m.page=InstallerPage::Home;m.selected=7;
     m.handle(UiEvent::Confirm);assert(m.page==InstallerPage::Updates && m.item_count()==2);
     assert(m.handle(UiEvent::QuickInstall)==InstallerAction::None);
     assert(m.handle(UiEvent::Confirm)==InstallerAction::CheckUpdates);

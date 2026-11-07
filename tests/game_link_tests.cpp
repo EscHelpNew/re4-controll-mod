@@ -79,6 +79,12 @@ int main(){
         reset();auto old=snapshot();old.abi=re4::kSharedAbi-1;
         std::memcpy(memory.data()+8,&old,sizeof(old));
         link.initialize();assert(!link.connect() && write_count==0);link.close();
+        reset();old=snapshot();std::memcpy(old.marker,"RE4CTL_SHARED17",16);
+        std::memcpy(memory.data()+8,&old,sizeof(old));
+        link.initialize();assert(!link.connect() && write_count==0);link.close();
+        reset();old=snapshot();std::memcpy(old.marker,"RE4CTL_SHARED18",16);
+        std::memcpy(memory.data()+8,&old,sizeof(old));
+        link.initialize();assert(!link.connect() && write_count==0);link.close();
     }
     std::puts("actual game IPC: identity, mapping bounds, odd/payload/even and restart protection PASS");
 }

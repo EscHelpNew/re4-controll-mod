@@ -1,2 +1,2 @@
 #pragma once
-namespace re4 { inline constexpr const char* kVersion="0.17.2"; }
+namespace re4 { inline constexpr const char* kVersion="0.20.0"; }

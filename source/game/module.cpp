@@ -16,6 +16,9 @@
 #include "re4/unified.hpp"
 #include "re4/scope.hpp"
 #include "re4/reticle_draw.hpp"
+#include "re4/enemy_health.hpp"
+#include "re4/enemy_health_fade.hpp"
+#include "re4/enemy_health_numbers.hpp"
 #include "re4/gyro_frame.hpp"
 #include "re6/journal.hpp"
 #include <atomic>
@@ -124,8 +127,15 @@ struct CameraContext {
     float x,y;
     bool view_allowed=false,basis_valid=false;
     re4::ViewMatrix3x4 basis{};
+    const void* basis_output=nullptr;
+    const void* shoulder_profile=nullptr;
+    bool shoulder=false,follow_ready=false;
+    unsigned shoulder_character=0;
+    std::uint32_t shoulder_state=0;
+    float shoulder_distance=0,shoulder_heading=0,shoulder_pitch=0;
 };
 CameraContext* camera_context = nullptr;
+CameraContext* camera_follow_context = nullptr;
 re4::FreeCamera free_orbit;
 bool ordinary_camera(void* camera,void* actor){
     if(camera!=reinterpret_cast<void*>(main_base+0x11319C0) || !actor
@@ -161,13 +171,23 @@ std::atomic<unsigned> fps_override_count{0},reticle_draw_count{0};
 std::atomic<std::uint64_t> view_frame{1},view_camera_frame{0},first_person_frame{0},view_camera_tick{0};
 std::atomic<std::uintptr_t> view_camera_actor{0};
 std::atomic<bool> view_camera_aim{false};
+std::atomic<bool> view_camera_native_pitch{false};
+std::atomic<float> view_camera_pitch{0};
 void* main_view_actor=nullptr; // Scoped only across the synchronous native submission graph.
 struct AimPoint {
     std::atomic<std::uint64_t> sequence{0},frame{0};
     std::atomic<std::uintptr_t> actor{0},weapon{0};
     std::atomic<std::uint32_t> x{0},y{0},z{0},weapon_id{0};
+    std::atomic<std::uint32_t> health{0};
+    std::atomic<std::uint64_t> target_key{0};
     std::atomic<std::uint32_t> matrices[28]{};
 } aim_point,pending_aim_point,displayed_aim_point;
+AimPoint enemy_health_point,pending_enemy_health,displayed_enemy_health,enemy_health_camera;
+re4::EnemyHealthFade enemy_health_fade;
+std::atomic<std::uint64_t> enemy_health_fade_generation{0};
+std::uint64_t enemy_health_fade_seen=0,enemy_health_fade_tick=0,enemy_health_fade_frame=0;
+std::uintptr_t enemy_health_fade_actor=0;
+unsigned enemy_health_fade_character=0;
 void (*native_ortho)(void*,float,float,float,float,float,float)=nullptr;
 void (*native_projection)(const void*,unsigned)=nullptr;
 void (*native_pose)(const void*,unsigned)=nullptr;
@@ -184,10 +204,16 @@ re4::ScopeLook scoped_look;
 void reset_scoped_controls();
 float unified_look_gain=-1,unified_look_deadzone=-1,unified_aim_gain_x=-1,unified_aim_gain_y=-1;
 re4::StickCurve unified_look_curve=re4::StickCurve::Linear;
+struct UnifiedReloadIdentity {
+    void* actor=nullptr;void* weapon=nullptr;std::uintptr_t handler=0;unsigned item=0;
+    bool operator==(const UnifiedReloadIdentity& b)const{return actor==b.actor&&weapon==b.weapon&&handler==b.handler&&item==b.item;}
+};
+UnifiedReloadIdentity unified_reload_session;
 struct UnifiedUpdate {
     void* actor=nullptr;
     re4::UnifiedDelta delta{};
-    bool walking=false,consumed=false,handoff=false;
+    bool walking=false,consumed=false,handoff=false,reloading=false;
+    UnifiedReloadIdentity reload{};
 };
 UnifiedUpdate* unified_update=nullptr;
 struct UnifiedAimSession {void* actor=nullptr;void* weapon=nullptr;std::uintptr_t handler=0;unsigned item=0;bool ready=false;};
@@ -197,13 +223,19 @@ void* unified_root_actor=nullptr;
 float unified_root_yaw=0,unified_pitch=0;
 std::uintptr_t unified_pitch_actor=0;
 unsigned unified_pitch_route=0;
+unsigned unified_pitch_character=0;
 std::uint64_t unified_command_frame=0,unified_command_tick=0;
 bool unified_camera_calculation=false;
 void publish_view_settings(){
-    const unsigned word=unsigned(settings.first_person)|(unsigned(settings.reticle)<<1)|(unsigned(settings.reticle_size)<<3)|(unsigned(settings.unified_controls)<<5);
+    const unsigned word=unsigned(settings.first_person)|(unsigned(settings.reticle)<<1)|(unsigned(settings.reticle_size)<<3)|(unsigned(settings.unified_controls)<<5)|(unsigned(settings.enemy_health_bars)<<6)|(unsigned(settings.enemy_health_numbers)<<7)|(unsigned(settings.language==re4::Language::Russian)<<8);
     const auto before=view_settings_snapshot.exchange(word,std::memory_order_acq_rel);
+    if((before^word)&64){
+        enemy_health_point.frame.store(0,std::memory_order_release);pending_enemy_health.frame.store(0,std::memory_order_release);displayed_enemy_health.frame.store(0,std::memory_order_release);
+        enemy_health_camera.frame.store(0,std::memory_order_release);
+        enemy_health_fade_generation.fetch_add(1,std::memory_order_release);
+    }
     if((before^word)&32){
-        unified_look.reset();unified_aim_session={};unified_pitch_actor=0;unified_pitch_route=0;unified_command_frame=0;
+        unified_look.reset();unified_aim_session={};unified_reload_session={};unified_pitch_actor=0;unified_pitch_route=0;unified_command_frame=0;
     }
     if(!(word&1) || ((before^word)&1))first_person_frame.store(0,std::memory_order_release);
     if(((before^word)&6) || !(word&6))aim_point.frame.store(0,std::memory_order_release);
@@ -285,16 +317,19 @@ bool view_completed(void* actor){
 void clear_view_frame(){
     view_camera_frame.store(0,std::memory_order_release);
     first_person_frame.store(0,std::memory_order_release);
+    view_camera_native_pitch.store(false,std::memory_order_relaxed);
 }
 std::uint32_t view_float_bits(float value){std::uint32_t bits;std::memcpy(&bits,&value,4);return bits;}
 float view_float_value(std::uint32_t bits){float value;std::memcpy(&value,&bits,4);return value;}
 void publish_aim_point(AimPoint& target,void* actor,void* weapon,re4::ViewVec3 value,std::uint64_t frame,
-        const re4::ViewMatrix3x4* view=nullptr,const re4::ViewMatrix4x4* projection=nullptr){
+        const re4::ViewMatrix3x4* view=nullptr,const re4::ViewMatrix4x4* projection=nullptr,std::uint32_t health=0,std::uint64_t target_key=0){
     target.sequence.fetch_add(1,std::memory_order_acq_rel);
     std::atomic_thread_fence(std::memory_order_release);
     target.frame.store(frame,std::memory_order_relaxed);
     target.actor.store(reinterpret_cast<std::uintptr_t>(actor),std::memory_order_relaxed);
     target.weapon.store(reinterpret_cast<std::uintptr_t>(weapon),std::memory_order_relaxed);
+    target.health.store(health,std::memory_order_relaxed);
+    target.target_key.store(target_key,std::memory_order_relaxed);
     target.x.store(view_float_bits(value.x),std::memory_order_relaxed);
     target.y.store(view_float_bits(value.y),std::memory_order_relaxed);
     target.z.store(view_float_bits(value.z),std::memory_order_relaxed);
@@ -307,12 +342,14 @@ void publish_aim_point(AimPoint& target,void* actor,void* weapon,re4::ViewVec3 v
     target.sequence.fetch_add(1,std::memory_order_release);
 }
 bool read_aim_point(const AimPoint& source,void* actor,std::uint64_t required_frame,re4::ViewVec3& value,
-        re4::ViewMatrix3x4* view=nullptr,re4::ViewMatrix4x4* projection=nullptr){
+        re4::ViewMatrix3x4* view=nullptr,re4::ViewMatrix4x4* projection=nullptr,std::uint32_t* health=nullptr,std::uint64_t* target_key=nullptr,bool check_weapon=true){
     const auto before=source.sequence.load(std::memory_order_acquire);
     if(before&1)return false;
     const auto frame=source.frame.load(std::memory_order_relaxed);
     const auto who=source.actor.load(std::memory_order_relaxed),weapon=source.weapon.load(std::memory_order_relaxed);
     const auto weapon_id=source.weapon_id.load(std::memory_order_relaxed);
+    if(health)*health=source.health.load(std::memory_order_relaxed);
+    if(target_key)*target_key=source.target_key.load(std::memory_order_relaxed);
     value={view_float_value(source.x.load(std::memory_order_relaxed)),
         view_float_value(source.y.load(std::memory_order_relaxed)),view_float_value(source.z.load(std::memory_order_relaxed))};
     if(view&&projection){
@@ -324,8 +361,8 @@ bool read_aim_point(const AimPoint& source,void* actor,std::uint64_t required_fr
     std::atomic_thread_fence(std::memory_order_acquire);
     return before==source.sequence.load(std::memory_order_relaxed)&&state
         && frame==required_frame&&frame!=0
-        && who==reinterpret_cast<std::uintptr_t>(actor)&&weapon_id==state[0x5034]
-        && weapon==reinterpret_cast<std::uintptr_t>(player_weapon(actor))&&re4::view_finite(value);
+        && who==reinterpret_cast<std::uintptr_t>(actor)
+        &&(!check_weapon||(weapon_id==state[0x5034]&&weapon==reinterpret_cast<std::uintptr_t>(player_weapon(actor))))&&re4::view_finite(value);
 }
 bool unified_scene(void* actor){
     if(!settings.unified_controls||!view_scene(actor)||(sensor_attributes&1)==0
@@ -366,6 +403,10 @@ bool unified_aim_allowed(void* actor,bool allow_arm=false){
     return b[0x115]==11&&(held&re4::kKnifeHeldMask)
         &&(b[0x116]==1||b[0x116]==2)&&b[0x117]==1;
 }
+UnifiedReloadIdentity unified_reload_identity(void* actor){
+    const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+    return {actor,player_weapon(actor),*reinterpret_cast<const std::uintptr_t*>(main_base+0x1265A28),state[0x5034]};
+}
 void unified_player_update(void* actor,void (*original)(void*)){
     publish_view_settings();
     if(!scoped_camera_owner(actor))reset_scoped_controls();
@@ -377,11 +418,25 @@ void unified_player_update(void* actor,void (*original)(void*)){
     unified_look_gain=settings.camera_gain;unified_look_deadzone=settings.right_deadzone;unified_look_curve=settings.stick_curve;
     unified_aim_gain_x=settings.right_aim_gain_x;unified_aim_gain_y=settings.right_aim_gain_y;
     const bool scene=unified_scene(actor);
+    const auto who=reinterpret_cast<std::uintptr_t>(actor);
+    const unsigned character=scene?(*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08))[0x503C]:0;
+    // Chapter transitions can reuse the player object for Ashley/Leon. Input
+    // easing and camera pitch belong to that playable character, not its address.
+    if(scene&&who==unified_pitch_actor&&character!=unified_pitch_character){
+        unified_look.reset();unified_aim_session={};unified_reload_session={};
+        unified_pitch_actor=0;unified_pitch_route=0;
+    }
     const auto* b=static_cast<const std::uint8_t*>(actor);
     const bool walking=scene&&b[0x115]<=4;
     const bool aiming=unified_aim_allowed(actor,true);
+    const bool reloading=scene&&modern_move_reload_active(actor);
+    const auto reload=reloading?unified_reload_identity(actor):UnifiedReloadIdentity{};
+    if(!(reload==unified_reload_session)){
+        if(reloading)unified_look.reset();
+        unified_reload_session=reload;
+    }
     const bool handoff=aiming&&(unified_new_aim||unified_pitch_route!=2)&&unified_pitch_actor==reinterpret_cast<std::uintptr_t>(actor);
-    const unsigned route=walking?1:aiming?2:0;
+    const unsigned route=walking?1:reloading?3:aiming?2:0;
     const bool measured_aim=settings.re6_response&&aiming;
     const float gain_x=measured_aim?settings.right_aim_gain_x:settings.camera_gain;
     const float gain_y=measured_aim?settings.right_aim_gain_y:settings.camera_gain;
@@ -389,14 +444,13 @@ void unified_player_update(void* actor,void (*original)(void*)){
     float y=re4::shape_axis(control.raw_ry,settings.right_deadzone,gain_y,settings.stick_curve);
     const auto* type=*reinterpret_cast<const int**>(main_base+0xB1AE10);
     if(type&&*type<0)y=-y;
-    UnifiedUpdate context{actor,unified_look.update(reinterpret_cast<std::uintptr_t>(actor),route,svcGetSystemTick(),route!=0,x,y,settings.re6_response),walking,false,handoff};
+    UnifiedUpdate context{actor,unified_look.update(reinterpret_cast<std::uintptr_t>(actor),route,svcGetSystemTick(),route!=0,x,y,settings.re6_response),walking,false,handoff,reloading,reload};
     auto* prior=unified_update;unified_update=&context;
     auto* directions=reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags);
     const auto old_direction=*directions&15u;
     void* prior_movement=movement_actor;
     if(route){
         unified_command_frame=view_frame.load(std::memory_order_relaxed);unified_command_tick=svcGetSystemTick();
-        const auto who=reinterpret_cast<std::uintptr_t>(actor);
         if(who!=unified_pitch_actor||route!=unified_pitch_route){
             // Native aim-entry clears/consumes offsets; seed from its current
             // manual target, never replay an old free-orbit state.
@@ -404,7 +458,7 @@ void unified_player_update(void* actor,void (*original)(void*)){
                 unified_pitch=0;
                 if(aiming){const float value=*reinterpret_cast<const float*>(main_base+0x1265A0C);if(std::isfinite(value)&&std::fabs(value)<=1)unified_pitch=value*1.57079632679f;}
             }
-            unified_pitch_actor=who;unified_pitch_route=route;
+            unified_pitch_actor=who;unified_pitch_route=route;unified_pitch_character=character;
         }
         if(walking){
             const auto left=re4::modern_move_disk(re4::shape_axis(control.raw_lx,settings.left_deadzone,1,settings.stick_curve),re4::shape_axis(control.raw_ly,settings.left_deadzone,1,settings.stick_curve));
@@ -415,6 +469,18 @@ void unified_player_update(void* actor,void (*original)(void*)){
     original(actor);
     if(walking)*directions=(*directions&~std::uint64_t(15))|old_direction;
     movement_actor=prior_movement;unified_update=prior;
+}
+// Reload does not call the firearm aim adapter. Consume its separate look
+// command at root, after native state changes and before the camera-relative
+// step. Never send reload input through native aim, ammo or animation helpers.
+void unified_reload_root(void* actor){
+    if(!unified_update||unified_update->actor!=actor||!unified_update->reloading
+       ||unified_update->consumed||!unified_scene(actor)||!modern_move_reload_active(actor)
+       ||!(unified_update->reload==unified_reload_identity(actor)))return;
+    auto* yaw=reinterpret_cast<float*>(static_cast<std::uint8_t*>(actor)+0xB4);
+    *yaw=re4::gyro_yaw(*yaw,unified_update->delta.yaw);
+    unified_pitch+=re4::unified_stick_pitch_delta(unified_pitch,unified_update->delta.pitch);
+    unified_update->consumed=true;
 }
 bool unified_walk_root(void* actor,float& rotation){
     if(!unified_update||unified_update->actor!=actor||!unified_update->walking||!unified_scene(actor)||dpad_move||dpad_turn)return false;
@@ -428,10 +494,10 @@ bool unified_walk_root(void* actor,float& rotation){
     rotation=std::remainder(desired-native_yaw,6.28318530718f);
     return std::isfinite(rotation);
 }
-bool draw_native_reticle(re4::ViewHudPoint point,unsigned style,unsigned size){
-    if(!native_ortho||!native_projection||!native_pose||!native_matrix||!native_rect
-        ||!native_gx_blend||!native_gx_format||!native_gx_begin||!native_gx_position||!native_gx_color||!native_gx_end)return false;
-    const re4::ReticleDrawBackend backend{
+bool native_hud_ready(){return native_ortho&&native_projection&&native_pose&&native_matrix&&native_rect
+        &&native_gx_blend&&native_gx_format&&native_gx_begin&&native_gx_position&&native_gx_color&&native_gx_end;}
+re4::ReticleDrawBackend native_hud_backend(){
+    return {
         nullptr,
         +[](void*){
             re4::ViewMatrix4x4 ortho{};
@@ -449,8 +515,11 @@ bool draw_native_reticle(re4::ViewHudPoint point,unsigned style,unsigned size){
         +[](void*,unsigned r,unsigned g,unsigned b,unsigned a){native_gx_color(r,g,b,a);},
         +[](void*,unsigned token){native_gx_end(token);}
     };
-    return re4::draw_reticle(backend,point,style,size);
 }
+bool draw_native_reticle(re4::ViewHudPoint point,unsigned style,unsigned size){
+    return native_hud_ready()&&re4::draw_reticle(native_hud_backend(),point,style,size);
+}
+#include "enemy_health.inc"
 void poll_sensors() {
     gyro_pending = {};
     const auto& previous=gyro_tuning_cache;
@@ -726,6 +795,7 @@ HOOK_DEFINE_TRAMPOLINE(SceneSubmit) {
             &&read_aim_point(aim_point,actor,frame,point)){
             publish_aim_point(pending_aim_point,actor,player_weapon(actor),point,frame);
         }
+        enemy_health_submit(actor,frame);
     }
 };
 HOOK_DEFINE_TRAMPOLINE(SceneDraw) {
@@ -745,6 +815,7 @@ HOOK_DEFINE_TRAMPOLINE(SceneDraw) {
             publish_aim_point(displayed_aim_point,actor,player_weapon(actor),point,frame,&view,&projection);
         }
         pending_aim_point.frame.store(0,std::memory_order_release);
+        enemy_health_draw_scene(actor,frame,state);
         shadow_frame([]{Orig();});
     }
 };
@@ -843,15 +914,37 @@ HOOK_DEFINE_TRAMPOLINE(CameraBasis) {
         Orig(camera,output);
         auto* context=camera_context;
         if(context&&context->camera==camera&&context->view_allowed&&output){
+            context->shoulder=false;
+            context->basis_output=output;
             std::memcpy(&context->basis,output,sizeof(context->basis));
             re4::ViewVec3 checked;
             context->basis_valid=re4::view_inverse_point(context->basis,{},checked);
         }
     }
 };
+bool camera_profile_neutral(std::uintptr_t profile,re4::ViewQfpsOutput& out){
+    constexpr auto bytes=sizeof(out);
+    if(!profile||profile>std::numeric_limits<std::uintptr_t>::max()-0x2C-bytes)return false;
+    const auto record=profile+0x2C;MemoryInfo info{};std::uint32_t page=0;
+    if(R_FAILED(svcQueryMemory(&info,&page,record))||!(info.perm&1)||record<info.addr
+        ||record-info.addr>info.size||bytes>info.size-(record-info.addr))return false;
+    std::memcpy(&out,reinterpret_cast<const void*>(record),bytes);return true;
+}
+bool camera_aim_neutral(const std::uint8_t* camera,re4::ViewQfpsOutput& out){
+    if(!camera_profile_neutral(*reinterpret_cast<const std::uintptr_t*>(camera+0x1B0),out))return false;
+    if(!(*reinterpret_cast<const std::uint32_t*>(camera+0x280)&4))return true;
+    const float previous_weight=*reinterpret_cast<const float*>(camera+0x254);
+    re4::ViewQfpsOutput previous;
+    if(!std::isfinite(previous_weight)||previous_weight<0||previous_weight>1
+        ||!camera_profile_neutral(*reinterpret_cast<const std::uintptr_t*>(camera+0x1B8),previous))return false;
+    const auto blend=[previous_weight](re4::ViewVec3 a,re4::ViewVec3 b){return re4::ViewVec3{
+        a.x*(1-previous_weight)+b.x*previous_weight,a.y*(1-previous_weight)+b.y*previous_weight,a.z*(1-previous_weight)+b.z*previous_weight};};
+    out.eye0=blend(out.eye0,previous.eye0);out.target=blend(out.target,previous.target);return true;
+}
 HOOK_DEFINE_TRAMPOLINE(CameraApply) {
     static void Callback(void* camera,void* output){
-        const auto* context=camera_context;
+        auto* context=camera_context;
+        if(context&&context->camera==camera){context->shoulder=false;context->shoulder_profile=nullptr;}
         const auto* bytes=static_cast<const std::uint8_t*>(camera);
         const bool fps=settings.first_person && context && context->view_allowed;
         if(!settings.unified_controls && context && context->camera==camera && ordinary_camera(camera,context->actor) && (settings.analog_enabled||fps)
@@ -881,12 +974,14 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
         if(!context||context->camera!=camera||!context->view_allowed||!output||context->reset||bytes[0x222]
             ||!context->basis_valid||!view_camera_allowed(camera,context->actor))return;
         const auto* actor=static_cast<const std::uint8_t*>(context->actor);
+        const auto character=(*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08))[0x503C];
         const bool native_aim=aiming_predicate(context->actor)!=0;
         if(bytes[0x26C]!=(native_aim?0:2))return;
         re4::ViewQfpsOutput native;std::memcpy(&native,output,sizeof(native));
         // Also validate unmodified native output before publishing render eligibility.
         if(!re4::view_finite(native.eye0)||!re4::view_finite(native.eye1)||!re4::view_finite(native.target)
             ||!std::isfinite(native.roll)||!std::isfinite(native.fov))return;
+        float render_pitch=unified_pitch;bool native_pitch=false;
         if(fps){
             re4::ViewMatrix3x4 body;std::memcpy(&body,actor+0x18,sizeof(body));
             re4::ViewVec3 eye;re4::ViewQfpsOutput result;
@@ -896,15 +991,24 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
             fps_override_count.fetch_add(1,std::memory_order_relaxed);
             first_person_frame.store(view_frame.load(std::memory_order_relaxed),std::memory_order_release);
         }else if(stable_profile&&settings.re6_response
-            &&!(*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08))[0x503C]){
+            &&(character==0||(character==1&&actor[0x115]<=4))){
             re4::ViewMatrix3x4 body;std::memcpy(&body,actor+0x18,sizeof(body));
             re4::ViewVec3 root,checked;re4::ViewQfpsOutput result;
+            re4::ViewQfpsOutput neutral;
+            native_pitch=native_aim&&actor[0x115]==6&&(actor[0x116]==1||actor[0x116]==2)&&camera_aim_neutral(bytes,neutral);
+            if(native_pitch&&!re4::re6_aim_view_pitch(native,neutral,context->basis,unified_pitch,render_pitch))return;
             if(!re4::view_inverse_point(body,{},checked)||!re4::view_transform_point(body,{},root)
                 ||!re4::re6_shoulder_view(native,context->basis,root,
-                    *reinterpret_cast<const float*>(actor+0xB4),unified_pitch,settings.third_person_distance,result))return;
+                    *reinterpret_cast<const float*>(actor+0xB4),render_pitch,settings.third_person_distance,result))return;
             // Keep native eye1 and let the next native18990 wall trace decide
             // the final eye. Never fix composition after collision.
             std::memcpy(output,&result,sizeof(result));
+            context->shoulder=true;context->shoulder_profile=output;
+            context->shoulder_character=character;
+            std::memcpy(&context->shoulder_state,actor+0x114,sizeof(context->shoulder_state));
+            context->shoulder_distance=settings.third_person_distance;
+            context->shoulder_heading=*reinterpret_cast<const float*>(actor+0xB4);
+            context->shoulder_pitch=unified_pitch;
         }else if(settings.third_person_distance!=1){
             re4::ViewQfpsOutput result;
             if(!re4::third_person_view(native,settings.third_person_distance,result))return;
@@ -912,16 +1016,82 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
             // eye1. Keep that anchor; native collision/smoothing runs next.
             std::memcpy(output,&result,sizeof(result));
         }
+        view_camera_pitch.store(render_pitch,std::memory_order_relaxed);
+        view_camera_native_pitch.store(native_pitch,std::memory_order_relaxed);
         view_camera_aim.store(native_aim,std::memory_order_relaxed);
         view_camera_actor.store(reinterpret_cast<std::uintptr_t>(actor),std::memory_order_relaxed);
         view_camera_tick.store(svcGetSystemTick(),std::memory_order_relaxed);
         view_camera_frame.store(view_frame.load(std::memory_order_relaxed),std::memory_order_release);
     }
 };
+HOOK_DEFINE_TRAMPOLINE(CameraCollision) {
+    static void Callback(void* unused,void* basis,void* profile,void* output){
+        Orig(unused,basis,profile,output); // One original wall trace, unchanged.
+        auto* context=camera_context;
+        if(!context||!context->shoulder||!output||basis!=context->basis_output
+           ||profile!=context->shoulder_profile||!settings.re6_response||settings.first_person
+           ||settings.third_person_distance!=context->shoulder_distance
+           ||!unified_view_ready(context->actor)||!view_completed(context->actor))return;
+        const auto* actor=static_cast<const std::uint8_t*>(context->actor);
+        const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+        const auto* camera=static_cast<const std::uint8_t*>(context->camera);
+        if(context->reset||camera[0x222]||state[0x503C]!=context->shoulder_character
+           ||std::memcmp(actor+0x114,&context->shoulder_state,sizeof(context->shoulder_state))
+           ||*reinterpret_cast<const float*>(actor+0xB4)!=context->shoulder_heading
+           ||unified_pitch!=context->shoulder_pitch
+           ||camera[0x26C]!=(view_camera_aim.load(std::memory_order_relaxed)?0:2))return;
+        re4::ViewCameraOutput clipped;std::memcpy(&clipped,output,sizeof(clipped));
+        if(!re4::view_finite(clipped.eye)||!re4::view_finite(clipped.target)
+           ||!std::isfinite(clipped.roll)||!std::isfinite(clipped.fov))return;
+        // Native19D0C blends X against a prior, differently rotated local basis.
+        // Seed only those two history values with this already clipped result.
+        // The native blend then retains the wall-safe eye instead of dragging
+        // the character sideways. Never move the collision output afterward.
+        auto* history=reinterpret_cast<float*>(main_base+0x1132A30);
+        history[0]=clipped.eye.x;history[3]=clipped.target.x;
+        context->follow_ready=true;
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(CameraFollow) {
+    static void Callback(void* follow,void* input){
+        auto* context=camera_follow_context;
+        bool fixed=false;float saved=0;
+        auto* coefficient=static_cast<float*>(nullptr);
+        if(unified_camera_calculation&&context&&context->follow_ready
+            &&follow==reinterpret_cast<void*>(main_base+0x1131F50)
+            &&input==reinterpret_cast<void*>(main_base+0x1131998)){
+            context->follow_ready=false; // One normal follow per published rig.
+            const auto* actor=static_cast<const std::uint8_t*>(context->actor);
+            const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+            const auto* camera=static_cast<const std::uint8_t*>(context->camera);
+            const float transition=*reinterpret_cast<const float*>(main_base+0x1131718+0x2A0);
+            re4::ViewCameraOutput desired;std::memcpy(&desired,input,sizeof(desired));
+            coefficient=reinterpret_cast<float*>(static_cast<std::uint8_t*>(follow)+0xFC);saved=*coefficient;
+            fixed=settings.re6_response&&!settings.first_person&&settings.third_person_distance==context->shoulder_distance
+                &&unified_view_ready(context->actor)&&view_completed(context->actor)
+                &&context->camera==reinterpret_cast<void*>(main_base+0x11319C0)
+                &&!context->reset&&!camera[0x222]&&state[0x503C]==context->shoulder_character
+                &&!std::memcmp(actor+0x114,&context->shoulder_state,sizeof(context->shoulder_state))
+                &&*reinterpret_cast<const float*>(actor+0xB4)==context->shoulder_heading&&unified_pitch==context->shoulder_pitch
+                &&camera[0x26C]==(view_camera_aim.load(std::memory_order_relaxed)?0:2)
+                &&std::isfinite(transition)&&transition<=0&&std::isfinite(saved)&&saved>=0&&saved<=1
+                &&re4::view_finite(desired.eye)&&re4::view_finite(desired.target)
+                &&std::isfinite(desired.roll)&&std::isfinite(desired.fov);
+            // 138B0 follows an already wall-clipped world-space input. Its
+            // second follow would make the shoulder anchor lag during strafe.
+            // Zero retention for this one call; native near-body correction,
+            // resets, cache and roll/FOV handling still run afterward.
+            if(fixed)*coefficient=0;
+        }
+        Orig(follow,input);
+        if(fixed&&*coefficient==0)*coefficient=saved;
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(CameraInput) {
     static void Callback(void* camera) {
         publish_view_settings();
         clear_view_frame();
+        if(camera_follow_context)camera_follow_context->follow_ready=false;
         auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
         const bool normal=actor&&actor[0x114]==0&&actor[0x115]<=4;
         const bool framing=settings.third_person_distance>1&&settings.third_person_distance<=2;
@@ -959,12 +1129,14 @@ HOOK_DEFINE_TRAMPOLINE(CameraInput) {
         camera_context=previous;
         if(shape||unified){input[0]=x;input[1]=y;}
         if(view_allowed&&!view_camera_allowed(camera,actor))clear_view_frame();
+        if(camera_follow_context&&context.follow_ready&&view_completed(actor))*camera_follow_context=context;
     }
 };
 HOOK_DEFINE_TRAMPOLINE(CameraCalculate) {
     static void Callback(){
         const bool previous=unified_camera_calculation;unified_camera_calculation=true;
-        Orig();unified_camera_calculation=previous;
+        CameraContext follow{};auto* prior=camera_follow_context;camera_follow_context=&follow;
+        Orig();camera_follow_context=prior;unified_camera_calculation=previous;
         const auto frame=view_frame.load(std::memory_order_acquire);
         if(frame==telemetry_last_frame)return;
         telemetry_last_frame=frame;
@@ -989,7 +1161,8 @@ HOOK_DEFINE_TRAMPOLINE(FinalLookAt) {
         if(unified_camera_calculation&&state&&output==state+0xD8&&eye==reinterpret_cast<void*>(state+0x14C)
             &&up==reinterpret_cast<void*>(state+0x16C)&&target==reinterpret_cast<void*>(state+0x158)
             &&unified_view_ready(actor)&&view_completed(actor)){
-            const float heading=*reinterpret_cast<const float*>(actor+0xB4),pitch=unified_pitch;
+            const float heading=*reinterpret_cast<const float*>(actor+0xB4);
+            const float pitch=view_camera_native_pitch.load(std::memory_order_relaxed)?view_camera_pitch.load(std::memory_order_relaxed):unified_pitch;
             const double length=std::hypot(double(target->x)-eye->x,double(target->y)-eye->y,double(target->z)-eye->z);
             const double sh=std::sin(double(heading)),ch=std::cos(double(heading)),sp=std::sin(double(pitch)),cp=std::cos(double(pitch));
             re4::ViewVec3 endpoint,stable_up;float distance;
@@ -1011,6 +1184,7 @@ HOOK_DEFINE_TRAMPOLINE(WeaponLaser) {
         Orig(weapon,draw,reuse,style); // Keep native laser, collision and effects unchanged.
         if(reuse&1)return;
         auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
+        capture_enemy_health(actor,weapon);
         if(!(view_settings_snapshot.load(std::memory_order_acquire)&38)||!view_scene(actor)
             ||!actor||(actor[0x115]!=6&&actor[0x115]!=15)||!firearm_aim(actor)||weapon!=player_weapon(actor))return;
         // Native skips model+40C copy when the clipped ray is shorter than500.
@@ -1022,6 +1196,7 @@ HOOK_DEFINE_TRAMPOLINE(WeaponLaser) {
 HOOK_DEFINE_TRAMPOLINE(HudDraw) {
     static void Callback(void* list){
         Orig(list);
+        draw_enemy_health_hud();
         const auto options=view_settings_snapshot.load(std::memory_order_acquire);
         const auto style=(options>>1)&3u,size=(options>>3)&3u;
         if(!style||style>2||size>2||!native_ortho||!native_projection||!native_pose||!native_matrix||!native_rect)return;
@@ -1192,6 +1367,8 @@ extern "C" void exl_main(void*, void*) {
     CameraInput::InstallAtOffset(0x19B20);
     CameraApply::InstallAtOffset(0x18520);
     CameraBasis::InstallAtOffset(0x17F40);
+    CameraCollision::InstallAtOffset(0x18990);
+    CameraFollow::InstallAtOffset(0x138B0);
     ModelSubmit::InstallAtOffset(0x4EB950);
     WeaponLaser::InstallAtOffset(0x2E8750);
     HudDraw::InstallAtOffset(0x29CEF0);

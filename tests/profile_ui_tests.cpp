@@ -36,6 +36,43 @@ bool GameLink::connect(){return true;}
 bool GameLink::apply(const re4::Settings& s){++sends;return re4::valid_settings(s);}
 int main(){
     using namespace re4;
+    // Saving through the actual Game toggle survives a fresh overlay lifecycle.
+    {
+        settings=default_controls_profile();note.clear();MainGui home;
+        auto* frame=static_cast<tsl::elm::OverlayFrame*>(home.createUI());
+        assert(row(frame,"Game")->click(HidNpadButton_A));
+        auto* game=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+        auto* health=dynamic_cast<tsl::elm::ToggleListItem*>(row(game,"Enemy health bars"));assert(health);
+        health->changed(true);assert(files.at(overlay_storage::settings_path).enemy_health_bars);
+        assert(row(game,"Health numbers")->click(HidNpadButton_A));
+        assert(files.at(overlay_storage::settings_path).enemy_health_numbers);
+        health->changed(false);
+        assert(!files.at(overlay_storage::settings_path).enemy_health_bars && files.at(overlay_storage::settings_path).enemy_health_numbers);
+        tsl::goBack();settings={};
+        ControlsOverlay overlay;tsl::Overlay& lifecycle=overlay;
+        lifecycle.initServices();assert(!settings.enemy_health_bars && settings.enemy_health_numbers);lifecycle.exitServices();
+        assert(row(frame,"Game")->click(HidNpadButton_A));
+        auto* restored=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+        assert(row(restored,"Health numbers")->value=="Unavailable");
+        dynamic_cast<tsl::elm::ToggleListItem*>(row(restored,"Enemy health bars"))->changed(true);
+        assert(row(restored,"Health numbers")->value=="On");
+        tsl::goBack();
+        settings.language=Language::Russian;home.update();assert(row(frame,"Игра"));
+        delete frame;files.clear();sends=0;settings=default_controls_profile();note.clear();
+    }
+    // Profile application must preserve both independent Game preferences.
+    for(bool bars:{false,true}){
+        settings=default_controls_profile();settings.enemy_health_bars=bars;settings.enemy_health_numbers=true;
+        ControlsGui controls;auto* controls_frame=static_cast<tsl::elm::OverlayFrame*>(controls.createUI());
+        assert(row(controls_frame,"Controls profile")->click(HidNpadButton_A));
+        assert(settings.enemy_health_bars==bars && settings.enemy_health_numbers);
+        GraphicsGui graphics;auto* graphics_frame=static_cast<tsl::elm::OverlayFrame*>(graphics.createUI());
+        assert(row(graphics_frame,"Graphics profile")->click(HidNpadButton_Right));
+        assert(settings.enemy_health_bars==bars && settings.enemy_health_numbers);
+        assert(files.at(overlay_storage::settings_path).enemy_health_bars==bars && files.at(overlay_storage::settings_path).enemy_health_numbers);
+        delete controls_frame;delete graphics_frame;
+    }
+    files.clear();sends=0;settings=default_controls_profile();note.clear();
     assert(profile_kind(settings,ProfileDomain::Controls)==ProfileKind::Default);
     settings=default_controls_profile();note.clear();ControlsGui controls;
     auto* root=static_cast<tsl::elm::OverlayFrame*>(controls.createUI());

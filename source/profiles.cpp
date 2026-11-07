@@ -85,6 +85,8 @@ void copy_profile(Settings& destination, const Settings& source, ProfileDomain d
         // Copy the whole structure so future gameplay fields belong to Controls.
         destination = source;
         copy_graphics(destination, preserved);
+        destination.enemy_health_bars = preserved.enemy_health_bars;
+        destination.enemy_health_numbers = preserved.enemy_health_numbers;
         destination.language = preserved.language;
         destination.calibration_request = preserved.calibration_request;
         destination.gyro_bias_x = preserved.gyro_bias_x;

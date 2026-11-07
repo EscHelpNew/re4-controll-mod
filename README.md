@@ -9,12 +9,27 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current release version is **[0.17.2](docs/releases/v0.17.2.md)** (2026-11-04).
-Final host tests and the ARM64 build for 0.17.2 passed. Physical validation of
-the preview direction and broader hardware acceptance remain pending.
-The user confirmed basic HOME exit in local 0.17.1. That check and the earlier
-0.16.1/AF16x confirmation do not validate the new gyro preview direction, presets
-or Quality image quality/performance.
+The current release is **[0.20.0](docs/releases/v0.20.0.md)** (2026-11-07),
+including all changes since 0.17.2.
+
+**Game → Enemy health bars** shows a thin translucent green/yellow/red strip
+above the enemy under your aim, fading in and out over 300 ms. Optional
+**Health numbers** show current health in weapon firepower units, for example
+`5.0`. Both options start off and are saved independently of profiles. Game
+follows Graphics; both menus include a compact preview that follows the toggles.
+
+This release also adds reload walking and right-stick steering, grenade aim
+movement, unified controls and a rear shoulder camera for playable Ashley, stable
+character framing during strafe/camera turns, and corrected extreme aim framing.
+Select the **RE6** controls profile or enable the corresponding movement options
+and **Unified sticks**. Native reload timing is preserved; scopes stay stationary.
+It repairs the known legacy installation-receipt conflict while preserving
+protection for unknown files from other mods.
+
+Host tests, ARM64 builds and public artifact audits passed. The application
+transfer and restart were verified on console; camera/movement behavior was
+confirmed in local 0.18.5. Broader gameplay and graphics acceptance remains
+incomplete; see the release notes for scope and installation instructions.
 
 ## Features
 
@@ -111,8 +126,8 @@ The new view, reticle and movement modes start **Off**. Enable them independentl
 in Controls. First-person view uses Camera sensitivity for continuous right-stick
 look. Move while aiming/Move with knife retain the game's attack timing and
 collision pipeline. These paths target Leon's ordinary firearms and knife;
-verified pistol, shotgun, automatic, rifle, launcher and mine handlers are supported;
-throwable/charged-special handlers and other characters are excluded. Scoped
+verified pistol, shotgun, automatic, rifle, launcher, mine and grenade handlers are supported;
+charged-special handlers and other characters' weapon actions are excluded. Scoped
 rifle views stay stationary, with leftY zoom and rightXY/gyro aiming. The0.7 native paths
 have automated callback tests; console visual/collision acceptance is still pending.
 

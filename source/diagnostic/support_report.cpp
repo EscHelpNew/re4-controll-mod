@@ -1,5 +1,7 @@
 #include "re4/support_report.hpp"
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -80,6 +82,34 @@ void directory(Writer& w,const std::string& root,const char* relative,unsigned& 
   if(include){++files_read;contents(w,full+"/"+e.name,path,maximum);}
  }
 }
+// Read-only identities for the three fixed RE4 install destinations. Never
+// include file contents, settings or credentials in an ownership report.
+void installation(Writer& w,const std::string& root){
+ std::array<unsigned char,33> receipt{};std::size_t receipt_bytes=0;
+ if(FILE* f=std::fopen((root+"/switch/re4-controls/installed-files.bin").c_str(),"rb")){
+  receipt_bytes=std::fread(receipt.data(),1,receipt.size(),f);if(std::ferror(f))receipt_bytes=0;std::fclose(f);
+ }
+ const bool valid=receipt_bytes==32&&!std::memcmp(receipt.data(),"RE4INST1",8);
+ const char* paths[]={"/atmosphere/contents/010099A00BC1E000/exefs/subsdk9",
+  "/atmosphere/contents/010099A00BC1E000/exefs/main.npdm","/switch/.overlays/re4-controls.ovl"};
+ for(unsigned i=0;i<3;++i){
+  const std::string full=root+paths[i];struct stat st{};
+  if(!plain_stat(full,st)||!S_ISREG(st.st_mode)){w.row("install_file",paths[i],"unavailable");continue;}
+  if(st.st_size<0||st.st_size>4*1024*1024){w.row("install_file",paths[i],"size_limit");continue;}
+  FILE* f=std::fopen(full.c_str(),"rb");if(!f){w.row("install_file",paths[i],"read_error");continue;}
+  std::uint64_t hash=14695981039346656037ull;std::size_t bytes=0;unsigned char block[4096];
+  while(const auto n=std::fread(block,1,sizeof(block),f)){
+   bytes+=n;if(bytes>4*1024*1024)break;
+   for(std::size_t j=0;j<n;++j)hash=(hash^block[j])*1099511628211ull;
+  }
+  const bool ok=!std::ferror(f)&&bytes==std::size_t(st.st_size)&&bytes<=4*1024*1024;
+  std::fclose(f);if(!ok){w.row("install_file",paths[i],"read_error");continue;}
+  std::uint64_t expected=0;if(valid)std::memcpy(&expected,receipt.data()+8+8*i,8);
+  char data[192];std::snprintf(data,sizeof(data),"bytes=%llu fnv1a64=%016llx receipt_valid=%u expected=%016llx receipt_match=%u",
+   (unsigned long long)bytes,(unsigned long long)hash,unsigned(valid),(unsigned long long)expected,unsigned(valid&&hash==expected));
+  w.row("install_file",paths[i],data);
+ }
+}
 }
 namespace re4 {
 bool write_support_report(const char* sd_root,const char* destination,const char* version){
@@ -94,6 +124,7 @@ bool write_support_report(const char* sd_root,const char* destination,const char
  FILE* file=fdopen(fd,"wb");if(!file){close(fd);std::remove(temporary.c_str());return false;}
  Writer writer{file};writer.text("#re4_controls_support,abi=1\nkind,path,data\n");writer.row("application","version",version);
  unsigned count=0;std::string root=sd_root;while(!root.empty()&&root.back()=='/')root.pop_back();
+ installation(writer,root);
  for(const auto* folder:{"/switch/re4-controls","/switch/re4-controls/telemetry",
       "/atmosphere/crash_reports","/atmosphere/fatal_reports","/atmosphere/fatal_errors",
       "/switch/.overlays","/atmosphere/contents/01002A000CD48000/exefs",

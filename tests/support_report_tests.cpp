@@ -15,6 +15,11 @@ int main(){
  put(root/"switch/re4-controls/token.txt","PRIVATE_TEST_SENTINEL");
  put(root/"switch/re4-controls/telemetry/test.csv.part","#capture\nPartial frame\n");
  put(root/"switch/re4-controls/reload-bridge.log","installed_game=RE6\nprogram_main_build=TEST\n");
+ put(root/"atmosphere/contents/010099A00BC1E000/exefs/subsdk9","old-module");
+ put(root/"atmosphere/contents/010099A00BC1E000/exefs/main.npdm","old-permissions");
+ put(root/"switch/.overlays/re4-controls.ovl","old-overlay");
+ std::string receipt(32,'\0');receipt.replace(0,8,"RE4INST1");
+ put(root/"switch/re4-controls/installed-files.bin",receipt);
  const auto output=root/"switch/re4-controls/telemetry/support-test.csv";
  CHECK(re4::write_support_report(root.string().c_str(),output.string().c_str(),"0.11.1"));
  const auto text=get(output);
@@ -23,6 +28,14 @@ int main(){
  CHECK(text.find("test.csv.part")!=std::string::npos&&text.find("Partial frame")!=std::string::npos);
  CHECK(text.find("program_main_build=TEST")!=std::string::npos&&text.find("PRIVATE_TEST_SENTINEL")==std::string::npos);
  CHECK(text.size()<re4::kSupportReportLimit);
+ CHECK(text.find("install_file")!=std::string::npos);
+ CHECK(text.find("/atmosphere/contents/010099A00BC1E000/exefs/subsdk9")!=std::string::npos);
+ CHECK(text.find("receipt_match=0")!=std::string::npos);
+ CHECK(text.find("fnv1a64=43e24eca71ce7999")!=std::string::npos);
+ CHECK(text.find("fnv1a64=8a2c1087c7b752e7")!=std::string::npos);
+ CHECK(text.find("fnv1a64=57addd30e3b623f7")!=std::string::npos);
+ CHECK(get(root/"atmosphere/contents/010099A00BC1E000/exefs/subsdk9")=="old-module");
+ CHECK(get(root/"switch/re4-controls/installed-files.bin")==receipt);
  CHECK(!re4::write_support_report(root.string().c_str(),output.string().c_str(),"0.11.2")&&get(output)==text);
  CHECK(!re4::write_support_report(root.string().c_str(),(root/"missing/out.csv").string().c_str(),"0.11.1"));
  fs::remove_all(root);std::puts("support report tests passed");

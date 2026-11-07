@@ -13,6 +13,10 @@ struct ModernMoveNative {
 ModernMoveNative modern_native;
 re4::ModernMoveCycle modern_cycle;
 re4::ModernMovePose modern_pose;
+re4::ModernMovePoseStorage<1> modern_body_pose;
+re4::ModernMoveIdentity modern_body_owner{};
+float modern_body_yaw=0;
+bool modern_body_applied=false;
 re4::ModernMoveIdentity modern_bound_owner{};
 std::uintptr_t modern_bound_asset=0,modern_bound_clip=0;
 void* modern_update_actor=nullptr;
@@ -38,7 +42,7 @@ template<class T> bool modern_move_read(std::uintptr_t p,T& value){
 }
 std::uintptr_t modern_move_slot(std::size_t offset){return *reinterpret_cast<const std::uintptr_t*>(main_base+offset);}
 
-bool modern_move_collect(void* actor,re4::ModernMoveIdentity& identity,std::array<re4::ModernMoveBone,9>& bones){
+bool modern_move_collect(void* actor,re4::ModernMoveIdentity& identity,std::array<re4::ModernMoveBone,9>& bones,re4::ModernMoveBone* root=nullptr){
     const auto address=reinterpret_cast<std::uintptr_t>(actor);
     re4::ModernMoveMemory am;
     if(actor!=reinterpret_cast<void*>(modern_move_slot(re4::profile::player_slot))
@@ -55,6 +59,7 @@ bool modern_move_collect(void* actor,re4::ModernMoveIdentity& identity,std::arra
     for(unsigned i=0;i<26;++i){
         re4::ModernMoveMemory m;if(!modern_move_region(bone,0x1DC,true,m))return false;
         pointers[i]=bone;parents[i]=*reinterpret_cast<const std::uintptr_t*>(bone+0x78);
+        if(i==0&&root)*root={reinterpret_cast<float*>(bone+0xA4),reinterpret_cast<float*>(bone+0x48),reinterpret_cast<std::uint32_t*>(bone+0x1D8),reinterpret_cast<std::uint16_t*>(bone+0x1B4)};
         if(i>=17)bones[i-17]={reinterpret_cast<float*>(bone+0xA4),reinterpret_cast<float*>(bone+0x48),reinterpret_cast<std::uint32_t*>(bone+0x1D8),reinterpret_cast<std::uint16_t*>(bone+0x1B4)};
         bone=*reinterpret_cast<const std::uintptr_t*>(bone+0x108);
     }
@@ -83,6 +88,7 @@ bool modern_move_frame(void* actor,re4::ModernMoveFrame& frame){
     const auto handler=modern_move_slot(0x1265A28);
     frame.generic_firearm=handler==main_base+0x31CC60;
     frame.weapon=re4::modern_weapon(handler-main_base);
+    frame.reload_type1=*reinterpret_cast<const int*>(main_base+0x11C7D68)==1;
     frame.frame_factor=*reinterpret_cast<const float*>(state+0xA4);
     frame.frozen=*reinterpret_cast<const std::uint8_t*>(state+0x86FF)!=0;
     frame.scripted=(*reinterpret_cast<const std::uint8_t*>(state+0x5092)&4)!=0
@@ -184,6 +190,11 @@ HOOK_DEFINE_TRAMPOLINE(ModernPlayerUpdate) {
         // Restoration runs before native code even when a mode was just turned
         // off, changed state, or received zero input.
         re4::ModernMoveIdentity owner;std::array<re4::ModernMoveBone,9> bones;
+        if(modern_body_pose.pending()){
+            re4::ModernMoveBone root;
+            if(modern_move_collect(actor,owner,bones,&root))modern_body_pose.restore(owner,{root});
+            else modern_body_pose.discard();
+        }
         if(modern_pose.pending()){
             if(modern_move_collect(actor,owner,bones))modern_pose.restore(owner,bones);
             else modern_pose.discard();
@@ -192,13 +203,16 @@ HOOK_DEFINE_TRAMPOLINE(ModernPlayerUpdate) {
         ++modern_epoch;modern_root_done=modern_stepped=modern_pose_done=false;
         control.modern_move_status=(settings.move_while_aiming||settings.move_while_knife||settings.move_while_reloading)?1:0;
         control.modern_move_distance=0;
+        modern_body_applied=false;
         unified_player_update(actor,+[](void* value){Orig(value);});modern_update_actor=previous;
+        if(!modern_body_applied){modern_body_yaw=0;modern_body_owner={};}
     }
 };
 HOOK_DEFINE_TRAMPOLINE(ModernRoot) {
     static std::uint32_t Callback(void* actor,void* flag){
         if(actor&&actor==modern_update_actor&&!modern_root_done){
             modern_root_done=true;
+            unified_reload_root(actor);
             if(settings.move_while_aiming||settings.move_while_knife||settings.move_while_reloading)modern_stepped=modern_move_prepare(actor);
         }
         const auto previous_root=unified_root_actor;const auto previous_yaw=unified_root_yaw;
@@ -214,9 +228,9 @@ HOOK_DEFINE_TRAMPOLINE(ModernPose) {
         const bool native_walk=actor&&actor==unified_root_actor&&settings.unified_controls;
         if(actor&&actor==modern_update_actor&&flag==0&&(modern_stepped||native_walk)&&!modern_pose_done){
             modern_pose_done=true;
-            re4::ModernMoveIdentity owner;std::array<re4::ModernMoveBone,9> bones;
+            re4::ModernMoveIdentity owner;std::array<re4::ModernMoveBone,9> bones;re4::ModernMoveBone root;
             if((native_walk||modern_native.evaluate)&&modern_native.rotation&&modern_native.position&&modern_native.scale&&modern_native.copy_matrix
-               &&modern_move_collect(actor,owner,bones)&&(native_walk||owner==modern_bound_owner)&&modern_pose.begin(owner,bones)){
+               &&modern_move_collect(actor,owner,bones,&root)&&(native_walk||owner==modern_bound_owner)&&modern_pose.begin(owner,bones)){
                 re4::ModernMoveCursorScope cursors(bones);
                 if(!cursors.valid()){modern_pose.rollback();Orig(actor,flag);return;}
                 float lower_yaw=modern_lower_yaw;
@@ -228,6 +242,29 @@ HOOK_DEFINE_TRAMPOLINE(ModernPose) {
                     modern_native.evaluate(actor,modern_cycle.motion().data());
                 }
                 cursors.restore(); // Before matrix helpers, native world/IK and every rollback path.
+                // Ordinary locomotion only: rotate the already blended pelvis
+                // matrix, preserving its native translation and animation.
+                // Actor yaw remains the view heading; weapon states never own
+                // this overlay. The lower branch compensates for the body turn.
+                const auto* bytes=static_cast<const std::uint8_t*>(actor);
+                float dt=0;
+                const bool body=native_walk&&bytes[0x115]>=1&&bytes[0x115]<=3&&!bytes[0x309]
+                    &&modern_move_read(modern_move_slot(0xB1AE08)+0xA4,dt)
+                    &&std::isfinite(dt)&&dt>0&&dt<=2&&modern_body_pose.begin(owner,{root});
+                if(body){
+                    if(!(owner==modern_body_owner))modern_body_yaw=0;
+                    const float target=std::clamp(lower_yaw*.3f,-.436332313f,.436332313f);
+                    const float amount=modern_body_yaw+(target-modern_body_yaw)*(-std::expm1(-dt/4.5f));
+                    const float c=std::cos(amount),s=std::sin(amount);
+                    for(unsigned col=0;col<3;++col){
+                        const float x=root.matrix[col],z=root.matrix[8+col];
+                        root.matrix[col]=c*x+s*z;root.matrix[8+col]=-s*x+c*z;
+                    }
+                    if(modern_body_pose.finish()){
+                        modern_body_owner=owner;modern_body_yaw=amount;modern_body_applied=true;
+                        lower_yaw-=amount;
+                    }
+                }
                 bones[0].local[4]+=lower_yaw;
                 bool finite=true;for(const auto& bone:bones)for(unsigned i=0;i<9;++i)finite=finite&&std::isfinite(bone.local[i]);
                 if(finite){
@@ -237,7 +274,8 @@ HOOK_DEFINE_TRAMPOLINE(ModernPose) {
                         modern_native.copy_matrix(bone.matrix,reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(bone.local)-0xA4+0x18));
                     }
                     if(modern_pose.finish())control.modern_pose_steps=control.modern_pose_steps+1;
-                }else{modern_pose.rollback();control.modern_move_status=5;}
+                    else{modern_body_pose.rollback();modern_body_applied=false;}
+                }else{modern_pose.rollback();modern_body_pose.rollback();modern_body_applied=false;control.modern_move_status=5;}
             }
         }
         Orig(actor,flag); // Native world matrices and IK run once after gait.

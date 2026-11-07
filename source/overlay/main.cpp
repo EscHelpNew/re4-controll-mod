@@ -5,9 +5,11 @@
 #include "storage.hpp"
 #include "re4/settings_file.hpp"
 #include "re4/control_menu.hpp"
+#include "re4/game_menu.hpp"
 #include "re4/version.hpp"
 #include "re4/reticle_preview.hpp"
 #include "re4/graphics_preview_image.hpp"
+#include "re4/enemy_health_preview.hpp"
 
 namespace {
 GameLink link;
@@ -40,6 +42,7 @@ class DescriptionFrame : public tsl::elm::OverlayFrame {
     unsigned help_y_=tsl::cfg::FramebufferHeight-152;
     bool preview_=false;
     bool graphics_preview_=false;
+    bool health_preview_=false;
     graphics_preview::Topic graphics_topic_=graphics_preview::Topic::Filtering;
     int graphics_x_=64;
 public:
@@ -47,18 +50,26 @@ public:
     void set_help(const char* text){description_=text;}
     void set_preview(bool enabled){preview_=enabled;}
     void set_graphics_preview(bool enabled){graphics_preview_=enabled;}
+    void set_health_preview(bool enabled){health_preview_=enabled;}
     void set_graphics_topic(graphics_preview::Topic topic){graphics_topic_=topic;}
     void layout(u16 x,u16 y,u16 width,u16 height)override{
-        OverlayFrame::layout(x,y,width,height);help_y_=y+height-(graphics_preview_?367:preview_?310:152);
+        OverlayFrame::layout(x,y,width,height);help_y_=y+height-(health_preview_?404:graphics_preview_?367:preview_?310:152);
         graphics_x_=int(x)+(int(width)-320)/2;
         if(m_contentElement){
-            m_contentElement->setBoundaries(x+35,y+125,width-85,height-73-125-(graphics_preview_?325:preview_?268:110));
+            m_contentElement->setBoundaries(x+35,y+125,width-85,height-73-125-(health_preview_?362:graphics_preview_?325:preview_?268:110));
             m_contentElement->invalidate();
         }
     }
     void draw(tsl::gfx::Renderer* renderer)override{
         OverlayFrame::draw(renderer);
         renderer->drawRect(20,help_y_-21,tsl::cfg::FramebufferWidth-40,1,a(tsl::style::color::ColorDescription));
+        if(health_preview_){
+            renderer->drawString(description_,false,20,help_y_,16,a(tsl::style::color::ColorDescription));
+            re4::health_preview::draw_rows(settings,graphics_x_+(320-re4::health_preview::width)/2,int(help_y_)+80,
+                [&](int x,int y,int w,int h,const std::uint8_t* rgba){renderer->drawBitmap(x,y,w,h,rgba);});
+            renderer->drawString(tr("Enlarged example","Увеличенный пример"),false,20,help_y_+320,16,a(tsl::style::color::ColorDescription));
+            return;
+        }
         if(graphics_preview_){
             renderer->drawString(description_,false,20,help_y_,16,a(tsl::style::color::ColorDescription));
             const int image_y=int(help_y_)+90;
@@ -294,9 +305,39 @@ public:
         }
     }
 };
+class GameGui : public tsl::Gui {
+    DescriptionFrame* frame_=nullptr;
+    tsl::elm::ToggleListItem* health_=nullptr;
+    tsl::elm::ListItem* numbers_=nullptr;
+public:
+    tsl::elm::Element* createUI()override{
+        frame_=new DescriptionFrame;frame_->set_health_preview(true);auto* list=new tsl::elm::List;
+        health_=new tsl::elm::ToggleListItem(re4::kEnemyHealthBarsLabel.get(settings.language),settings.enemy_health_bars,"On","Off");
+        health_->setStateChangedListener([this](bool value){
+            settings.enemy_health_bars=value;note.clear();change();update();
+        });
+        list->addItem(health_);
+        numbers_=new tsl::elm::ListItem(re4::kEnemyHealthNumbersLabel.get(settings.language));
+        numbers_->setClickListener([this](u64 keys){
+            if(!(keys&HidNpadButton_A) || !settings.enemy_health_bars)return false;
+            settings.enemy_health_numbers=!settings.enemy_health_numbers;note.clear();change();update();return true;
+        });
+        list->addItem(numbers_);frame_->setContent(list);update();return frame_;
+    }
+    void update()override{
+        frame_->setTitle(re4::kGameMenuLabel.get(settings.language));
+        frame_->setSubtitle(re4::kVersion);
+        frame_->set_help(getFocusedElement()==numbers_?re4::enemy_health_numbers_help(settings):re4::kEnemyHealthBarsHelp.get(settings.language));
+        health_->setText(re4::kEnemyHealthBarsLabel.get(settings.language));
+        health_->setState(settings.enemy_health_bars);
+        health_->setValue(re4::enemy_health_bars_value(settings));
+        numbers_->setText(re4::kEnemyHealthNumbersLabel.get(settings.language));
+        numbers_->setValue(re4::enemy_health_numbers_value(settings));
+    }
+};
 class MainGui : public tsl::Gui {
     DescriptionFrame* frame_=nullptr;
-    tsl::elm::ListItem *controls_=nullptr,*graphics_=nullptr,*status_=nullptr,*language_=nullptr;
+    tsl::elm::ListItem *controls_=nullptr,*graphics_=nullptr,*game_=nullptr,*status_=nullptr,*language_=nullptr;
 public:
     tsl::elm::Element* createUI()override{
         frame_=new DescriptionFrame;auto* list=new tsl::elm::List;
@@ -317,21 +358,28 @@ public:
             if(!(keys&HidNpadButton_A))return false;
             note.clear();tsl::changeTo<GraphicsGui>();return true;
         });
+        game_=new tsl::elm::ListItem("Game");
+        game_->setClickListener([](u64 keys){
+            if(!(keys&HidNpadButton_A))return false;
+            note.clear();tsl::changeTo<GameGui>();return true;
+        });
         language_=new tsl::elm::ListItem("Language");
         language_->setClickListener([this](u64 keys){
             if(!(keys&(HidNpadButton_A|HidNpadButton_Left|HidNpadButton_Right)))return false;
             re4::change_control(settings,re4::ControlId::Language,1);note.clear();change();update();return true;
         });
-        list->addItem(status_);list->addItem(controls_);list->addItem(graphics_);list->addItem(language_);
+        list->addItem(status_);list->addItem(controls_);list->addItem(graphics_);list->addItem(game_);list->addItem(language_);
         frame_->setContent(list);update();return frame_;
     }
     void update()override{
         frame_->setTitle("RE4 Controls");frame_->setSubtitle(re4::kVersion);
+        game_->setText(re4::kGameMenuLabel.get(settings.language));
         status_->setText(note.empty()?tr("Connect to game","Подключиться к игре"):note);
         controls_->setText(tr("Controls","Управление"));graphics_->setText(tr("Graphics","Графика"));
         language_->setText(tr("Language","Язык"));language_->setValue(settings.language==re4::Language::Russian?"Русский":"English");
         controls_->setValue(re4::profile_name(re4::profile_kind(settings,re4::ProfileDomain::Controls),settings.language));
         graphics_->setValue(re4::profile_name(re4::profile_kind(settings,re4::ProfileDomain::Graphics),settings.language));
+        if(getFocusedElement()==game_){frame_->set_help(re4::kGameMenuHelp.get(settings.language));return;}
         if(getFocusedElement()==language_){frame_->set_help(re4::control_spec(re4::ControlId::Language).help.get(settings.language));return;}
         frame_->set_help(getFocusedElement()==graphics_?tr(
             "Full restart: HOME > X > Close, then start.\nMenu / overlay alone is not enough.",

@@ -35,11 +35,11 @@ class HookPoolTests(unittest.TestCase):
     def test_capacity_and_native_compile_guard(self):
         before = {p: (ROOT / 'third_party/exlaunch' / p).read_bytes() for p in (SETTING, HOOK)}
         report = stage_hook_pool(self.stage, self.root)
-        self.assertEqual(report, dict(required_hooks=30, capacity=40, slot_bytes=200, jit_bytes=8192))
+        self.assertEqual(report, dict(required_hooks=32, capacity=40, slot_bytes=200, jit_bytes=8192))
         self.assertIn('constexpr size_t JitSize = 0x2000;', (self.stage / SETTING).read_text())
         hook = (self.stage / HOOK).read_text()
         self.assertIn('if(i >= HookMax)', hook)
-        self.assertRegex(hook, r'static_assert\(HookMax\s*>=\s*30\b')
+        self.assertRegex(hook, r'static_assert\(HookMax\s*>=\s*32\b')
         for p, data in before.items():
             self.assertEqual((ROOT / 'third_party/exlaunch' / p).read_bytes(), data)
 
@@ -48,8 +48,8 @@ class HookPoolTests(unittest.TestCase):
         with source.open('a') as stream:
             stream.write('\nExtra::InstallAtPtr(pointer); // Fake::InstallAtOffset(1);\n')
             stream.write('/* Fake::InstallAtFuncPtr(pointer); */\n')
-        self.assertEqual(stage_hook_pool(self.stage, self.root)['required_hooks'], 31)
-        self.assertRegex((self.stage / HOOK).read_text(), r'HookMax\s*>=\s*31\b')
+        self.assertEqual(stage_hook_pool(self.stage, self.root)['required_hooks'], 33)
+        self.assertRegex((self.stage / HOOK).read_text(), r'HookMax\s*>=\s*33\b')
 
     def test_unknown_revisions_or_over_budget_leave_both_files_unchanged(self):
         cases = [(SETTING, 'JitSize = 0x1000', 'JitSize = 0x3000'),

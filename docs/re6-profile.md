@@ -2,8 +2,8 @@
 
 Select **Controls → Controls profile → RE6** in the installer or overlay.
 The profile is the first row; change it with A or Left/Right. Install the matching
-module and overlay before selecting it: version0.13.0 uses settings wire13 and
-shared ABI17.
+module and overlay before selecting it: local version0.20.0 uses settings wire15
+and shared ABI19. Game options are saved independently of this profile.
 
 The preset is an initial adaptation of RE6 response to RE4's proven camera and
 movement hooks. It is based on1437 synchronized, fully valid samples recorded
@@ -47,8 +47,8 @@ gyro angles are interpolated onto the game frame clock with10ms presentation
 delay, avoiding unequal steps from asynchronous sensor batches. Native firearm
 raising is seeded with the retained pitch for the verified generic mode0 path.
 
-Reload walking covers ordinary Leon reloads in the generic firearm handler.
-Unsupported handlers retain native behavior. Existing v12 settings keep reload
+Reload walking covers all ordinary Leon reload families with their verified
+native subphase tables. Existing v12 settings keep reload
 walking off; reselect RE6 to apply the updated preset, or enable the new toggle.
 
 From0.15.1, RE6-response third-person views use a shoulder arm anchored to Leon's
@@ -56,8 +56,24 @@ root position and the owned look direction. The neutral side and distance remain
 the same, but walking profiles and the native delayed camera basis cannot drag
 the desired eye around. Native wall collision still runs afterward and can move
 the composition near obstacles. Body and weapon animations are retained; this is
-not a frozen character pose. Default/classic controls, other characters and first
-person keep their previous camera paths. Console comfort remains to be checked.
+not a frozen character pose. From local0.18.1, playable Ashley uses the same
+shoulder arm during ordinary walking, backing up and running, with left-stick
+movement and right-stick heading/look. Her native animation speeds and movement
+budget are retained. The shared checked leg hierarchy supports the same strafe
+correction. Switching Ashley/Leon drains old look easing and resets owned pitch,
+including when the engine reuses the player address.
+
+Local0.18.2 also corrects the native horizontal follow stage after camera wall
+clipping. Its old local-X history belonged to a differently rotated camera
+basis, so it could pull the character across the screen despite the stable
+shoulder arm. Only the exact active shoulder call seeds the eye/target X history
+with its already clipped result. The existing side, distance and eased look
+remain; no extra camera or collision pass runs. Near walls the original clipped
+eye still takes priority over exact screen placement.
+
+Default/classic controls, accompanying Ashley, other characters, scripted
+actions and first person retain their existing camera paths. Console comfort,
+Ashley framing and interaction/wall transitions remain to be checked.
 
 This does not replace RE4's animation, weapon or collision engine. First-person
 weapon behavior and camera collision still belong to RE4. Actual comparison of

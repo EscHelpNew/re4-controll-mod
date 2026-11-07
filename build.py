@@ -72,6 +72,10 @@ def tests():
          'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'game_module_tests.exe'])
     native('game_module_tests.exe')
     run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
+         '-Itests/game_stubs', '-Iinclude', 'tests/enemy_health_module_tests.cpp',
+         'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'enemy_health_module_tests.exe'])
+    native('enemy_health_module_tests.exe')
+    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
          '-Itests/game_stubs', '-Iinclude', 'tests/aim_raise_tests.cpp',
          'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'aim_raise_tests.exe'])
     native('aim_raise_tests.exe')
@@ -119,7 +123,7 @@ def tests():
     run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
          'tests/modern_move_tests.cpp','source/input.cpp','-o',OUT/'modern_move_tests.exe'])
     native('modern_move_tests.exe')
-    for name in ('unified_tests','scope_tests','gyro_frame_tests','gyro_preview_tests','reticle_draw_tests','re6_journal_tests'):
+    for name in ('unified_tests','scope_tests','gyro_frame_tests','gyro_preview_tests','reticle_draw_tests','enemy_health_tests','enemy_health_fade_tests','enemy_health_numbers_tests','re6_journal_tests'):
         run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
              'tests/'+name+'.cpp','source/input.cpp','-o',OUT/(name+'.exe')])
         native(name+'.exe')
@@ -269,7 +273,7 @@ def module():
     profile = ROOT / 'profiles/010099A00BC1E000/npdm.json'
     (stage / 'config.json').write_text(profile.read_text(encoding='utf-8'), encoding='utf-8')
     shutil.copy2(ROOT / 'source/game/module.cpp', stage / 'source/program/main.cpp')
-    for name in ('modern_move.inc','aim_raise.inc','scoped_aim.inc'):
+    for name in ('modern_move.inc','aim_raise.inc','scoped_aim.inc','enemy_health.inc'):
         shutil.copy2(ROOT / 'source/game' / name, stage / 'source/program' / name)
     core = stage / 'source/re4-core'
     core.mkdir(exist_ok=True)

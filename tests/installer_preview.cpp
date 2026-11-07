@@ -71,6 +71,15 @@ void check_graphics_picture(const char* path){
     assert(varied>1000); // Actual textured scene, not a placeholder/solid panel.
     SDL_FreeSurface(image);
 }
+unsigned check_health_change(const char* before,const char* after,int left,int top,int right,int bottom){
+    auto* a=SDL_LoadBMP(before);auto* b=SDL_LoadBMP(after);assert(a&&b);unsigned changed=0;
+    for(int y=286;y<584;++y)for(int x=862;x<1206;++x){
+        const auto p=pixel_at(a,x,y),q=pixel_at(b,x,y);
+        if(p.r==q.r&&p.g==q.g&&p.b==q.b)continue;
+        ++changed;assert(x>=left&&x<right&&y>=top&&y<bottom);
+    }
+    SDL_FreeSurface(a);SDL_FreeSurface(b);return changed;
+}
 void check_deadzone(const char* path,float left,float right){
     auto* image=SDL_LoadBMP(path);assert(image);
     for(unsigned axis=0;axis<4;++axis){
@@ -169,6 +178,22 @@ int main(){
     renderer.draw(model);assert(renderer.save_preview("build/installer-controls-ru.bmp"));
     for(auto language:{re4::Language::English,re4::Language::Russian}){
         model.settings.language=language;
+        model.page=re4::InstallerPage::Game;model.selected=0;model.settings.enemy_health_bars=true;
+        const auto* game_path=language==re4::Language::English?"build/installer-game-en.bmp":"build/installer-game-ru.bmp";
+        renderer.draw(model);assert(renderer.save_preview(game_path));
+        check_graphics_picture(game_path);
+        model.settings.enemy_health_bars=false;model.settings.enemy_health_numbers=false;
+        renderer.draw(model);assert(renderer.save_preview("build/installer-health-off.bmp"));
+        model.settings.enemy_health_bars=true;
+        renderer.draw(model);assert(renderer.save_preview("build/installer-health-bar.bmp"));
+        assert(check_health_change("build/installer-health-off.bmp","build/installer-health-bar.bmp",985,360,1060,370)>100);
+        model.settings.enemy_health_numbers=true;
+        renderer.draw(model);const auto* number_path=language==re4::Language::English?"build/installer-health-numbers-en.bmp":"build/installer-health-numbers-ru.bmp";
+        assert(renderer.save_preview(number_path));
+        assert(check_health_change("build/installer-health-bar.bmp",number_path,1000,337,1050,355)>50);
+        model.settings.enemy_health_bars=false;
+        renderer.draw(model);assert(renderer.save_preview("build/installer-health-hidden.bmp"));
+        assert(check_health_change("build/installer-health-off.bmp","build/installer-health-hidden.bmp",0,0,0,0)==0);
         model.page=re4::InstallerPage::Graphics;model.selected=0;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-graphics-en.bmp":"build/installer-graphics-ru.bmp"));

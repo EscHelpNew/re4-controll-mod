@@ -126,6 +126,17 @@ def prepare(root: Path) -> Path:
         for start in range(0, len(pixels), 16):
             lines.append('    ' + ', '.join(f'0x{pixel:04x}' for pixel in pixels[start:start + 16]) + ',')
         lines.extend(['};', ''])
+    # Approved close-up from the unchanged, attributed RE4 source frame.
+    # Keep the HUD dynamic; the embedded image contains no health bar or number.
+    from PIL import Image
+    with Image.open(root / 'assets/graphics/re4-source.jpg') as scene:
+        closeup = scene.convert('RGB').crop((415, 105, 640, 300)).resize((256, 222), Image.Resampling.LANCZOS)
+    health_pixels = [((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
+                     for r, g, b in zip(*[iter(closeup.tobytes())] * 3)]
+    lines.append('inline constexpr std::uint16_t health_pixels[256 * 222] = {')
+    for start in range(0, len(health_pixels), 16):
+        lines.append('    ' + ', '.join(f'0x{pixel:04x}' for pixel in health_pixels[start:start + 16]) + ',')
+    lines.extend(['};', ''])
     lines.extend(['}  // namespace graphics_preview', ''])
     destination = root / 'build/graphics/graphics_preview_images.hpp'
     destination.parent.mkdir(parents=True, exist_ok=True)

@@ -60,3 +60,10 @@ dimensions, fits the complete frame to 1280 x 720, and converts it to RGB565 in 
 separate generated header used only by the installer renderer. It does not change
 the official 320 x 180 graphics thumbnails. The gyro test moves only the
 application marker: the scene, weapon, camera and HUD remain a static image.
+
+The enemy-health settings illustration crops the unchanged RE4 JPEG above to
+rectangle (415, 105, 640, 300), then scales it to 256 x 222 RGB565 pixels in the
+generated graphics header. Both menus composite the actual mod bar and number
+geometry over this close-up according to their current settings. It is an
+enlarged illustration, not a console capture. The original source attribution
+and CAPCOM copyright also apply to this crop.

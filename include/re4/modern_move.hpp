@@ -148,9 +148,10 @@ private:
     bool valid_=false;
 };
 
-enum class ModernWeapon {Unsupported,Pistol,Shotgun,Automatic,Rifle,Launcher,Mine};
+enum class ModernWeapon {Unsupported,Pistol,Shotgun,Automatic,Rifle,Launcher,Mine,Grenade};
 inline ModernWeapon modern_weapon(std::size_t handler){
     switch(handler){
+        case 0x31B9F0:return ModernWeapon::Grenade;
         case 0x31CC60:return ModernWeapon::Pistol;
         case 0x3351A0:return ModernWeapon::Shotgun;
         case 0x3270F0:return ModernWeapon::Automatic;
@@ -165,6 +166,7 @@ struct ModernMoveFrame {
     bool generic_firearm=false,native_aim=false,input_live=false,scripted=false,frozen=false;
     ModernWeapon weapon=ModernWeapon::Unsupported;
     bool aim_ready=false;
+    bool reload_type1=false;
     unsigned character=0,mode=0,routine=0,phase=0,subphase=0;
     std::uint64_t held=0;
     float frame_factor=0,x=0,y=0;
@@ -175,11 +177,18 @@ inline bool modern_move_context_allowed(const ModernMoveFrame& f){
        ||!std::isfinite(f.x)||!std::isfinite(f.y))return false;
     return true;
 }
-// Proven generic31CC60 reload family, including initialization before the
-// weapon's reload flag is written and playback after the aim button is released.
+// Native phase-4 reload tables differ by weapon and control scheme. Include
+// initialization before weapon+402 is set and playback after aim release.
+// Launchers/throwables have no reload entry; charged-special phase4 is not reload.
 inline bool modern_reload_allowed(const ModernMoveFrame& f){
-    return modern_move_context_allowed(f)&&f.reload_enabled&&f.generic_firearm
-        &&f.routine==6&&f.phase==4&&f.subphase<=3;
+    if(!modern_move_context_allowed(f)||!f.reload_enabled||f.routine!=6||f.phase!=4)return false;
+    const auto weapon=f.generic_firearm?ModernWeapon::Pistol:f.weapon;
+    switch(weapon){
+        case ModernWeapon::Pistol:case ModernWeapon::Shotgun:return f.subphase<=3;
+        case ModernWeapon::Automatic:return f.reload_type1?f.subphase<=4:(f.subphase<=1||f.subphase==3);
+        case ModernWeapon::Rifle:case ModernWeapon::Mine:return f.subphase<=1;
+        default:return false;
+    }
 }
 inline bool modern_move_allowed(const ModernMoveFrame& f){
     if(!modern_move_context_allowed(f))return false;
@@ -193,7 +202,7 @@ inline bool modern_move_allowed(const ModernMoveFrame& f){
         if(!f.aim_ready)return false; // Initial 1/4 can still be raising.
         if(f.subphase==0)return true; // Recovery re-enters the native aim setup.
         if(weapon==ModernWeapon::Rifle)return f.subphase==2;
-        return f.subphase==4&&(weapon==ModernWeapon::Pistol||weapon==ModernWeapon::Shotgun||weapon==ModernWeapon::Automatic);
+        return f.subphase==4&&(weapon==ModernWeapon::Pistol||weapon==ModernWeapon::Shotgun||weapon==ModernWeapon::Automatic||weapon==ModernWeapon::Grenade);
     }
     return f.routine==11&&f.knife_enabled&&(f.held&kKnifeHeldMask)&&f.subphase==1&&(f.phase==1||f.phase==2);
 }
@@ -283,7 +292,9 @@ private:
     bool active_=false;
 };
 inline bool modern_move_leon_topology(const std::array<std::int16_t,26>& parents,unsigned count){
-    // Independently checked in Switch pl00/pl0a/pl10 model bind tables.
+    // Independently checked in Switch pl00/pl0a/pl10 and Ashley pl01/pl11 bind
+    // tables. Shared leg topology also supports native Ashley walk redirection;
+    // the separate weapon-movement context remains Leon-only.
     constexpr std::int16_t expected[26]={-1,0,1,2,3,2,5,5,7,8,9,2,11,11,13,14,15,0,17,18,19,20,17,22,23,24};
     if(count<26||count>=255)return false;
     for(unsigned i=0;i<26;++i)if(parents[i]!=expected[i])return false;
@@ -299,10 +310,10 @@ inline float modern_move_lower_yaw(ModernMoveVec3 delta,float body_yaw,bool& bac
 // Restore only private overlay changes to local pose/matrices on the next
 // update. World points, world matrices and previous collision positions are
 // deliberately absent. Owner/range validation belongs to the caller.
-class ModernMovePose {
+template<std::size_t N> class ModernMovePoseStorage {
 public:
     bool pending()const{return pending_;}
-    bool begin(ModernMoveIdentity identity,const std::array<ModernMoveBone,9>& bones){
+    bool begin(ModernMoveIdentity identity,const std::array<ModernMoveBone,N>& bones){
         if(pending_)return false;
         for(const auto& b:bones){
             if(!b.local||!b.matrix||!b.flags)return false;
@@ -310,24 +321,24 @@ public:
             for(unsigned i=0;i<12;++i)if(!std::isfinite(b.matrix[i]))return false;
         }
         identity_=identity;bones_=bones;
-        for(unsigned i=0;i<9;++i){std::memcpy(before_[i].local,bones[i].local,36);std::memcpy(before_[i].matrix,bones[i].matrix,48);before_[i].flags=*bones[i].flags;}
+        for(unsigned i=0;i<N;++i){std::memcpy(before_[i].local,bones[i].local,36);std::memcpy(before_[i].matrix,bones[i].matrix,48);before_[i].flags=*bones[i].flags;}
         pending_=true;return true;
     }
     bool finish(){
         if(!pending_)return false;
-        for(unsigned i=0;i<9;++i){
+        for(unsigned i=0;i<N;++i){
             for(unsigned j=0;j<9;++j)if(!std::isfinite(bones_[i].local[j])){rollback();return false;}
             for(unsigned j=0;j<12;++j)if(!std::isfinite(bones_[i].matrix[j])){rollback();return false;}
         }
-        for(unsigned i=0;i<9;++i){std::memcpy(written_[i].local,bones_[i].local,36);std::memcpy(written_[i].matrix,bones_[i].matrix,48);written_[i].flags=*bones_[i].flags;}
+        for(unsigned i=0;i<N;++i){std::memcpy(written_[i].local,bones_[i].local,36);std::memcpy(written_[i].matrix,bones_[i].matrix,48);written_[i].flags=*bones_[i].flags;}
         finished_=true;return true;
     }
-    bool restore(ModernMoveIdentity identity,const std::array<ModernMoveBone,9>& bones){
+    bool restore(ModernMoveIdentity identity,const std::array<ModernMoveBone,N>& bones){
         if(!pending_)return false;
         if(!(identity==identity_)){discard();return false;}
-        for(unsigned i=0;i<9;++i)if(bones[i].local!=bones_[i].local||bones[i].matrix!=bones_[i].matrix||bones[i].flags!=bones_[i].flags){discard();return false;}
+        for(unsigned i=0;i<N;++i)if(bones[i].local!=bones_[i].local||bones[i].matrix!=bones_[i].matrix||bones[i].flags!=bones_[i].flags){discard();return false;}
         if(!finished_){rollback();return true;}
-        for(unsigned i=0;i<9;++i){
+        for(unsigned i=0;i<N;++i){
             // A later native edit owns that field. Never replace it with a
             // stale snapshot merely because its actor address was reused.
             for(unsigned j=0;j<9;++j)if(same(bones[i].local[j],written_[i].local[j]))bones[i].local[j]=before_[i].local[j];
@@ -342,14 +353,15 @@ public:
     void discard(){pending_=false;finished_=false;}
     void rollback(){
         if(!pending_)return;
-        for(unsigned i=0;i<9;++i){std::memcpy(bones_[i].local,before_[i].local,36);std::memcpy(bones_[i].matrix,before_[i].matrix,48);*bones_[i].flags=before_[i].flags;}
+        for(unsigned i=0;i<N;++i){std::memcpy(bones_[i].local,before_[i].local,36);std::memcpy(bones_[i].matrix,before_[i].matrix,48);*bones_[i].flags=before_[i].flags;}
         discard();
     }
 private:
     static bool same(float a,float b){return !std::memcmp(&a,&b,4);}
     struct Saved {float local[9]{},matrix[12]{};std::uint32_t flags=0;};
-    std::array<Saved,9> before_{},written_{};
-    std::array<ModernMoveBone,9> bones_{};
+    std::array<Saved,N> before_{},written_{};
+    std::array<ModernMoveBone,N> bones_{};
     ModernMoveIdentity identity_{};bool pending_=false,finished_=false;
 };
+using ModernMovePose=ModernMovePoseStorage<9>;
 }

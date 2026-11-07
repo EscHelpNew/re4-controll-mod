@@ -7,7 +7,7 @@
 #include <string>
 
 namespace re4 {
-enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup, GyroTest };
+enum class InstallerPage { Home, Controls, Diagnostics, Updates, Mapping, MappingTargets, Graphics, ControlGroup, GyroTest, Game };
 enum class UiEvent { Up,Down,Left,Right,Confirm,Back,Exit,QuickInstall,QuickOverlay,QuickDisable,Calibrate,ResetPreview,PreviousGame,NextGame,OpenGyroTest };
 enum class InstallerAction { None,InstallGame,InstallOverlay,DisableGame,SaveSettings,Exit,Calibrate,ResetPreview,CheckUpdates,InstallUpdate,CancelUpdate,
     DefaultControls,CustomControls,DefaultGraphics,CustomGraphics,RE6Controls,SaveRe6Graphics,QualityGraphics,SaveGyroTest };
@@ -18,7 +18,7 @@ struct DiagnosticSnapshot {
     float raw[4]{},processed[4]{},gyro_rate[3]{},gyro_preview[2]{};
 };
 struct HomeItem {Bilingual label,help;};
-const std::array<HomeItem,9>& installer_home_items();
+const std::array<HomeItem,10>& installer_home_items();
 class InstallerModel {
     struct GameHomeState {
         unsigned selected=0;

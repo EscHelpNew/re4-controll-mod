@@ -9,6 +9,7 @@
 namespace {
 unsigned saves=0,sends=0;
 bool storage_available=true,have_saved=false,saved_gyro=true,last_sent_gyro=false;
+bool saved_enemy=false,last_sent_enemy=false,saved_numbers=false,last_sent_numbers=false;
 tsl::elm::List* list(tsl::elm::OverlayFrame* f){return static_cast<tsl::elm::List*>(f->content());}
 tsl::elm::ListItem* find(tsl::elm::OverlayFrame* f,const std::string& label){
     for(auto* e:list(f)->children)if(auto* row=dynamic_cast<tsl::elm::ListItem*>(e))if(row->label==label)return row;
@@ -54,11 +55,11 @@ void graphics_illustrations(){
 }
 namespace overlay_storage {bool ready(){return storage_available;}bool mount(){return storage_available;}void close(){}}
 namespace re4 {
-bool save_settings_file(const char* path,const Settings& s){if(std::string(path)==overlay_storage::settings_path)++saves;return valid_settings(s);}
-bool load_settings_file(const char*,Settings& s){if(have_saved)s.gyro_enabled=saved_gyro;return have_saved;}
+bool save_settings_file(const char* path,const Settings& s){if(std::string(path)==overlay_storage::settings_path){++saves;saved_enemy=s.enemy_health_bars;saved_numbers=s.enemy_health_numbers;}return valid_settings(s);}
+bool load_settings_file(const char*,Settings& s){if(have_saved){s.gyro_enabled=saved_gyro;s.enemy_health_bars=saved_enemy;s.enemy_health_numbers=saved_numbers;}return have_saved;}
 }
 void GameLink::initialize(){}void GameLink::close(){}bool GameLink::connect(){return true;}
-bool GameLink::apply(const re4::Settings& s){++sends;last_sent_gyro=s.gyro_enabled;return re4::valid_settings(s);}
+bool GameLink::apply(const re4::Settings& s){++sends;last_sent_gyro=s.gyro_enabled;last_sent_enemy=s.enemy_health_bars;last_sent_numbers=s.enemy_health_numbers;return re4::valid_settings(s);}
 int main(){
     using namespace re4;
     graphics_illustrations();settings={};
@@ -71,8 +72,63 @@ int main(){
     }
     settings={};note.clear();MainGui main;
     auto* root=static_cast<tsl::elm::OverlayFrame*>(main.createUI());
-    assert(find(root,"Language") && list(root)->children.size()==4);
+    assert(find(root,"Language") && find(root,"Game") && list(root)->children.size()==5);
     auto* language=find(root,"Language");
+    for(auto lang:{Language::English,Language::Russian}){
+        settings.language=lang;main.update();
+        auto* game=find(root,lang==Language::English?"Game":"Игра");assert(game);
+        assert(static_cast<tsl::elm::ListItem*>(list(root)->children[2])->label==(lang==Language::English?"Graphics":"Графика"));
+        assert(list(root)->children[3]==game);
+        assert(!game->click(HidNpadButton_Left) && !game->click(HidNpadButton_Right));
+        assert(game->click(HidNpadButton_A) && tsl::navigation.size()==1);
+        auto* page=tsl::navigation.back().get();
+        auto* content=static_cast<tsl::elm::OverlayFrame*>(page->root);content->layout(0,0,448,720);
+        assert(content->title==(lang==Language::English?"Game":"Игра"));
+        assert(list(content)->children.size()==2 && !find(content,"Language") && !find(content,"Язык"));
+        auto* health=dynamic_cast<tsl::elm::ToggleListItem*>(list(content)->children[0]);assert(health);
+        auto* numbers=find(content,lang==Language::English?"Health numbers":"Числа здоровья");assert(numbers);
+        assert(list(content)->children[1]==numbers && !settings.enemy_health_numbers);
+        assert(numbers->value==(lang==Language::English?"Unavailable":"Недоступно"));
+        const auto disabled_saves=saves,disabled_sends=sends;
+        for(auto key:{HidNpadButton_A,HidNpadButton_Left,HidNpadButton_Right})assert(!numbers->click(key));
+        assert(!settings.enemy_health_numbers && saves==disabled_saves && sends==disabled_sends);
+        page->focused=numbers;page->update();tsl::gfx::Renderer disabled_help;content->draw(&disabled_help);
+        assert(disabled_help.bitmaps.size()==222);
+        assert(disabled_help.bitmaps.front().x==96 && disabled_help.bitmaps.front().y==396);
+        assert(disabled_help.bitmaps.back().y+disabled_help.bitmaps.back().h<=647);
+        assert(disabled_help.text.back().y<=640); // Keep the real Tesla navigation footer clear.
+        assert(disabled_help.text.front().value.find(lang==Language::English?"Enable enemy health bars first":"Сначала включите полоски здоровья врагов")!=std::string::npos);
+        assert(health->label==(lang==Language::English?"Enemy health bars":"Полоска здоровья врагов"));
+        assert(!health->state && health->value==(lang==Language::English?"Off":"Выкл."));
+        page->focused=health;page->update();tsl::gfx::Renderer help;content->draw(&help);
+        assert(help.bitmaps.size()==222 && help.rects.size()==1 && !help.text.empty());
+        assert(help.text.front().value.find(lang==Language::English?"aiming":"прицел")!=std::string::npos);
+        const auto before_saves=saves,before_sends=sends;
+        health->changed(true);
+        assert(settings.enemy_health_bars && saved_enemy && last_sent_enemy && health->state);
+        assert(health->value==(lang==Language::English?"On":"Вкл."));
+        assert(saves==before_saves+1 && sends==before_sends+1);
+        assert(numbers->value==(lang==Language::English?"Off":"Выкл."));
+        assert(!numbers->click(HidNpadButton_Left) && !numbers->click(HidNpadButton_Right));
+        assert(numbers->click(HidNpadButton_A));
+        assert(settings.enemy_health_numbers && saved_numbers && last_sent_numbers);
+        assert(numbers->value==(lang==Language::English?"On":"Вкл."));
+        assert(saves==before_saves+2 && sends==before_sends+2);
+        page->focused=numbers;page->update();tsl::gfx::Renderer numbers_help;content->draw(&numbers_help);
+        assert(numbers_help.text.front().value.find(lang==Language::English?"weapon firepower units":"единицах мощности оружия")!=std::string::npos);
+        health->changed(false);
+        assert(!settings.enemy_health_bars && !saved_enemy && !last_sent_enemy && !health->state);
+        assert(numbers->value==(lang==Language::English?"Unavailable":"Недоступно") && settings.enemy_health_numbers);
+        for(auto key:{HidNpadButton_A,HidNpadButton_Left,HidNpadButton_Right})assert(!numbers->click(key));
+        assert(saves==before_saves+3 && sends==before_sends+3 && settings.enemy_health_numbers);
+        health->changed(true);
+        assert(numbers->value==(lang==Language::English?"On":"Вкл."));
+        assert(numbers->click(HidNpadButton_A) && !settings.enemy_health_numbers && !saved_numbers && !last_sent_numbers);
+        health->changed(false);
+        assert(saves==before_saves+6 && sends==before_sends+6);
+        tsl::goBack();assert(tsl::navigation.empty());
+    }
+    settings={};main.update();
     ControlsGui groups;auto* frame=static_cast<tsl::elm::OverlayFrame*>(groups.createUI());frame->layout(0,0,448,720);
     assert(list(frame)->children.size()==unsigned(ControlGroup::Count)+1 && !find(frame,"Language"));
     std::set<unsigned> displayed{unsigned(ControlId::Profile)};

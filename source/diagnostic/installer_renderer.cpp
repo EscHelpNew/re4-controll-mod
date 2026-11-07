@@ -9,6 +9,7 @@
 #include "re4/graphics_preview_image.hpp"
 #include "re4/gyro_test_background.hpp"
 #include "re4/gyro_preview.hpp"
+#include "re4/enemy_health_preview.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -48,6 +49,8 @@ struct InstallerRenderer::Impl {
     SDL_Texture* re6_logo=nullptr;
     SDL_Texture* graphics_images[2]{};
     SDL_Texture* gyro_image=nullptr;
+    SDL_Texture* health_image=nullptr;
+    unsigned health_options=~0u;
     stbtt_fontinfo font{};
     std::map<std::uint64_t,Glyph> glyphs;
     std::vector<std::uint32_t> preview;
@@ -126,6 +129,21 @@ struct InstallerRenderer::Impl {
         const int y=int(std::lround(gyro_preview::origin_y-position.pitch*gyro_preview::pixels_per_radian));
         circle(x,y,9,{12,14,11,255});circle(x,y,8,{236,225,192,255});
         circle(x,y,6,{12,14,11,255});circle(x,y,4,{240,56,40,255});
+    }
+    void health_picture(const InstallerModel& m){
+        const unsigned options=unsigned(m.settings.enemy_health_bars)|(unsigned(m.settings.enemy_health_bars&&m.settings.enemy_health_numbers)<<1);
+        if(!health_image)health_image=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,health_preview::width,health_preview::height);
+        if(!health_image){text(tr(m,"Illustration unavailable","Иллюстрация недоступна"),862,300,18,muted,344);return;}
+        if(health_options!=options){
+            std::vector<std::uint8_t> pixels(health_preview::width*health_preview::height*4);
+            health_preview::draw_rows(m.settings,0,0,[&](int,int y,int w,int,const std::uint8_t* row){
+                std::copy(row,row+w*4,pixels.data()+y*health_preview::width*4);
+            });
+            if(SDL_UpdateTexture(health_image,nullptr,pixels.data(),health_preview::width*4)!=0)return;
+            health_options=options;
+        }
+        const SDL_Rect destination{862,286,344,298};SDL_RenderCopy(renderer,health_image,nullptr,&destination);
+        text(tr(m,"Enlarged example","Увеличенный пример"),862,592,14,muted,344);
     }
     void graphics_picture(const InstallerModel& m){
         const unsigned index=m.game==GameTarget::RE6?1:0;
@@ -369,6 +387,8 @@ void InstallerRenderer::draw(const InstallerModel& m){
         p.text(tr(m,"In Uberhand: RE6 Graphics.\nFiltering and anti-aliasing.\nNative gyro is retained.",
                     "В Uberhand: RE6 Graphics.\nФильтрация и сглаживание.\nШтатный гироскоп."),862,399,19,cream,344,true,4);
         if(!m.detail.empty())p.text(m.detail,862,486,16,cream,344,true,4);
+    }else if(m.page==InstallerPage::Game){
+        p.health_picture(m);
     }else if(m.page==InstallerPage::Updates){
         p.text(tr(m,"BEFORE YOU UPDATE","ПЕРЕД ОБНОВЛЕНИЕМ"),862,360,16,muted);
         p.text(tr(m,"Keep Wi-Fi connected.\nReopen the app after installation.\nYour settings are preserved.",
@@ -417,6 +437,7 @@ void InstallerRenderer::close(){
     if(impl_->re6_logo)SDL_DestroyTexture(impl_->re6_logo);
     for(auto* texture:impl_->graphics_images)if(texture)SDL_DestroyTexture(texture);
     if(impl_->gyro_image)SDL_DestroyTexture(impl_->gyro_image);
+    if(impl_->health_image)SDL_DestroyTexture(impl_->health_image);
     if(impl_->background)SDL_DestroyTexture(impl_->background);
     if(impl_->renderer)SDL_DestroyRenderer(impl_->renderer);
     if(impl_->window)SDL_DestroyWindow(impl_->window);

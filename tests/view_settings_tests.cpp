@@ -16,6 +16,26 @@ void seal(Bytes& bytes){
 }
 int main(){
     using namespace re4;Settings s;Bytes bytes{};
+    CHECK(!s.enemy_health_bars&&!s.enemy_health_numbers);
+    s.enemy_health_bars=true;s.enemy_health_numbers=true;CHECK(encode_settings(s,bytes.data(),bytes.size())&&bytes[104]==1&&bytes[105]==1);
+    Settings game_roundtrip;CHECK(decode_settings(bytes.data(),bytes.size(),game_roundtrip)&&game_roundtrip.enemy_health_bars&&game_roundtrip.enemy_health_numbers);
+    auto old=bytes;old[4]=13;seal(old);CHECK(!decode_settings(old.data(),old.size(),game_roundtrip));
+    old[104]=old[105]=0;seal(old);CHECK(decode_settings(old.data(),old.size(),game_roundtrip)&&!game_roundtrip.enemy_health_bars&&!game_roundtrip.enemy_health_numbers);
+    auto previous=bytes;previous[4]=14;seal(previous);CHECK(!decode_settings(previous.data(),previous.size(),game_roundtrip));
+    previous[105]=0;seal(previous);CHECK(decode_settings(previous.data(),previous.size(),game_roundtrip)&&game_roundtrip.enemy_health_bars&&!game_roundtrip.enemy_health_numbers);
+    for(unsigned version=7;version<=14;++version){
+        CHECK(encode_settings(Settings{},old.data(),old.size()));old[4]=std::uint8_t(version);
+        if(version==7)for(unsigned i=88;i<124;++i)old[i]=0;
+        else if(version<10)for(unsigned i=100;i<124;++i)old[i]=0;
+        seal(old);game_roundtrip.enemy_health_bars=true;game_roundtrip.enemy_health_numbers=true;
+        CHECK(decode_settings(old.data(),old.size(),game_roundtrip)&&!game_roundtrip.enemy_health_bars&&!game_roundtrip.enemy_health_numbers);
+    }
+    for(auto domain:{ProfileDomain::Controls,ProfileDomain::Graphics}){
+        const auto profile=domain==ProfileDomain::Controls?re6_profile():quality_graphics_profile();
+        copy_profile(s,profile,domain);CHECK(s.enemy_health_bars&&s.enemy_health_numbers);
+        auto other=s;other.enemy_health_bars=false;other.enemy_health_numbers=false;CHECK(same_profile(s,other,domain));
+    }
+    s={};
     s.unified_controls=true;
     CHECK(encode_settings(s,bytes.data(),bytes.size()));
     Settings unified;CHECK(decode_settings(bytes.data(),bytes.size(),unified) && unified.unified_controls);
@@ -31,7 +51,7 @@ int main(){
     s.third_person_distance=2;CHECK(valid_settings(s));s={};
     CHECK(!s.first_person && !s.move_while_aiming && !s.move_while_knife && !s.move_while_reloading
         && s.reticle==ReticleStyle::Off && s.reticle_size==ReticleSize::Small);
-    CHECK(encode_settings(s,bytes.data(),bytes.size()) && bytes[4]==13);
+    CHECK(encode_settings(s,bytes.data(),bytes.size()) && bytes[4]==15);
     // Independently exercise the new wire bit before using it through a preset.
     bytes[97]=16;seal(bytes);
     Settings response;CHECK(decode_settings(bytes.data(),bytes.size(),response));
@@ -52,7 +72,7 @@ int main(){
             && decoded.move_while_reloading==s.move_while_reloading);
         CHECK(same_profile(s,decoded,ProfileDomain::Controls));
     }
-    for(unsigned offset:{96,97,98,99,104,123}){
+    for(unsigned offset:{96,97,98,99,104,105,123}){
         auto bad=bytes;bad[offset]=255;seal(bad);Settings out;out.camera_gain=0.3f;
         CHECK(!decode_settings(bad.data(),bad.size(),out) && out.camera_gain==0.3f);
     }
@@ -97,5 +117,5 @@ int main(){
     CHECK(profile_kind(s,ProfileDomain::Graphics)==ProfileKind::Default);
     copy_profile(s,Settings{},ProfileDomain::Graphics);CHECK(s.first_person);
     copy_profile(s,Settings{},ProfileDomain::Controls);CHECK(!s.first_person);
-    std::puts("view settings: v13 response, unified controls, distance, strict fields and legacy migration PASS");
+    std::puts("view settings: v15 response, game options, domain preservation and legacy migration PASS");
 }

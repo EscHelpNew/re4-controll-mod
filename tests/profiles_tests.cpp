@@ -373,6 +373,16 @@ int main() {
     builtin_saves_preserve_existing_custom(); native_default_and_legacy_migration();
     re6_recipe_and_custom_restore();
     quality_graphics_and_custom_restore();
+    const auto game_file=path("game-options.bin");Settings game=custom();game.enemy_health_bars=true;game.enemy_health_numbers=true;
+    CHECK(save_profiled_settings(game_file.c_str(),game));
+    for(auto domain:{ProfileDomain::Controls,ProfileDomain::Graphics}){
+        for(auto kind:{ProfileKind::Default,domain==ProfileDomain::Controls?ProfileKind::RE6:ProfileKind::Quality,ProfileKind::Custom}){
+            const auto result=switch_profile(game_file.c_str(),game,domain,kind);
+            CHECK(result==ProfileResult::Applied||result==ProfileResult::Unchanged);
+            CHECK(game.enemy_health_bars&&game.enemy_health_numbers);Settings saved;
+            CHECK(load_settings_file(game_file.c_str(),saved)&&saved.enemy_health_bars&&saved.enemy_health_numbers);
+        }
+    }
     fs::remove_all(root);
     if (failures) { std::fprintf(stderr, "%d profile checks failed\n", failures); return 1; }
     std::puts("profiles: independent domains, canonical identity, migration, recovery and failed writes PASS");

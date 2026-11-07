@@ -88,7 +88,9 @@ int main() {
     set_saved_s0(saved_context,scope_zoom_value);
     assert(saved_x(saved_context,19)==scope_owner&&saved_x(saved_context,31)==0);
     assert(!std::memcmp(saved_context,expected_context,sizeof(saved_context))); // Other FP lanes and every GP untouched.
-    std::vector<std::uint8_t> image(profile::build_id_offset + 32, 0);
+    std::size_t image_size=profile::build_id_offset+32;
+    for(const auto site:profile::sites)image_size=std::max(image_size,site.offset+4);
+    std::vector<std::uint8_t> image(image_size, 0);
     assert(!profile::matches(image.data(), image.size()));
     std::memcpy(image.data() + profile::build_id_offset, profile::build_id, 32);
     for (const auto site : profile::sites)

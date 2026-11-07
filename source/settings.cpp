@@ -45,7 +45,7 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
     if (!out || size != kSettingsBytes || !valid_settings(s)) return false;
     std::memset(out, 0, size);
     std::memcpy(out, "R4CT", 4);
-    put32(out + 4, 13);
+    put32(out + 4, 15);
     put32(out + 8, unsigned(s.analog_enabled) | unsigned(s.gyro_enabled) << 1
           | unsigned(s.invert_x) << 2 | unsigned(s.invert_y) << 3
           | unsigned(s.stick_curve) << 4 | unsigned(s.language) << 6
@@ -71,6 +71,8 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
         | unsigned(s.unified_controls)<<3 | unsigned(s.re6_response)<<4 | unsigned(s.move_while_reloading)<<5);
     out[98]=std::uint8_t(s.reticle_size);
     std::memcpy(out+100,&s.third_person_distance,4);
+    out[104]=std::uint8_t(s.enemy_health_bars);
+    out[105]=std::uint8_t(s.enemy_health_numbers);
     put32(out + 124, checksum(out, 124));
     return true;
 }
@@ -78,7 +80,7 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
     if (!data || (size != kSettingsBytes && size != kLegacySettingsBytes)
         || std::memcmp(data, "R4CT", 4)) return false;
     const auto version = get32(data + 4);
-    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version < 7 || version > 13)
+    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version < 7 || version > 15)
         || (get32(data + 8) & (version<4 ? ~15u : version<6 ? ~127u : ~0x007f7f7fu))
         || (version == 1 && get32(data + 56))
         || checksum(data, size - 4) != get32(data + size - 4)) return false;
@@ -92,7 +94,9 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
             if(version<9){for (unsigned i = 96; i < 124; ++i) if (data[i]) return false;}
             else{
                 if(data[97]&~(version>=13?63u:version>=12?31u:version>=11?15u:7u) || data[99])return false;
-                for(unsigned i=version>=10?104:100;i<124;++i)if(data[i])return false;
+                for(unsigned i=version>=15?106:version>=14?105:version>=10?104:100;i<124;++i)if(data[i])return false;
+                if(version>=14){if(data[104]>1)return false;s.enemy_health_bars=data[104]!=0;}
+                if(version>=15){if(data[105]>1)return false;s.enemy_health_numbers=data[105]!=0;}
                 if(version>=10)std::memcpy(&s.third_person_distance,data+100,4);
                 s.reticle=static_cast<ReticleStyle>(data[96]);s.reticle_size=static_cast<ReticleSize>(data[98]);
                 s.first_person=data[97]&1;s.move_while_aiming=data[97]&2;s.move_while_knife=data[97]&4;

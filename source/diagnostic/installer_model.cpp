@@ -1,4 +1,5 @@
 #include "re4/installer_ui.hpp"
+#include "re4/game_menu.hpp"
 #include "re4/settings_file.hpp"
 #include <cmath>
 #include <cstring>
@@ -32,8 +33,8 @@ const std::array<HomeItem,3> re6_graphics_items{{
       "Вернуть штатную фильтрацию текстур.\nПри следующем запуске RE6.\nЯзык сохранится. A: сбросить."}}
 }};
 }
-const std::array<HomeItem,9>& installer_home_items(){
-    static constexpr std::array<HomeItem,9> items{{
+const std::array<HomeItem,10>& installer_home_items(){
+    static constexpr std::array<HomeItem,10> items{{
         {{"Install / update mod","Установить / обновить мод"},
          {"Install smooth controls and the overlay.\nClose Resident Evil 4 before installing.",
           "Установить управление и меню оверлея.\nПеред установкой закройте Resident Evil 4."}},
@@ -52,6 +53,7 @@ const std::array<HomeItem,9>& installer_home_items(){
         {{"Graphics","Графика"},
          {"Default / Quality / Custom graphics.\nFull restart: HOME > X > Close, then start.\nMenu / overlay alone is not enough.",
           "Графика: штатная / качественная / своя.\nПолный перезапуск: HOME > X > Закрыть.\nОдного меню / оверлея недостаточно."}},
+        {kGameMenuLabel,kGameMenuHelp},
         {{"Updates","Обновления"},
          {"Download a new app from GitHub Releases.\nWi-Fi is required. The previous app is kept.",
           "Скачать новую версию из GitHub Releases.\nНужен Wi-Fi. Предыдущая версия сохраняется."}},
@@ -67,11 +69,12 @@ const std::array<HomeItem,9>& installer_home_items(){
 unsigned InstallerModel::item_count()const{
     if(game==GameTarget::RE6)return page==InstallerPage::Home?5:page==InstallerPage::Graphics?3:0;
     if(page==InstallerPage::GyroTest)return control_group_count(ControlGroup::Gyro)+1;
+    if(page==InstallerPage::Game)return 2;
     if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
     if(page==InstallerPage::ControlGroup)return control_group_count(control_group)+(control_group==ControlGroup::Gyro?1:0);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
     if(page==InstallerPage::MappingTargets)return kButtonCount+1;
-    return page==InstallerPage::Home?9:page==InstallerPage::Controls?unsigned(ControlGroup::Count)+1:page==InstallerPage::Updates?2:0;
+    return page==InstallerPage::Home?10:page==InstallerPage::Controls?unsigned(ControlGroup::Count)+1:page==InstallerPage::Updates?2:0;
 }
 ControlId InstallerModel::selected_control()const{
     if(game==GameTarget::RE6)return ControlId::Count;
@@ -190,6 +193,16 @@ InstallerAction InstallerModel::handle(UiEvent event){
         if(selected==0)return InstallerAction::CheckUpdates;
         return update.stage==UpdateStage::Available?InstallerAction::InstallUpdate:InstallerAction::None;
     }
+    if(page==InstallerPage::Game){
+        if(selected>=count)return InstallerAction::None;
+        if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
+        if(selected==0)settings.enemy_health_bars=!settings.enemy_health_bars;
+        else{
+            if(!settings.enemy_health_bars)return InstallerAction::None;
+            settings.enemy_health_numbers=!settings.enemy_health_numbers;
+        }
+        return InstallerAction::SaveSettings;
+    }
     if(page==InstallerPage::MappingTargets){
         if(event!=UiEvent::Confirm)return InstallerAction::None;
         const bool changed=set_mapping_target(settings,mapping_source,selected);
@@ -250,23 +263,24 @@ InstallerAction InstallerModel::handle(UiEvent event){
         return change_control(settings,spec.id,event==UiEvent::Left?-1:1)?InstallerAction::SaveSettings:InstallerAction::None;
     }
     if(page!=InstallerPage::Home || selected>=count)return InstallerAction::None;
-    if(selected==7 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
+    if(selected==8 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
         change_control(settings,ControlId::Language,1);return InstallerAction::SaveSettings;
     }
     if(event!=UiEvent::Confirm)return InstallerAction::None;
     if(selected==0)return InstallerAction::InstallGame;
     if(selected==1)return InstallerAction::InstallOverlay;
     if(selected==2)return InstallerAction::DisableGame;
-    if(selected==8)return InstallerAction::Exit;
+    if(selected==9)return InstallerAction::Exit;
     home_selected=selected;
     graphics_origin=InstallerPage::Home;
-    page=selected==3?InstallerPage::Controls:selected==4?InstallerPage::Diagnostics:selected==5?InstallerPage::Graphics:InstallerPage::Updates;
+    page=selected==3?InstallerPage::Controls:selected==4?InstallerPage::Diagnostics:selected==5?InstallerPage::Graphics:selected==6?InstallerPage::Game:InstallerPage::Updates;
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
     if(page==InstallerPage::GyroTest)return Bilingual{"GYRO DEBUG MODE","РЕЖИМ ОТЛАДКИ ГИРОСКОПА"}.get(settings.language);
     if(game==GameTarget::RE6 && page!=InstallerPage::Graphics)
         return Bilingual{"MOD INSTALLER","УСТАНОВКА МОДА"}.get(settings.language);
+    if(page==InstallerPage::Game)return kGameMenuLabel.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_group_spec(control_group).label.get(settings.language);
     if(page==InstallerPage::Graphics)return Bilingual{"GRAPHICS","ГРАФИКА"}.get(settings.language);
     if(page==InstallerPage::Mapping)return Bilingual{"BUTTON MAPPING","НАЗНАЧЕНИЕ КНОПОК"}.get(settings.language);
@@ -326,10 +340,11 @@ const char* InstallerModel::selected_help()const{
     }
     if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
         || selected_control()==ControlId::Profile))return profile_note.c_str();
+    if(page==InstallerPage::Game)return selected==1?enemy_health_numbers_help(settings):kEnemyHealthBarsHelp.get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_help(selected,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);
-    if(page==InstallerPage::Home)return installer_home_items()[selected<9?selected:0].help.get(settings.language);
+    if(page==InstallerPage::Home)return installer_home_items()[selected<10?selected:0].help.get(settings.language);
     if(page==InstallerPage::Updates){
         if(update.stage==UpdateStage::Installed)return Bilingual{
             "Reopen this app to start the new version.\nThen use Install / update mod while\nResident Evil4 is closed.",
@@ -354,10 +369,11 @@ std::string InstallerModel::item_label(unsigned index)const{
     }
     if(page==InstallerPage::Controls)return index==0?control_spec(ControlId::Profile).label.get(settings.language):control_group_spec(static_cast<ControlGroup>(index-1)).label.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_group==ControlGroup::Gyro && index==control_group_count(control_group)?Bilingual{"Debug mode","Режим отладки"}.get(settings.language):control_spec(control_group_item(control_group,index)).label.get(settings.language);
+    if(page==InstallerPage::Game)return (index==0?kEnemyHealthBarsLabel:kEnemyHealthNumbersLabel).get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_label(index,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_label(index,settings.language);
-    if(page==InstallerPage::Home)return installer_home_items()[index<9?index:0].label.get(settings.language);
+    if(page==InstallerPage::Home)return installer_home_items()[index<10?index:0].label.get(settings.language);
     if(page==InstallerPage::Updates)return (index==0?Bilingual{"Check for updates","Проверить обновления"}
         :Bilingual{"Download / install","Скачать / установить"}).get(settings.language);
     return control_spec(static_cast<ControlId>(index)).label.get(settings.language);
@@ -377,11 +393,12 @@ std::string InstallerModel::item_value(unsigned index)const{
     }
     if(page==InstallerPage::Controls)return index==0?profile_name(profile_kind(settings,ProfileDomain::Controls),settings.language):"";
     if(page==InstallerPage::ControlGroup)return control_group==ControlGroup::Gyro && index==control_group_count(control_group)?"A":control_value_text(control_spec(control_group_item(control_group,index)),settings);
+    if(page==InstallerPage::Game)return index==0?enemy_health_bars_value(settings):enemy_health_numbers_value(settings);
     if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);
     if(page==InstallerPage::Mapping)return mapping_row_value(index,settings);
     if(page==InstallerPage::MappingTargets)return index==mapping_target_index(settings,mapping_source)?"*":"";
     if(page==InstallerPage::Updates)return index==1?update.version:"";
-    if(page==InstallerPage::Home && index==7)return settings.language==Language::Russian?"Русский":"English";
+    if(page==InstallerPage::Home && index==8)return settings.language==Language::Russian?"Русский":"English";
     if(page==InstallerPage::Home && index==3)return curve_name(settings.stick_curve,settings.language);
     return "";
 }

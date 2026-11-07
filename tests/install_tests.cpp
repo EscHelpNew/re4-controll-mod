@@ -5,6 +5,10 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <cstdio>
+#include <cstdlib>
+#undef assert
+#define assert(c) do {if(!(c)){std::fprintf(stderr,"line %d: %s\n",__LINE__,#c);std::exit(1);}}while(0)
 namespace fs = std::filesystem;
 void put(const fs::path& p, const std::string& bytes) {
     fs::create_directories(p.parent_path());
@@ -19,6 +23,43 @@ int main() {
     std::string nso(256, '\0'), npdm(256, '\0'), ovl(256, '\0');
     nso.replace(0, 4, "NSO0"); npdm.replace(0, 4, "META"); ovl.replace(16, 4, "NRO0");
     put(payload / "subsdk9", nso); put(payload / "main.npdm", npdm); put(payload / "re4-controls.ovl", ovl);
+    {
+        // Manual own-module installation followed by overlay-only installation
+        // records zero module ownership. Recognize only a trusted exact old file.
+        const auto manual=root/"manual-sd";
+        const auto old_module=manual/"atmosphere/contents/010099A00BC1E000/exefs/subsdk9";
+        auto legacy=nso;legacy[32]='L';put(old_module,legacy);
+        put(manual/"atmosphere/contents/010099A00BC1E000/exefs/main.npdm",npdm);
+        assert(std::strstr(re4::install_overlay_only(payload.string().c_str(),manual.string().c_str()),"Installed"));
+        const re4::KnownInstallFile approved[]{ {re4::GameTarget::RE4,0,256,0xE92A3B302C25C51Dull} };
+        const re4::InstallCatalog catalog{approved,1};
+        auto changed=legacy;changed[33]='X';put(old_module,changed);
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,catalog),"Conflict"));
+        assert(!fs::exists(old_module.string()+".re4-controls.previous"));
+        put(old_module,legacy);
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,{}),"Conflict"));
+        const re4::KnownInstallFile wrong_index[]={{re4::GameTarget::RE4,2,256,0xE92A3B302C25C51Dull}};
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,{wrong_index,1}),"Conflict"));
+        const re4::KnownInstallFile wrong_game[]={{re4::GameTarget::RE6,0,256,0xE92A3B302C25C51Dull}};
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,{wrong_game,1}),"Conflict"));
+        // A matching legacy artifact cannot override absent/malformed ownership.
+        const auto receipt=manual/"switch/re4-controls/installed-files.bin";
+        std::string mismatch(32,'\0');mismatch.replace(0,8,"RE4INST1");mismatch[8]=1;
+        put(receipt,mismatch);
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,catalog),"Conflict"));
+        fs::remove(receipt);
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,catalog),"Conflict"));
+        put(receipt,"invalid receipt");
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,catalog),"Conflict"));
+        assert(std::strstr(re4::install_overlay_only(payload.string().c_str(),manual.string().c_str()),"Installed"));
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,catalog),"Installed"));
+        assert(fs::exists(old_module.string()+".re4-controls.previous"));
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str()),"Installed"));
+        // The repaired receipt must own the new module for the next update.
+        auto next=nso;next[32]='N';put(payload/"subsdk9",next);
+        assert(std::strstr(re4::install_game_files(payload.string().c_str(),manual.string().c_str(),re4::GameTarget::RE4,{}),"Installed"));
+        put(payload/"subsdk9",nso);
+    }
     const auto game = sd / "atmosphere/contents/010099A00BC1E000/exefs";
     put(game / "main.npdm", "existing other mod");
     assert(std::strstr(re4::install_game_files(payload.string().c_str(), sd.string().c_str()), "Conflict"));

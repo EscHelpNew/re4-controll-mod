@@ -52,6 +52,8 @@ struct Settings {
     bool re6_response = false;
     ReticleStyle reticle = ReticleStyle::Off;
     ReticleSize reticle_size = ReticleSize::Small;
+    bool enemy_health_bars = false;
+    bool enemy_health_numbers = false;
 };
 bool valid_settings(const Settings& settings);
 bool encode_settings(const Settings& settings, std::uint8_t* out, std::size_t size);

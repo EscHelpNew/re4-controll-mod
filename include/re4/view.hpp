@@ -9,10 +9,14 @@ struct ViewVec3 { float x=0,y=0,z=0; };
 struct ViewMatrix3x4 { float m[3][4]; };
 struct ViewMatrix4x4 { float m[4][4]; };
 struct ViewQfpsOutput { ViewVec3 eye0,eye1,target;float roll=0,fov=0; };
+// Native18990 result, still in the captured camera basis. Wall clipping is
+// complete;19D0C's local-X follow and the world transform are the next consumers.
+struct ViewCameraOutput { ViewVec3 eye,target;float roll=0,fov=0; };
 struct ViewHudPoint { float x=0,y=0; };
 struct ViewReticleRect { std::uint16_t x=0,y=0,width=0,height=0; };
 static_assert(sizeof(ViewMatrix3x4)==0x30 && sizeof(ViewMatrix4x4)==0x40);
 static_assert(sizeof(ViewQfpsOutput)==0x2C);
+static_assert(sizeof(ViewCameraOutput)==0x20);
 
 inline bool view_finite(ViewVec3 p){return std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);}
 inline bool view_store_point(double x,double y,double z,ViewVec3& out){
@@ -116,6 +120,26 @@ inline bool re6_shoulder_view(const ViewQfpsOutput& native,const ViewMatrix3x4& 
     auto value=native;
     if(!view_inverse_point(basis,eye,value.eye0)||!view_inverse_point(basis,target,value.target))return false;
     out=value;return true;
+}
+// Native aim is a pose/profile weight, not a physical90degree elevation.
+// Preserve neutral look, taper its native offset to zero at either full pose,
+// and retain the weapon-specific (nonlinear) native framing curve.
+inline bool re6_aim_view_pitch(const ViewQfpsOutput& native,const ViewQfpsOutput& neutral,const ViewMatrix3x4& basis,
+        float command,float& out){
+    constexpr float limit=1.570796327f;
+    if(!std::isfinite(command)||std::fabs(command)>limit+.000001f)return false;
+    ViewVec3 eye,target,center_eye,center_target;
+    if(!view_transform_point(basis,native.eye0,eye)||!view_transform_point(basis,native.target,target)
+        ||!view_transform_point(basis,neutral.eye0,center_eye)||!view_transform_point(basis,neutral.target,center_target))return false;
+    const double x=double(target.x)-eye.x,y=double(target.y)-eye.y,z=double(target.z)-eye.z;
+    const double nx=double(center_target.x)-center_eye.x,ny=double(center_target.y)-center_eye.y,nz=double(center_target.z)-center_eye.z;
+    if(!(std::hypot(x,y,z)>1e-6)||!(std::hypot(nx,ny,nz)>1e-6))return false;
+    const float elevation=float(std::atan2(y,std::hypot(x,z)));
+    const float center=float(std::atan2(ny,std::hypot(nx,nz)));
+    const float weight=std::clamp(std::fabs(command)/limit,0.f,1.f);
+    const float result=elevation-center*(1-weight);
+    if(!std::isfinite(result))return false;
+    out=result;return true;
 }
 inline bool view_projection_valid(const ViewMatrix4x4& matrix){
     double a[4][4];

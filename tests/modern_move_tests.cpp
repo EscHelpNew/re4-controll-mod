@@ -10,6 +10,8 @@
 #include <cstring>
 #include <limits>
 #include <vector>
+#undef assert
+#define assert(c) do { if(!(c)){std::fprintf(stderr,"line %d: %s\n",__LINE__,#c);std::exit(1);} } while(0)
 using namespace re4;
 namespace {
 template<class T> void put(std::vector<std::uint8_t>& b,std::size_t o,T v){assert(o+sizeof(v)<=b.size());std::memcpy(b.data()+o,&v,sizeof(v));}
@@ -130,6 +132,7 @@ void test_ModernPose(void*,int);
 void test_AutomaticFire(void*);
 void* unified_root_actor=nullptr;float unified_root_yaw=0;bool test_unified_walk=false;
 void unified_player_update(void* actor,void(*original)(void*)){original(actor);}
+void unified_reload_root(void*){}
 bool unified_walk_root(void*,float& yaw){yaw=-1.57079632679f;return test_unified_walk;}
 #include "../source/game/modern_move.inc"
 
@@ -195,7 +198,7 @@ struct Fixture {
     template<class T>void store(std::vector<std::uint8_t>& d,std::size_t o,T value){put(d,o,value);}
     void register_memory(void* p,std::size_t n){game_test::memory_maps.push_back({reinterpret_cast<std::uintptr_t>(p),n,3});}
     Fixture(){
-        modern_pose.discard();modern_cycle.reset();modern_bound_owner={};modern_bound_asset=modern_bound_clip=0;
+        modern_pose.discard();modern_body_pose.discard();modern_body_yaw=0;modern_body_owner={};modern_cycle.reset();modern_bound_owner={};modern_bound_asset=modern_bound_clip=0;
         modern_update_actor=nullptr;modern_epoch=0;modern_root_done=modern_stepped=modern_pose_done=false;
         control={};settings={};sensor_attributes=1;native_aim_value=true;healthy_value=1;simulate_nan=false;phase_before_root=-1;evaluation_count=0;order.clear();expected_local=0;
         first_automatic_shot=false;first_automatic_hit=0;modern_aim_session={};
@@ -254,7 +257,25 @@ void run(){
         f.actor[0x116]=2;f.actor[0x117]=std::uint8_t(sub);f.update();assert(control.modern_move_steps==1);
         f.actor[0x117]=4;f.update();assert(control.modern_move_steps==1);
     }
-    for(std::size_t handler:{0x31B9F0u,0x3212E0u,0u}){
+    // All grenade items share the native handler. Movement precedes the same
+    // root/world-pose boundary used by the frame5 projectile release.
+    for(unsigned item:{1u,2u,14u}){
+        Fixture f;f.store(f.image,0x1265A28,main_base+0x31B9F0);f.state[0x5034]=std::uint8_t(item);
+        f.actor[0x116]=0;f.actor[0x117]=1;f.update();assert(!control.modern_move_steps);
+        f.actor[0x116]=1;f.actor[0x117]=4;f.update();assert(!control.modern_move_steps);
+        f.actor[0x117]=1;f.update();assert(control.modern_move_steps==1&&hit_z==10&&collision_z==10);
+        for(unsigned phase:{1u,2u})for(unsigned sub:{0u,1u}){
+            f.actor[0x116]=std::uint8_t(phase);f.actor[0x117]=std::uint8_t(sub);
+            const auto before=control.modern_move_steps;f.update();assert(control.modern_move_steps==before+1);
+        }
+        f.actor[0x116]=1;f.actor[0x117]=4;const auto before=control.modern_move_steps;
+        f.update();assert(control.modern_move_steps==before+1);
+        for(unsigned sub:{2u,3u,5u}){f.actor[0x117]=std::uint8_t(sub);f.update();assert(control.modern_move_steps==before+1);}
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(0));f.update();
+        f.store(f.image,re4::profile::input_flags,std::uint64_t(0x10));f.actor[0x117]=4;f.update();
+        assert(control.modern_move_steps==before+1&&!modern_pose.pending());
+    }
+    for(std::size_t handler:{0x3212E0u,0u}){
         Fixture f;f.store(f.image,0x1265A28,main_base+handler);f.update();assert(!control.modern_move_steps);
     }
     {
@@ -263,10 +284,15 @@ void run(){
     }
     // Reload has its own option and survives aim release from initialization
     // through return blend, without replacing the native upper-body clip.
-    for(unsigned sub : {0,1,2,3}){
+    for(std::size_t handler : {0x31CC60u,0x3351A0u,0x3270F0u,0x332CC0u,0x342F90u})
+    for(unsigned scheme : {0u,1u,2u})for(unsigned sub : {0u,1u,2u,3u,4u}){
         Fixture f;settings.move_while_aiming=false;settings.move_while_reloading=true;
+        f.store(f.image,0x1265A28,main_base+handler);f.store(f.image,0x11C7D68,int(scheme));
         f.actor[0x116]=4;f.actor[0x117]=std::uint8_t(sub);
         f.store(f.image,re4::profile::input_flags,std::uint64_t(0));native_aim_value=false;
+        const bool supported=handler==0x3270F0?(scheme==1?sub<=4:(sub==0||sub==1||sub==3))
+            :(handler==0x332CC0||handler==0x342F90)?sub<=1:sub<=3;
+        if(!supported){f.update();assert(!control.modern_move_steps&&!modern_pose.pending());continue;}
         const std::uint32_t primary_cursor=0x12345678,secondary_cursor=0x87654321;
         f.store(f.actor,0x2FC,primary_cursor);f.store(f.actor,0x300,secondary_cursor);
         f.update();
@@ -293,7 +319,7 @@ void run(){
         assert(modern_move_reload_active(f.actor.data()));phase_before_root=1;f.update();
         assert(!control.modern_move_steps&&!modern_pose.pending());
         phase_before_root=-1;f.actor[0x116]=4;
-        f.store(f.image,0x1265A28,main_base+0x3270F0);f.update();assert(!control.modern_move_steps);
+        f.store(f.image,0x1265A28,main_base+0x333DF0);f.update();assert(!control.modern_move_steps);
         f.store(f.image,0x1265A28,main_base+0x31CC60);
         f.store(f.actor,0x352,std::uint16_t(0x100));f.update();assert(!control.modern_move_steps);
         f.store(f.actor,0x352,std::uint16_t(0x300));
@@ -317,12 +343,32 @@ void run(){
         assert(std::fabs(scalar(f.actor.data(),0xA4))<.0001f);
         assert(hit_z==10&&collision_z==10); // Straight-up/down gyro cannot stop or reverse forward walking.
     }
-    {
+    for(unsigned character:{0u,1u}){
         Fixture f;settings.unified_controls=true;f.actor[0x115]=1;control.raw_lx=1;control.raw_ly=0;
+        f.state[0x503C]=std::uint8_t(character);f.actor[0x11A]=character==1?141:119;
+        auto* root_matrix=reinterpret_cast<float*>(f.bones[0].data()+0x48);
+        root_matrix[5]=2;root_matrix[7]=1140; // Preserve native blend/translation.
         test_unified_walk=true;f.update();
         assert(evaluation_count==0&&control.modern_move_steps==0&&control.modern_pose_steps==1);
-        assert(std::fabs(scalar(f.bones[17].data(),0xB4)+1.57079632679f)<1e-5f);
-        test_unified_walk=false;expected_local=0;f.update();assert(!modern_pose.pending());
+        // Root0 steers torso and legs about the pelvis; leg17 compensates so
+        // their combined heading still follows the exact strafe direction.
+        const auto* root=reinterpret_cast<const float*>(f.bones[0].data()+0x48);
+        const float body=std::atan2(root[2],root[10]);
+        assert(body<0&&body>=-.436333f);
+        assert(std::fabs(scalar(f.bones[17].data(),0xB4)+body+1.57079632679f)<1e-5f);
+        assert(scalar(f.actor.data(),0xB4)==0); // Camera heading is independent.
+        for(unsigned n=0;n<100;++n){
+            f.update();const float turn=std::atan2(root_matrix[2],root_matrix[10]);
+            assert(turn<0&&turn>=-.436333f&&root_matrix[5]==2&&root_matrix[7]==1140);
+            assert(std::fabs(scalar(f.bones[17].data(),0xB4)+turn+1.57079632679f)<1e-5f);
+        }
+        assert(std::fabs(std::atan2(root_matrix[2],root_matrix[10])+.436332313f)<1e-5f);
+        test_unified_walk=false;expected_local=0;f.update();assert(!modern_pose.pending()&&!modern_body_pose.pending());
+        assert(root_matrix[0]==1&&root_matrix[2]==0&&root_matrix[8]==0&&root_matrix[10]==1);
+        assert(root_matrix[5]==2&&root_matrix[7]==1140&&modern_body_yaw==0);
+        // Blended state transitions retain the native root matrix.
+        test_unified_walk=true;f.actor[0x309]=1;f.update();assert(!modern_body_pose.pending());
+        test_unified_walk=false;f.update();
     }
     {
         Fixture f;settings.move_while_aiming=false;settings.move_while_knife=true;

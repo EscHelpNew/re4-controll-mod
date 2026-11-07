@@ -14,9 +14,11 @@ void test_MovementTurn(void*);
 unsigned test_MotionAdvance(void*);
 void test_CameraInput(void*);
 void test_CameraCalculate();
+void test_CameraFollow(void*,void*);
 void test_FinalLookAt(void*,const re4::ViewVec3*,const re4::ViewVec3*,const re4::ViewVec3*);
 void test_CameraApply(void*,void*);
 void test_CameraBasis(void*,void*);
+void test_CameraCollision(void*,void*,void*,void*);
 void test_ModelSubmit(void*);
 void test_WeaponLaser(void*,unsigned,unsigned,unsigned);
 void test_HudDraw(void*);
@@ -60,15 +62,30 @@ void test_AimRaise(void* actor){
     if(aim_raise_native_change==3)settings.unified_controls=false;
 }
 unsigned unified_flags_seen=0,update_state_change=0;
+void change_reload_identity(void* actor,unsigned change){
+    if(change==2){auto& handler=*reinterpret_cast<std::uintptr_t*>(main_base+0x1265A28);handler=main_base+(handler==main_base+0x31CC60?0x3351A0:0x31CC60);}
+    if(change==3){auto* context=*reinterpret_cast<std::uint8_t**>(static_cast<std::uint8_t*>(actor)+0x938);*reinterpret_cast<std::uintptr_t*>(context+0x38)+=16;}
+    if(change==4){auto* state=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);++state[0x5034];}
+}
 unsigned modern_original_updates=0,modern_original_roots=0,modern_original_poses=0;
-bool native_root_probe=false;
+bool native_root_probe=false,grenade_native_order=false;
+re4::ViewVec3 grenade_release_position{};
 re4::ViewVec3 native_primary{0,3,10},native_secondary{0,5,6},root_result{};
 void test_RootDisplacement(void* actor,void* motion,unsigned flags,re4::ViewVec3* out,re4::ViewVec3* rotation){
  assert(flags==0);*out=motion==static_cast<std::uint8_t*>(actor)+0x228?native_primary:native_secondary;*rotation={1,2,3};
 }
 void test_ModernPlayerUpdate(void* actor){
     ++modern_original_updates;
-    if(update_state_change)static_cast<std::uint8_t*>(actor)[0x114]=1;
+    if(update_state_change==1)static_cast<std::uint8_t*>(actor)[0x114]=1;
+    if(update_state_change>=2)change_reload_identity(actor,update_state_change);
+    if(grenade_native_order){
+        assert(ModernRoot::Callback(actor,nullptr)==17);
+        // Verified grenade order: root/pose, optional frame5 release, then
+        // shared aim33DF80. Retain this native input/release timing.
+        const auto* b=static_cast<const std::uint8_t*>(actor);
+        if(b[0x116]==2)std::memcpy(&grenade_release_position,b+0xA4,sizeof(grenade_release_position));
+        AimSensitivity::Callback(actor,0);return;
+    }
     if(unified_probe){unified_flags_seen=unsigned(*reinterpret_cast<std::uint64_t*>(main_base+re4::profile::input_flags)&15);MovementTurn::Callback(actor);}
     else if(settings.unified_controls&&static_cast<std::uint8_t*>(actor)[0x115]<=4)MovementTurn::Callback(actor);
     if(modern_probe)AimSensitivity::Callback(actor,0);
@@ -117,6 +134,17 @@ std::uint8_t sampler_seen[20]{};
 std::uint32_t shadow_flags_seen=0;
 unsigned rom_result=0;
 bool native_view_test=false,submit_models=false,short_laser_ray=false,simulate_weapon_sway=false;
+bool native_follow_probe=false;
+bool world_follow_probe=false;
+unsigned world_follow_gate=0;
+re4::ViewVec3 follow_near_correction{};
+float follow_coefficient_seen=0;
+unsigned follow_calls=0;
+float native_collision_fraction=1;
+unsigned camera_collision_calls=0;
+using NativeFollowOutput=re4::ViewCameraOutput;
+NativeFollowOutput camera_collision_result{};
+bool camera_collision_invalid=false;
 unsigned camera_native_calls=0,basis_native_calls=0,laser_native_calls=0,hud_native_calls=0,ortho_native_calls=0;
 unsigned laser_draw_seen=0,laser_reuse_seen=0;
 std::vector<void*> submitted_models;
@@ -126,11 +154,14 @@ void* test_weapon=nullptr;void* test_other_model=nullptr;
 re4::ViewMatrix3x4 native_basis{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
 re4::ViewQfpsOutput native_profile{{-500,1765,-1190},{-180,1700,-110},{0,1340,1480},0.2f,50},camera_collision_input{};
 re4::ViewVec3 laser_endpoint{0,0,-1000};
+bool native_target_probe=false;
+void* native_trace_target=nullptr;
 void test_CameraBasis(void*,void* out){++basis_native_calls;std::memcpy(out,&native_basis,sizeof(native_basis));}
 void test_ModelSubmit(void* model){submitted_models.push_back(model);}
 void test_WeaponLaser(void* weapon,unsigned draw,unsigned reuse,unsigned){
     ++laser_native_calls;laser_draw_seen=draw;laser_reuse_seen=reuse;
     if(!(reuse&1)){
+        if(native_target_probe&&weapon)std::memcpy(static_cast<std::uint8_t*>(weapon)+0x418,&native_trace_target,sizeof(native_trace_target));
         std::memcpy(reinterpret_cast<void*>(main_base+0x1265320),&laser_endpoint,sizeof(laser_endpoint));
         if(!short_laser_ray)std::memcpy(static_cast<std::uint8_t*>(weapon)+0x40C,&laser_endpoint,sizeof(laser_endpoint));
     }
@@ -151,9 +182,45 @@ void test_CameraCalculate(){
  if(!calculate_probe)return;
  CameraInput::Callback(reinterpret_cast<void*>(main_base+0x11319C0));
  auto* s=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);
+ if(world_follow_probe){
+  auto* input=reinterpret_cast<void*>(main_base+0x1131998);
+  std::memcpy(input,s+0x14C,12);std::memcpy(static_cast<std::uint8_t*>(input)+12,s+0x158,12);
+  auto* follow=reinterpret_cast<std::uint8_t*>(main_base+0x1131F50);
+  auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
+  if(world_follow_gate==1)*reinterpret_cast<float*>(main_base+0x1131718+0x2A0)=1;
+  if(world_follow_gate==2)settings.re6_response=false;
+  if(world_follow_gate==3)settings.first_person=true;
+  if(world_follow_gate==4)settings.third_person_distance=1.4f;
+  if(world_follow_gate==5)actor[0x115]=5;
+  if(world_follow_gate==6)s[0x503C]=2;
+  if(world_follow_gate==7)*reinterpret_cast<std::uint8_t*>(main_base+0x11319C0+0x222)=1;
+  if(world_follow_gate==8)*reinterpret_cast<float*>(actor+0xB4)+=.1f;
+  if(world_follow_gate==9)unified_pitch+=.1f;
+  if(world_follow_gate==10)s[0x86FF]=1;
+  if(world_follow_gate==11)*reinterpret_cast<float*>(s+0xA4)=0;
+  if(world_follow_gate==12)*reinterpret_cast<float*>(input)=std::numeric_limits<float>::quiet_NaN();
+  if(world_follow_gate==13)unified_camera_calculation=false;
+  if(world_follow_gate==14)*reinterpret_cast<float*>(main_base+0x1131718+0x2A0)=std::numeric_limits<float>::quiet_NaN();
+  CameraFollow::Callback(follow,input);
+  std::memcpy(s+0x14C,follow+0x100,12);std::memcpy(s+0x158,follow+0x10C,12);
+ }
  FinalLookAt::Callback(s+0xD8,reinterpret_cast<re4::ViewVec3*>(s+0x14C),reinterpret_cast<re4::ViewVec3*>(s+0x16C),reinterpret_cast<re4::ViewVec3*>(s+0x158));
  // FDB0's native frustum construction occurs only after this view is built.
  assert(look_calls>0);
+}
+void test_CameraFollow(void* object,void* input){
+ ++follow_calls;auto* f=static_cast<std::uint8_t*>(object);
+ const auto* s=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
+ follow_coefficient_seen=*reinterpret_cast<const float*>(f+0xFC);
+ if(f[0x12C])std::memcpy(f+0x100,f+0x130,32);
+ const float alpha=(f[0xF8]&1)?0:std::pow(follow_coefficient_seen,*reinterpret_cast<const float*>(s+0xA4));
+ auto* history=reinterpret_cast<float*>(f+0x100);const auto* desired=static_cast<const float*>(input);
+ const auto* delta=reinterpret_cast<const float*>(s+0x4FE8);
+ for(unsigned i=0;i<6;++i)history[i]=(history[i]+delta[i%3])*alpha+desired[i]*(1-alpha);
+ f[0xF8]&=~1;f[0x12C]=0;std::memcpy(f+0x130,f+0x100,32);
+ // Native near-body correction comes after the smoothing; the hook must
+ // preserve it rather than copying the desired eye over the final result.
+ history[0]+=follow_near_correction.x;history[1]+=follow_near_correction.y;history[2]+=follow_near_correction.z;
 }
 void test_native_ortho(void* out,float top,float bottom,float left,float right,float near_plane,float far_plane){
     ++ortho_native_calls;assert(top==0&&bottom==448&&left==0&&right==512&&near_plane==0&&far_plane==-100);
@@ -164,11 +231,13 @@ void test_native_pose(const void*,unsigned index){assert(index==0);}
 void test_native_matrix(unsigned index){assert(index==0);}
 void test_native_rect(const void* packet){const auto* p=static_cast<const std::uint8_t*>(packet);re4::ViewReticleRect r;std::memcpy(&r,p+0xC,sizeof(r));if(r.width&&r.height)hud_rects.emplace_back(p,p+0x18);}
 std::vector<re4::ViewVec3> gx_quad;unsigned gx_blend_last=0,gx_format_last=0;
+bool health_color_probe=false;
+std::vector<std::array<unsigned,4>> gx_colors;
 void test_gx_blend(unsigned a,unsigned b,unsigned c,unsigned d){assert(a==1&&d==0);assert((b==4&&c==5)||(b==1&&c==0));gx_blend_last=b;}
 void test_gx_format(unsigned a,unsigned b,unsigned c,unsigned d,unsigned e){assert(a==0&&b==9&&c==1&&e==0);gx_format_last=d;}
 void test_gx_begin(unsigned a,unsigned b,unsigned n){assert(a==0x98&&b==0&&n==4);gx_quad.clear();}
 void test_gx_position(float x,float y,float z){++gx_vertices;gx_quad.push_back({x,y,z});}
-void test_gx_color(unsigned r,unsigned g,unsigned b,unsigned a){assert(r==255&&g==255&&b==255&&a==128);gx_last_alpha=a;}
+void test_gx_color(unsigned r,unsigned g,unsigned b,unsigned a){if(!health_color_probe)assert(r==255&&g==255&&b==255&&a==128);gx_colors.push_back({r,g,b,a});gx_last_alpha=a;}
 void test_gx_end(unsigned token){
  assert(token==0x34&&gx_quad.size()==4);const auto a=gx_quad[0],b=gx_quad[3];
  re4::ViewReticleRect rect{std::uint16_t(std::lround(a.x)),std::uint16_t(std::lround(a.y)),std::uint16_t(std::lround(b.x-a.x)),std::uint16_t(std::lround(b.y-a.y))};
@@ -228,8 +297,33 @@ void test_CameraInput(void* camera) {
             re4::ViewMatrix3x4 basis{};CameraBasis::Callback(camera,&basis);
             re4::ViewQfpsOutput out{};CameraApply::Callback(camera,&out);
             camera_collision_input=out; // Native18990 collision is the next consumer.
+            if(native_follow_probe){
+                NativeFollowOutput result{};CameraCollision::Callback(nullptr,&basis,&out,&result);
+                // Verified native19D0C..19D44, including its persistent local-X
+                // history. The old fixture stopped before this downstream stage.
+                auto* history=reinterpret_cast<float*>(main_base+0x1132A30);
+                result.eye.x=.3999999761581421f*result.eye.x+.6000000238418579f*history[0];
+                result.target.x=.3999999761581421f*result.target.x+.6000000238418579f*history[3];
+                history[0]=result.eye.x;history[3]=result.target.x;
+                auto* state=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);
+                re4::ViewVec3 eye,target;assert(re4::view_transform_point(basis,result.eye,eye));
+                assert(re4::view_transform_point(basis,result.target,target));
+                std::memcpy(state+0x14C,&eye,sizeof(eye));std::memcpy(state+0x158,&target,sizeof(target));
+                const re4::ViewVec3 up{0,1,0};std::memcpy(state+0x16C,&up,sizeof(up));
+            }
         }else CameraApply::Callback(camera,nullptr);
     }
+}
+void test_CameraCollision(void*,void*,void* input,void* output){
+    ++camera_collision_calls;
+    const auto& p=*static_cast<re4::ViewQfpsOutput*>(input);
+    NativeFollowOutput result{p.eye0,p.target,p.roll,p.fov};
+    result.eye={p.eye1.x+(p.eye0.x-p.eye1.x)*native_collision_fraction,
+        p.eye1.y+(p.eye0.y-p.eye1.y)*native_collision_fraction,
+        p.eye1.z+(p.eye0.z-p.eye1.z)*native_collision_fraction};
+    if(camera_collision_invalid)result.eye.x=std::numeric_limits<float>::quiet_NaN();
+    camera_collision_result=result;
+    std::memcpy(output,&result,sizeof(result));
 }
 void test_CameraApply(void* camera,void* output){
     ++camera_native_calls;
@@ -284,22 +378,27 @@ struct Fixture {
     Fixture() {
         sensor.stop();sensor={};gyro.reset();gyro_frame.reset();gyro_tuning_ready=false;gyro_session={};gyro_pending={};last_sensor_tick=0;sensor_batch.clear();
         free_orbit.reset();camera_context=nullptr;
-        unified_look.reset();unified_update=nullptr;unified_pitch=0;unified_pitch_actor=0;unified_pitch_route=0;
-        unified_aim_session={};unified_new_aim=false;unified_command_frame=0;unified_command_tick=0;
+        unified_look.reset();unified_update=nullptr;unified_pitch=0;unified_pitch_actor=0;unified_pitch_route=0;unified_pitch_character=0;
+        unified_aim_session={};unified_reload_session={};unified_new_aim=false;unified_command_frame=0;unified_command_tick=0;
         reset_scoped_controls();scoped_zoom_target=nullptr;modern_aim_session={};
         unified_root_actor=nullptr;unified_camera_calculation=false;
         native_view_test=submit_models=short_laser_ray=simulate_weapon_sway=false;laser_endpoint={0,0,-1000};camera_native_calls=basis_native_calls=laser_native_calls=hud_native_calls=ortho_native_calls=0;
+        native_follow_probe=false;world_follow_probe=false;world_follow_gate=0;follow_near_correction={};follow_calls=0;native_collision_fraction=1;camera_collision_calls=0;camera_collision_invalid=false;
         submitted_models.clear();hud_rects.clear();test_weapon=test_other_model=nullptr;
         native_basis={{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
         native_profile={{-500,1765,-1190},{-180,1700,-110},{0,1340,1480},0.2f,50};
         view_settings_snapshot=0;view_frame=1;view_camera_frame=0;first_person_frame=0;
         view_camera_actor=0;view_camera_tick=0;view_camera_aim=false;aim_point.sequence=0;aim_point.frame=0;
         pending_aim_point.sequence=0;pending_aim_point.frame=0;displayed_aim_point.sequence=0;displayed_aim_point.frame=0;
+        for(auto* point:{&enemy_health_point,&pending_enemy_health,&displayed_enemy_health,&enemy_health_camera}){point->sequence=0;point->frame=0;point->health=0;point->target_key=0;}
+        enemy_health_fade.reset();enemy_health_fade_generation=0;enemy_health_fade_seen=enemy_health_fade_tick=enemy_health_fade_frame=0;
+        enemy_health_fade_actor=0;enemy_health_fade_character=0;
         fps_override_count=0;reticle_draw_count=0;
         main_view_actor=nullptr;
-        modern_probe=false;modern_original_updates=modern_original_roots=modern_original_poses=0;
+        health_color_probe=false;gx_colors.clear();native_target_probe=false;native_trace_target=nullptr;
+        modern_probe=false;grenade_native_order=false;grenade_release_position={};modern_original_updates=modern_original_roots=modern_original_poses=0;
         aim_raise_native_calls=aim_raise_native_change=0;
-        game_test::memory_maps.clear();modern_update_actor=nullptr;modern_cycle.reset();modern_pose.discard();
+        game_test::memory_maps.clear();modern_update_actor=nullptr;modern_cycle.reset();modern_pose.discard();modern_body_pose.discard();modern_body_owner={};modern_body_yaw=0;
         modern_native={};modern_bound_owner={};modern_bound_asset=modern_bound_clip=0;
         modern_epoch=0;modern_root_done=modern_stepped=modern_pose_done=false;
         native_ortho=test_native_ortho;native_projection=test_native_projection;
@@ -383,6 +482,240 @@ struct Fixture {
 };
 }
 int main(){
+    for(unsigned gate=0;gate<7;++gate){
+        Fixture f;f.view_mode();f.aim();f.camera()[0x26C]=0;
+        settings.unified_controls=true;settings.re6_response=true;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        const re4::ViewQfpsOutput neutral{{-470,1715,-615},{},{-200,1345,1525},0,50};
+        const auto resource=reinterpret_cast<std::uintptr_t>(f.image.data()+0x1000);
+        std::memcpy(reinterpret_cast<void*>(resource+0x2C),&neutral,sizeof(neutral));
+        *reinterpret_cast<std::uintptr_t*>(f.camera()+0x1B0)=resource;
+        game_test::memory_maps={{reinterpret_cast<std::uintptr_t>(f.image.data()),f.image.size(),1}};
+        if(gate==1)f.actor[0x116]=4; // Native aim predicate can stay true in reload.
+        if(gate==2)f.actor[0x116]=0;
+        if(gate==3){f.actor[0x115]=11;f.flags()=re4::kKnifeHeldMask;}
+        if(gate==4)settings.first_person=true;
+        if(gate==5)settings.re6_response=false;
+        if(gate==6){f.actor[0x115]=1;game_test::native_aim=0;f.camera()[0x26C]=2;}
+        publish_view_settings();unified_pitch_actor=reinterpret_cast<std::uintptr_t>(f.actor);unified_pitch=1.2f;
+        calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
+        assert(view_camera_native_pitch.load()==(gate==0));
+        if(gate!=0)assert(near(view_camera_pitch.load(),unified_pitch));
+    }
+    // Native profile0's extreme framing is about +/-60degrees, even though
+    // its pose weight is +/-1. A point on that native aiming axis must remain
+    // visible when the owned command reaches either end of its full range.
+    for(float sign:{-1.f,1.f})for(float heading:{0.f,1.2f,-2.4f})for(float distance:{1.f,1.15f,2.f})for(float clipping:{1.f,.4f})for(float weight:{0.f,.4f,.75f,1.f}){
+        Fixture f;f.view_mode();f.aim();f.camera()[0x26C]=0;
+        settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=distance;
+        settings.reticle=re4::ReticleStyle::Crosshair;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        native_profile=sign>0?re4::ViewQfpsOutput{{-527,600,-680},{-180,1700,-110},{-220,4080,1100},.2f,50}
+            :re4::ViewQfpsOutput{{-393,2058,-5},{-180,1700,-110},{-179,365,943},.2f,50};
+        const re4::ViewQfpsOutput neutral{{-470,1715,-615},{-180,1700,-110},{-200,1345,1525},0,50};
+        const auto mix=[weight](re4::ViewVec3 a,re4::ViewVec3 b){return re4::ViewVec3{a.x+(b.x-a.x)*weight,a.y+(b.y-a.y)*weight,a.z+(b.z-a.z)*weight};};
+        native_profile.eye0=mix(neutral.eye0,native_profile.eye0);native_profile.target=mix(neutral.target,native_profile.target);
+        const auto resource=reinterpret_cast<std::uintptr_t>(f.image.data()+0x1000);
+        std::memcpy(reinterpret_cast<void*>(resource+0x2C),&neutral,sizeof(neutral));
+        *reinterpret_cast<std::uintptr_t*>(f.camera()+0x1B0)=resource;
+        game_test::memory_maps.push_back({reinterpret_cast<std::uintptr_t>(f.image.data()),f.image.size(),1});
+        const double dx=native_profile.target.x-native_profile.eye0.x,dy=native_profile.target.y-native_profile.eye0.y,dz=native_profile.target.z-native_profile.eye0.z;
+        const float physical=std::atan2(dy,std::hypot(dx,dz));
+        const float c=std::cos(heading-.4f),s=std::sin(heading-.4f);
+        native_basis={{{c,0,s,450},{0,1,0,-180},{-s,0,c,900}}};
+        const float scale=1/std::tan(50.f*.00872664626f);
+        const re4::ViewMatrix4x4 projection{{{scale*.5625f,0,0,0},{0,scale,0,0},{0,0,-1.001f,-100},{0,0,-1,0}}};
+        std::memcpy(f.input_state.data()+0x10C,&projection,sizeof(projection));
+        ModernPlayerUpdate::Callback(f.actor);f.yaw()=heading;unified_pitch=sign*weight*1.570796327f;
+        f.pitch()[0]=f.pitch()[1]=sign*weight;
+        auto* follow=f.image.data()+0x1131F50;*reinterpret_cast<float*>(follow+0xFC)=.8f;
+        native_follow_probe=world_follow_probe=calculate_probe=true;native_collision_fraction=clipping;CameraCalculate::Callback();
+        const re4::ViewVec3 target{100+std::sin(heading)*std::cos(physical)*50000,1900+std::sin(physical)*50000,300+std::cos(heading)*std::cos(physical)*50000};
+        const auto& view=*reinterpret_cast<re4::ViewMatrix3x4*>(f.input_state.data()+0xD8);
+        re4::ViewHudPoint point;assert(re4::project_view_point(view,projection,target,point));
+        assert(point.y>16&&point.y<432&&point.x>16&&point.x<496);
+        assert(near(unified_pitch,sign*weight*1.570796327f)&&near(f.pitch()[1],sign*weight)); // Full native weapon range retained.
+        // Exercise the displayed-frame marker rather than replacing it with a
+        // fake edge marker. The fresh native endpoint still drives the HUD.
+        laser_endpoint=target;WeaponLaser::Callback(f.weapon,1,0,0);SceneSubmit::Callback();
+        view_frame.fetch_add(1);SceneDraw::Callback();CameraCalculate::Callback();
+        const auto before=hud_rects.size();HudDraw::Callback(nullptr);assert(hud_rects.size()>before);
+        if(weight==1&&heading==0&&distance==1&&clipping==1){
+            assert(view_camera_native_pitch.load());
+            f.actor[0x115]=1;game_test::native_aim=0;f.camera()[0x26C]=2;unified_pitch=.3f;
+            CameraCalculate::Callback();assert(!view_camera_native_pitch.load()&&near(view_camera_pitch.load(),.3f));
+            f.actor[0x115]=6;game_test::native_aim=1;f.camera()[0x26C]=0;unified_pitch=sign*1.570796327f;
+            settings.first_person=true;CameraCalculate::Callback();assert(!view_camera_native_pitch.load());
+            settings.first_person=false;*reinterpret_cast<std::uintptr_t*>(f.camera()+0x1B0)=0;
+            CameraCalculate::Callback();assert(!view_camera_native_pitch.load()&&near(view_camera_pitch.load(),unified_pitch));
+        }
+        calculate_probe=false;
+    }
+    {
+        Fixture f;f.view_mode();
+        const auto current=reinterpret_cast<std::uintptr_t>(f.image.data()+0x1000),previous=current+0x100;
+        const re4::ViewQfpsOutput a{{0,100,0},{},{0,600,1000},0,50},b{{0,300,0},{},{0,0,1500},0,50};
+        std::memcpy(reinterpret_cast<void*>(current+0x2C),&a,sizeof(a));std::memcpy(reinterpret_cast<void*>(previous+0x2C),&b,sizeof(b));
+        *reinterpret_cast<std::uintptr_t*>(f.camera()+0x1B0)=current;*reinterpret_cast<std::uintptr_t*>(f.camera()+0x1B8)=previous;
+        *reinterpret_cast<std::uint32_t*>(f.camera()+0x280)=4;
+        game_test::memory_maps={{reinterpret_cast<std::uintptr_t>(f.image.data()),f.image.size(),1}};
+        re4::ViewQfpsOutput neutral;
+        for(float weight:{0.f,.25f,1.f}){
+            *reinterpret_cast<float*>(f.camera()+0x254)=weight;assert(camera_aim_neutral(f.camera(),neutral));
+            assert(near(neutral.eye0.y,100+200*weight)&&near(neutral.target.y,600*(1-weight))&&near(neutral.target.z,1000+500*weight));
+        }
+        *reinterpret_cast<float*>(f.camera()+0x254)=std::numeric_limits<float>::quiet_NaN();assert(!camera_aim_neutral(f.camera(),neutral));
+        *reinterpret_cast<float*>(f.camera()+0x254)=.5f;
+        game_test::memory_maps.clear();assert(!camera_aim_neutral(f.camera(),neutral));
+        game_test::memory_maps={{current+0x2C,sizeof(a)-1,1}};assert(!camera_aim_neutral(f.camera(),neutral));
+        game_test::memory_maps={{current+0x2C,sizeof(a),0}};assert(!camera_aim_neutral(f.camera(),neutral));
+        *reinterpret_cast<std::uintptr_t*>(f.camera()+0x1B0)=std::numeric_limits<std::uintptr_t>::max();assert(!camera_aim_neutral(f.camera(),neutral));
+    }
+    for(unsigned gate=1;gate<=14;++gate){
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        auto* follow=f.image.data()+0x1131F50;*reinterpret_cast<float*>(follow+0xFC)=.8f;follow[0xF8]=1;
+        ModernPlayerUpdate::Callback(f.actor);native_follow_probe=world_follow_probe=calculate_probe=true;world_follow_gate=gate;
+        CameraCalculate::Callback();assert(follow_coefficient_seen==.8f&&*reinterpret_cast<float*>(follow+0xFC)==.8f);
+        calculate_probe=false;
+    }
+    {
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.re6_response=true;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        auto* follow=f.image.data()+0x1131F50;*reinterpret_cast<float*>(follow+0xFC)=.8f;
+        ModernPlayerUpdate::Callback(f.actor);native_follow_probe=world_follow_probe=calculate_probe=true;
+        native_collision_fraction=.2f;follow_near_correction={17,-4,9};CameraCalculate::Callback();
+        re4::ViewVec3 clipped;assert(re4::view_transform_point(native_basis,camera_collision_result.eye,clipped));
+        const auto* eye=reinterpret_cast<const re4::ViewVec3*>(f.input_state.data()+0x14C);
+        assert(near(eye->x,clipped.x+17)&&near(eye->y,clipped.y-4)&&near(eye->z,clipped.z+9));
+        assert(follow_coefficient_seen==0);calculate_probe=false;
+        CameraFollow::Callback(follow,reinterpret_cast<void*>(main_base+0x1131998));
+        assert(follow_coefficient_seen==.8f); // No token survives calculate scope.
+    }
+    // Native world follow runs after the earlier local-X filter. Sustained
+    // right strafe used to bring the character all the way to screen center.
+    for(unsigned character:{0u,1u})for(float dt:{.5f,1.f,2.f}){
+        Fixture f;f.view_mode();f.input_state[0x503C]=std::uint8_t(character);
+        settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=dt;
+        auto* follow=f.image.data()+0x1131F50;*reinterpret_cast<float*>(follow+0xFC)=.8f;follow[0xF8]=1;
+        ModernPlayerUpdate::Callback(f.actor);native_follow_probe=world_follow_probe=calculate_probe=true;
+        CameraCalculate::Callback();
+        auto* body=reinterpret_cast<re4::ViewMatrix3x4*>(f.actor+0x18);
+        auto* view=reinterpret_cast<re4::ViewMatrix3x4*>(f.input_state.data()+0xD8);
+        auto* projection=reinterpret_cast<re4::ViewMatrix4x4*>(f.input_state.data()+0x10C);
+        re4::ViewHudPoint initial;assert(re4::project_view_point(*view,*projection,{100,1900,300},initial));
+        for(unsigned n=0;n<120;++n){
+            body->m[0][3]+=(n<60?-137.f:n<100?137.f:0)*dt;
+            std::memcpy(f.actor+0xA4,&body->m[0][3],4);
+            if(n>30&&n%7==0){follow[0x12C]=1;std::memset(follow+0x130,0,32);}
+            const float delta[3]={12,-3,7};std::memcpy(f.input_state.data()+0x4FE8,delta,12);
+            view_frame.fetch_add(1);game_test::tick+=640000;CameraCalculate::Callback();
+            re4::ViewHudPoint point;assert(re4::project_view_point(*view,*projection,{body->m[0][3],1900,300},point));
+            assert(std::fabs(point.x-initial.x)<.02f&&std::fabs(point.y-initial.y)<.02f);
+            assert(follow_coefficient_seen==0&&*reinterpret_cast<float*>(follow+0xFC)==.8f);
+        }
+        assert(follow_calls==121);calculate_probe=false;
+    }
+    for(unsigned character:{0u,1u}){
+        Fixture f;f.view_mode();f.input_state[0x503C]=std::uint8_t(character);
+        settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        ModernPlayerUpdate::Callback(f.actor);native_follow_probe=world_follow_probe=calculate_probe=true;
+        auto* follow=f.image.data()+0x1131F50;*reinterpret_cast<float*>(follow+0xFC)=.8f;follow[0xF8]=1;
+        // Seed a settled native cache, then turn quickly against a delayed basis.
+        auto* history=reinterpret_cast<float*>(f.image.data()+0x1132A30);
+        history[0]=-448;history[3]=-448;
+        CameraCalculate::Callback();
+        re4::ViewHudPoint initial{};
+        const re4::ViewVec3 torso{100,1900,300};
+        auto* view=reinterpret_cast<re4::ViewMatrix3x4*>(f.input_state.data()+0xD8);
+        auto* projection=reinterpret_cast<re4::ViewMatrix4x4*>(f.input_state.data()+0x10C);
+        assert(re4::project_view_point(*view,*projection,torso,initial));
+        for(float heading:{.25f,.5f,1.f,1.6f,2.8f,-2.8f,-1.6f,-.5f,0.f})for(float pitch:{-.5f,0.f,.5f}){
+            f.yaw()=heading;unified_pitch=pitch;
+            // Delayed moving/rotated native basis, independent of current look.
+            const float old=heading-.4f,c=std::cos(old),s=std::sin(old);
+            native_basis={{{c,0,s,450},{0,1,0,-180},{-s,0,c,900}}};
+            view_frame.fetch_add(1);game_test::tick+=640000;CameraCalculate::Callback();
+            re4::ViewHudPoint point{};assert(re4::project_view_point(*view,*projection,torso,point));
+            assert(std::fabs(point.x-initial.x)<.02f&&std::fabs(point.y-initial.y)<.02f);
+        }
+        // Actual right-stick commands, including reversals, must remain fixed
+        // through BOTH native follow stages, not only at the collision rig.
+        unified_pitch=0;control.raw_ry=0;
+        for(unsigned n=0;n<120;++n){
+            control.raw_rx=n<40?1.f:n<80?-1.f:0.f;
+            view_frame.fetch_add(1);game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);
+            const float old=f.yaw()-.4f,c=std::cos(old),s=std::sin(old);
+            native_basis={{{c,0,s,450},{0,1,0,-180},{-s,0,c,900}}};
+            CameraCalculate::Callback();
+            re4::ViewHudPoint point{};assert(re4::project_view_point(*view,*projection,torso,point));
+            assert(std::fabs(point.x-initial.x)<.02f&&std::fabs(point.y-initial.y)<.02f);
+            assert(follow_coefficient_seen==0&&*reinterpret_cast<float*>(follow+0xFC)==.8f);
+        }
+        for(float fraction:{1.f,.5f,.1f}){
+            native_collision_fraction=fraction;history[0]=5000;history[3]=-5000;
+            view_frame.fetch_add(1);game_test::tick+=640000;CameraCalculate::Callback();
+            re4::ViewVec3 expected,eye;
+            assert(re4::view_transform_point(native_basis,camera_collision_result.eye,expected));
+            std::memcpy(&eye,f.input_state.data()+0x14C,sizeof(eye));
+            assert(std::hypot(eye.x-expected.x,eye.y-expected.y,eye.z-expected.z)<.01f);
+        }
+        assert(camera_collision_calls==151);calculate_probe=false;native_follow_probe=world_follow_probe=false;
+    }
+    for(unsigned gate=0;gate<23;++gate){
+        Fixture f;f.view_mode();settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        ModernPlayerUpdate::Callback(f.actor);
+        CameraContext context{};context.camera=f.camera();context.actor=f.actor;context.view_allowed=true;
+        camera_context=&context;
+        re4::ViewMatrix3x4 basis{};CameraBasis::Callback(f.camera(),&basis);
+        re4::ViewQfpsOutput profile{};CameraApply::Callback(f.camera(),&profile);
+        assert(context.shoulder);
+        auto* history=reinterpret_cast<float*>(f.image.data()+0x1132A30);
+        for(unsigned i=0;i<8;++i)history[i]=100.f+float(i);
+        re4::ViewMatrix3x4 other_basis=basis;re4::ViewQfpsOutput other_profile=profile;
+        void* basis_arg=&basis;void* profile_arg=&profile;
+        if(gate==1)settings.first_person=true;
+        if(gate==2)settings.unified_controls=false;
+        if(gate==3)settings.re6_response=false;
+        if(gate==4)settings.third_person_distance=1.2f;
+        if(gate==5)basis_arg=&other_basis;
+        if(gate==6)profile_arg=&other_profile;
+        if(gate==7)camera_context=nullptr;
+        if(gate==8)context.shoulder=false;
+        if(gate==9)f.camera()[0x222]=1;
+        if(gate==10)f.input_state[0x503C]=1;
+        if(gate==11)f.actor[0x114]=1;
+        if(gate==12)f.actor[0x115]=5;
+        if(gate==13)unified_pitch=.1f;
+        if(gate==14)f.yaw()=.1f;
+        if(gate==15)f.input_state[0x86FF]=1;
+        if(gate==16)sensor_attributes=0;
+        if(gate==17)camera_collision_invalid=true;
+        if(gate==18)view_frame.fetch_add(1);
+        if(gate==19)f.camera()[0x26C]=0;
+        if(gate==20)context.actor=f.other_model;
+        if(gate==21)f.input_state[0x5092]=4;
+        if(gate==22)*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=1;
+        native_collision_fraction=.35f;NativeFollowOutput output{};
+        CameraCollision::Callback(nullptr,basis_arg,profile_arg,&output);camera_context=nullptr;
+        assert(camera_collision_calls==1);
+        assert(!std::memcmp(&output,&camera_collision_result,sizeof(output))); // Clipped eye never moves afterward.
+        for(unsigned i=0;i<8;++i){
+            if(gate==0&&i==0)assert(near(history[i],output.eye.x));
+            else if(gate==0&&i==3)assert(near(history[i],output.target.x));
+            else assert(history[i]==100.f+float(i));
+        }
+    }
     {
         Fixture f;auto* scope=f.scope_mode();control.raw_ry=1;control.raw_ly=1;
         ScopeUpdate::Callback(scope);
@@ -490,8 +823,46 @@ int main(){
         assert(near(f.pitch()[0],sign)&&near(f.pitch()[1],sign));
         modern_probe=false;
     }
-    for(bool aiming:{false,true}){
+    for(unsigned character:{0u,1u}){
+        Fixture f;f.view_mode();f.input_state[0x503C]=std::uint8_t(character);
+        settings.unified_controls=true;settings.re6_response=true;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        control.raw_rx=1;control.raw_ry=1;ModernPlayerUpdate::Callback(f.actor);
+        for(unsigned i=0;i<4;++i){game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);}
+        assert(f.yaw()<-.1f&&unified_pitch>.1f);
+        const float before=f.yaw();f.input_state[0x503C]=std::uint8_t(1-character);
+        control.raw_rx=0;control.raw_ry=0;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw(),before)&&near(unified_pitch,0)); // Reused actor, different playable character.
+        control.raw_rx=1;game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        assert(f.yaw()<before); // New character's live look remains available.
+    }
+    struct AshleyWalkCase {float x,y,want_x,want_z,gain;unsigned routine;};
+    for(const auto c:{AshleyWalkCase{0,1,0,7,1,1},{1,0,-7,0,1,1},
+            {-1,0,7,0,1,1},{1,1,-4.949747f,4.949747f,1,3},
+            {0,-1,0,-7,1,2},{.5f,0,-7,0,.5f,1}}){
+        Fixture f;f.view_mode();f.input_state[0x503C]=1;f.actor[0x115]=std::uint8_t(c.routine);
+        settings.unified_controls=true;settings.re6_response=true;settings.left_deadzone=0;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        void* secondary=f.other_model;*reinterpret_cast<void**>(f.actor+0x320)=secondary;
+        native_primary={0,3,c.routine==2?-10.f:10.f};native_secondary={0,5,c.routine==2?-6.f:6.f};
+        control.raw_lx=c.x;control.raw_ly=c.y;f.flags()=15;native_root_probe=true;
+        ModernPlayerUpdate::Callback(f.actor);native_root_probe=false;
+        assert(near(root_result.x,c.want_x)&&near(root_result.z,c.want_z)&&near(root_result.y,4.5f));
+        assert(near(std::hypot(root_result.x,root_result.z),7)); // Rotate the native budget; no extra speed.
+        assert(near(game_test::motion_speed_seen,1.25f*c.gain));
+        assert(near(*reinterpret_cast<float*>(f.actor+0x304),1.25f));
+        assert((game_test::directions_seen&15)==(c.y<0?2u:1u)&&(f.flags()&15)==15);
+        assert(modern_original_updates==1&&modern_original_roots==1&&modern_original_poses==1);
+        control.raw_lx=0;control.raw_ly=0;ModernPlayerUpdate::Callback(f.actor);
+        assert((game_test::directions_seen&15)==0&&near(game_test::motion_speed_seen,0));
+    }
+    native_primary={0,3,10};native_secondary={0,5,6};
+    for(unsigned character:{0u,1u})for(bool aiming:{false,true}){
+        if(character==1&&aiming)continue;
         Fixture f;f.view_mode();if(aiming){f.aim();f.camera()[0x26C]=0;}
+        f.input_state[0x503C]=std::uint8_t(character);
         settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
         *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
@@ -518,14 +889,15 @@ int main(){
         CameraInput::Callback(f.camera());assert(re4::view_transform_point(native_basis,camera_collision_input.eye0,world));
         assert(std::fabs(world.x+932)<.001f&&std::fabs(world.z-668)<.001f);
     }
-    for(unsigned gate=0;gate<12;++gate){
+    for(unsigned character:{0u,1u})for(unsigned gate=0;gate<12;++gate){
         Fixture f;f.view_mode();settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
+        f.input_state[0x503C]=std::uint8_t(character);
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
         *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
         if(gate==0)settings.first_person=true;
         if(gate==1)settings.re6_response=false;
         if(gate==2)settings.unified_controls=false;
-        if(gate==3)f.input_state[0x503C]=1;
+        if(gate==3)f.input_state[0x503C]=2;
         if(gate==4)f.actor[0x115]=5;
         if(gate==5)f.camera()[0x222]=1;
         if(gate==6)f.camera()[0x26C]=0;
@@ -557,6 +929,124 @@ int main(){
         settings.gyro_enabled=true;assert(!gyro_aim_ready(f.actor,true));
         settings.move_while_reloading=false;assert(!unified_view_ready(f.actor));
         settings.move_while_reloading=true;f.actor[0x117]=4;assert(!unified_view_ready(f.actor));
+    }
+    // Reload look must run even though native reload never calls firearm aim,
+    // with aim released and no left-stick motion/assets available.
+    for(std::size_t handler:{0x31CC60u,0x3351A0u,0x3270F0u,0x332CC0u,0x342F90u})
+    for(bool fps:{false,true})for(bool held:{false,true}){
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.move_while_reloading=true;
+        settings.first_person=fps;settings.gyro_enabled=true;settings.re6_response=held;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        *reinterpret_cast<std::uint16_t*>(f.actor+0x352)=0x300;
+        *reinterpret_cast<std::uintptr_t*>(f.image.data()+0x1265A28)=main_base+handler;
+        game_test::memory_maps={{reinterpret_cast<std::uintptr_t>(f.actor),sizeof(f.actor),3},
+            {reinterpret_cast<std::uintptr_t>(f.input_state.data()),f.input_state.size(),3}};
+        f.actor[0x116]=4;f.actor[0x117]=1;f.flags()=held?0x10:0;game_test::native_aim=held?1:0;
+        control.raw_rx=1;control.raw_ry=1;gyro_pending={.5f,.5f};
+        ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw(),0)); // Entry drains old velocity.
+        for(unsigned n=0;n<30;++n){game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);}
+        assert(f.yaw()<-1&&unified_pitch>.3f&&unified_pitch<=.610866f);
+        assert(!control.modern_move_steps&&!control.aim_calls);
+        assert(f.pitch()[0]==0&&f.pitch()[1]==0); // No native aim pitch writes.
+        assert(modern_original_updates==31&&modern_original_roots==31&&modern_original_poses==31);
+        assert(!gyro_aim_ready(f.actor,true)&&unified_view_ready(f.actor));
+        const re4::ViewVec3 eye{},up{0,1,0},target{0,0,1000};
+        std::memcpy(f.input_state.data()+0x14C,&eye,sizeof(eye));
+        std::memcpy(f.input_state.data()+0x158,&target,sizeof(target));
+        std::memcpy(f.input_state.data()+0x16C,&up,sizeof(up));
+        f.camera()[0x26C]=held?0:2;calculate_probe=true;CameraCalculate::Callback();calculate_probe=false;
+        assert(near(look_seen.x/1000,std::sin(f.yaw())*std::cos(unified_pitch)));
+        assert(near(look_seen.y/1000,std::sin(unified_pitch)));
+        const float yaw=f.yaw();
+        settings.camera_gain=0;game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw(),yaw));
+        settings.camera_gain=1;f.input_state[0x86FF]=1;
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),yaw));
+        f.input_state[0x86FF]=0;game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw(),yaw)); // Resume also drains its first sample.
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);assert(f.yaw()<yaw);
+        const float resumed=f.yaw();update_state_change=1;
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);update_state_change=0;
+        assert(near(f.yaw(),resumed)); // Native damage transition before root cancels look.
+        f.actor[0x114]=0;settings.move_while_reloading=false;
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),resumed));
+    }
+    for(unsigned change:{2u,3u,4u}){
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.move_while_reloading=true;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        *reinterpret_cast<std::uint16_t*>(f.actor+0x352)=0x300;
+        game_test::memory_maps={{reinterpret_cast<std::uintptr_t>(f.actor),sizeof(f.actor),3},
+            {reinterpret_cast<std::uintptr_t>(f.input_state.data()),f.input_state.size(),3}};
+        f.actor[0x116]=4;f.actor[0x117]=1;f.flags()=0;game_test::native_aim=0;control.raw_rx=1;
+        ModernPlayerUpdate::Callback(f.actor);
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);assert(f.yaw()<0);
+        float before=f.yaw();change_reload_identity(f.actor,change);
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),before));
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);assert(f.yaw()<before);
+        before=f.yaw();update_state_change=change;
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);update_state_change=0;
+        assert(near(f.yaw(),before)); // A different reload cannot consume an entry-time command.
+        game_test::tick+=640000;ModernPlayerUpdate::Callback(f.actor);assert(near(f.yaw(),before));
+    }
+    for(bool grenade:{false,true}){
+        // Exercise steering and translation together through the actual update,
+        // root and pose hooks. Only external animation/physics calls are fake.
+        Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.move_while_reloading=true;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        *reinterpret_cast<std::uint16_t*>(f.actor+0x352)=0x300;
+        alignas(16) std::uint8_t asset[80]{},table[0x330]{};
+        alignas(16) std::uint8_t bones[26][0x1E0]{};
+        const auto store=[]<class T>(std::uint8_t* p,unsigned offset,T v){std::memcpy(p+offset,&v,sizeof(v));};
+        store(asset,0,std::uint16_t(40));asset[2]=1;store(asset,3,std::uint16_t(1));asset[5]=0;
+        store(asset,12,std::uint64_t(32));
+        for(unsigned axis=0;axis<3;++axis)store(asset,32+16*axis,std::uint16_t(1));
+        for(unsigned offset:{0x10u,0x40u,0x308u,0x318u})store(table,offset,reinterpret_cast<std::uintptr_t>(asset));
+        store(f.actor,0x108,reinterpret_cast<std::uintptr_t>(bones));store(f.actor,0x428,reinterpret_cast<std::uintptr_t>(bones));
+        store(f.actor,0x548,reinterpret_cast<std::uintptr_t>(table));f.actor[0x11A]=26;
+        const int parents[]={-1,0,1,2,3,2,5,5,7,8,9,2,11,11,13,14,15,0,17,18,19,20,17,22,23,24};
+        for(unsigned i=0;i<26;++i){
+            store(bones[i],0x78,reinterpret_cast<std::uintptr_t>(i?bones[parents[i]]:f.actor));
+            store(bones[i],0x108,i<25?reinterpret_cast<std::uintptr_t>(bones[i+1]):std::uintptr_t(0));
+            for(unsigned j=0;j<3;++j){store(bones[i],0xBC+4*j,1.f);store(bones[i],0x48+20*j,1.f);}
+        }
+        game_test::memory_maps={{reinterpret_cast<std::uintptr_t>(f.actor),sizeof(f.actor),3},
+            {reinterpret_cast<std::uintptr_t>(f.input_state.data()),f.input_state.size(),3},
+            {reinterpret_cast<std::uintptr_t>(asset),sizeof(asset),3},
+            {reinterpret_cast<std::uintptr_t>(table),sizeof(table),3},
+            {reinterpret_cast<std::uintptr_t>(bones),sizeof(bones),3}};
+        modern_native.move.sample=+[](const re4::ModernMoveSample* s,re4::ModernMoveVec3* out,std::uint16_t*,unsigned,unsigned){*out={0,0,10*s->frame};};
+        modern_native.move.advance=+[](void*)->std::uint32_t{return 0;};
+        modern_native.move.root=+[](void*,void* motion,unsigned,re4::ModernMoveVec3* out,re4::ModernMoveVec3* r){*out={0,0,10**reinterpret_cast<float*>(static_cast<std::uint8_t*>(motion)+0xDC)};*r={};};
+        modern_native.move.translate=+[](void* actor,const re4::ModernMoveVec3* d){auto* p=static_cast<std::uint8_t*>(actor);*reinterpret_cast<float*>(p+0xA4)+=d->x;*reinterpret_cast<float*>(p+0xAC)+=d->z;};
+        modern_native.evaluate=+[](void*,void*){};
+        modern_native.rotation=+[](void*,const void*){};modern_native.position=+[](void*,const void*){};
+        modern_native.scale=+[](void*,const void*){};modern_native.copy_matrix=+[](const void*,void*){};
+        modern_native.healthy=+[]()->int{return 1;};
+        if(grenade){
+            *reinterpret_cast<std::uintptr_t*>(f.image.data()+0x1265A28)=main_base+0x31B9F0;
+            settings.move_while_aiming=true;grenade_native_order=true;
+        }else{f.actor[0x116]=4;f.actor[0x117]=1;f.flags()=0;game_test::native_aim=0;}
+        control.raw_ly=1;control.raw_rx=1;
+        ModernPlayerUpdate::Callback(f.actor);assert(near(*reinterpret_cast<float*>(f.actor+0xAC),10));
+        game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+        assert(near(f.yaw(),-.038524245f));
+        assert(near(*reinterpret_cast<float*>(f.actor+0xA4),grenade?0:10*std::sin(-.038524245f)));
+        assert(near(*reinterpret_cast<float*>(f.actor+0xAC),grenade?20:10+10*std::cos(-.038524245f)));
+        assert(control.modern_move_steps==2&&control.modern_pose_steps==2);
+        const float x=*reinterpret_cast<float*>(f.actor+0xA4),z=*reinterpret_cast<float*>(f.actor+0xAC);
+        ModernRoot::Callback(f.actor,nullptr);
+        assert(near(*reinterpret_cast<float*>(f.actor+0xA4),x)&&near(*reinterpret_cast<float*>(f.actor+0xAC),z));
+        if(grenade){
+            const float heading=f.yaw();f.actor[0x116]=2;f.actor[0x117]=1;
+            game_test::tick+=960000;ModernPlayerUpdate::Callback(f.actor);
+            assert(near(grenade_release_position.x,x+10*std::sin(heading)));
+            assert(near(grenade_release_position.z,z+10*std::cos(heading)));
+            assert(control.modern_move_steps==3&&control.modern_pose_steps==3);
+        }
     }
     {
         Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.re6_response=true;settings.analog_enabled=false;
@@ -1300,7 +1790,7 @@ int main(){
         game_test::program=re4::profile::title_id;f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
         assert(control.status==2 && game_test::installed==0);
         f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
-        assert(control.status==1 && game_test::installed==30 && game_test::initialized==1);
+        assert(control.status==1 && game_test::installed==32 && game_test::initialized==1);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }

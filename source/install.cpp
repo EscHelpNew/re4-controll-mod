@@ -94,7 +94,13 @@ bool publish(const std::string& path, const Bytes& bytes) {
     return false;
 }
 }
-static const char* install_bundle(const char* payload_root, const char* sd_root, bool loader, bool only_overlay = false, GameTarget game=GameTarget::RE4) {
+InstallCatalog legacy_install_catalog(){
+    // Own v0.16.1 subsdk9, verified against the retained release ZIP. A manual
+    // deployment followed by overlay-only install left its receipt slot zero.
+    static constexpr KnownInstallFile files[]={{GameTarget::RE4,0,136140,0xF4611F9AA197EBE2ull}};
+    return {files,sizeof(files)/sizeof(files[0])};
+}
+static const char* install_bundle(const char* payload_root, const char* sd_root, bool loader, bool only_overlay = false, GameTarget game=GameTarget::RE4,InstallCatalog known={}) {
     if(game!=GameTarget::RE4&&game!=GameTarget::RE6)return "Invalid game target";
     if (!payload_root || !sd_root) return "Payload missing";
     const bool re6=game==GameTarget::RE6&&!loader;
@@ -124,7 +130,17 @@ static const char* install_bundle(const char* payload_root, const char* sd_root,
             if (current == payload[i]) continue;
             std::uint64_t expected = 0;
             if (i<owned_count) std::memcpy(&expected, receipt.data() + 8 + 8 * i, 8);
-            if (i>=owned_count || hash(current) != expected) return "Conflict: existing files belong to another mod";
+            if (i>=owned_count || hash(current) != expected) {
+                bool legacy=false;
+                if(!loader&&!only_overlay&&ours&&i<owned_count&&expected==0&&known.files){
+                    const auto digest=hash(current);
+                    for(std::size_t j=0;j<known.count;++j){
+                        const auto& file=known.files[j];
+                        if(file.game==game&&file.index==i&&file.bytes==current.size()&&file.digest==digest){legacy=true;break;}
+                    }
+                }
+                if(!legacy)return "Conflict: existing files belong to another mod";
+            }
         }
     }
     for (unsigned i = 0; i < count; ++i)
@@ -182,7 +198,7 @@ static const char* disable_bundle(const char* sd_root, bool loader, GameTarget g
     }
     return loader ? "Disabled overlay loader. Reboot CFW to stop the menu." : re6?"Disabled RE6 mod. Restart RE6.":"Disabled RE4 patch. Original game files will load at next start.";
 }
-const char* install_game_files(const char* payload, const char* sd, GameTarget game) { return install_bundle(payload, sd, false, false, game); }
+const char* install_game_files(const char* payload, const char* sd, GameTarget game,InstallCatalog known) { return install_bundle(payload, sd, false, false, game,known); }
 const char* disable_game_files(const char* sd, GameTarget game) { return disable_bundle(sd, false, game); }
 const char* install_overlay_loader(const char* payload, const char* sd) { return install_bundle(payload, sd, true); }
 const char* install_overlay_only(const char* payload, const char* sd, GameTarget game) { return install_bundle(payload, sd, false, true, game); }

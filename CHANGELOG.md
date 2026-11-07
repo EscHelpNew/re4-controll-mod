@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.20.0 (2026-11-07, includes local 0.18.x and 0.19.0)
+
+- Put Game immediately after Graphics. Enemy health bars and optional Health numbers default off; numbers can be changed only while bars are enabled.
+- Show a compact enemy close-up in Game settings in both menus. The example strip and optional 5.0 number appear or disappear immediately with the toggles.
+- Use an 18x2 native-pixel colored strip, without a black outline/background, peak alpha 102/255. Fade in/out over 300 ms and crossfade target changes using copied world anchors with the current displayed camera.
+- Show optional centered current HP in weapon firepower units (150 raw HP per unit), rounded to one decimal with a point in every interface language, for example 5.0. Use a compact original pixel font, the same opacity and fade as the bar.
+- Settings wire15 preserves earlier formats; wire14 keeps the bar preference and starts numbers off. Shared ABI19 rejects mixed module/menu versions. No additional native hook. Console acceptance pending.
+
+## 0.19.0 (local, unpublished; 2026-11-07, enemy health bars)
+
+- Add Game/Игра to the overlay and installer with a persistent Enemy health bars/Полоска здоровья врагов toggle, off by default and independent of control/graphics profiles.
+- Show one compact translucent proportional bar above the enemy selected by the game's fresh aiming trace. Green above50%, yellow at50%through above25%, red at25%or below; dead/invalid/allied targets are omitted.
+- Reuse the native world-clipped nearest target and verified current/maxHP. Read an animated skeleton-top anchor, snapshot values into the displayed scene, and project using that scene's camera without changing targeting, health, physics or camera behavior.
+- Settings wire14 preserves v1..13 with the option off. Shared ABI18 prevents mixed old/new module/menu IPC. No additional native hook is required; console acceptance pending.
+
+## 0.18.6 (local, unpublished; 2026-11-07, extreme aim framing)
+
+- Resolve shoulder-view aim elevation from the game's selected/blended camera profile instead of interpreting full pose weight as a physical90degree angle. Keep neutral look anchored and native upper/lower weapon range intact.
+- Use the same resolved pitch for the shoulder arm and final view, preserving fixed character placement and native wall/near-body collision. Weapon rays and the truthful projected HUD marker remain unchanged; scopes/FPS/ordinary overview retain their controls.
+- Add real callback regressions for both extrema, yaw, distance, wall clipping and displayed-frame reticle drawing, plus profile blending/memory guards and monotonic angle mapping. Console acceptance pending.
+
+## 0.18.5 (local, unpublished; 2026-11-06, strafe framing and grenades)
+
+- Keep the RE6 shoulder position during lateral travel by bypassing the exact normal camera's second world-space follow for the current clipped rig. Preserve its native near-body correction and restore the follow coefficient after the call.
+- Enable aim movement for all three grenade types through verified held/throw/recovery states. Preserve native projectile release and inherited movement; initial raise and unverified native gait substates remain excluded.
+- Smoothly steer the ordinary walking/running pelvis toward travel up to25degrees, with compensated leg yaw and owned-pose restoration before actions. Preserve actor/view heading and native blended root matrix.
+- Add actual callback regressions for sustained right strafe/reversal/stop, follow exclusions/collision, grenade action order, body steering/restoration and Ashley topology. Console acceptance pending.
+
+## 0.18.4 (local, unpublished; 2026-11-06, legacy installation ownership)
+
+- Repair full updates after a manual own0.16.1 module deployment followed by
+  overlay-only installation left zero module ownership in a valid receipt.
+  Recognize only the exact known game/file index/size/FNV identity compiled
+  into the app; keep rejecting unknown files and malformed/missing receipts.
+- Preserve the normal complete preflight, backups and receipt publication.
+  The completed full installation records ownership for future updates.
+- Include the read-only0.18.3 diagnostic report of the three fixed RE4 artifact
+  identities and receipt matches. Raw file contents and credentials are excluded.
+- Includes the0.18.2 reload/Ashley/fixed-framing work; gameplay hardware
+  acceptance remains pending.
+- Full host tests, ARM64 builds, independent review and public package audit passed.
+
+## 0.18.3 (local diagnostic only, unpublished)
+
+- Add read-only installed RE4 artifact/receipt identities to startup support
+  reports to identify the conflict. Does not replace installed game files.
+
+## 0.18.2 (local, unpublished; 2026-11-06, fixed shoulder framing)
+
+- Keep Leon/playable Ashley at the existing side of the screen when turning the
+  RE6 shoulder camera. Retain the current side/distance and eased right-stick look.
+- Correct the native horizontal follow stage after wall collision: it blended
+  current and previous local-X coordinates even when the delayed camera basis
+  rotated. Seed just its two history values from the current clipped result;
+  never reposition the collision result or run camera/wall processing twice.
+- Restrict the correction to the exact active shoulder basis/profile call with
+  unchanged actor, character, state and settings. Preserve native first-person,
+  Default/classic, scripted/scope and unsupported-character paths.
+- Includes local0.18.0 reload movement and0.18.1 Ashley controls. Hardware
+  acceptance of framing comfort, animations and camera obstruction is pending.
+- Full host tests, ARM64 build, independent review and public artifact audit passed.
+
+## 0.18.1 (local, unpublished; 2026-11-06, playable Ashley)
+
+- Give playable Ashley the existing RE6-profile rear shoulder camera instead of
+  her centered native overview. Reuse Leon's side, distance and look direction,
+  preserving the original camera collision anchor, wall trace, FOV and roll.
+- Retain unified left-stick movement and right-stick heading/look during her
+  normal walk/back/run states, using her native animations and motion budget.
+  The checked Ashley leg hierarchy supports the existing strafe pose correction.
+- Drain look easing and reset owned pitch when switching Ashley/Leon at a reused
+  player address. Keep accompanying Ashley, scripted actions, Default/classic
+  controls and other character camera paths unchanged.
+- Includes local0.18.0 reload movement/steering. Full host tests, ARM64 build,
+  independent review and public artifact audit passed. Switch hardware
+  acceptance of Ashley framing, transitions and collision remains pending.
+
+## 0.18.0 (local, unpublished; 2026-11-06, reload movement and steering)
+
+- Extend optional reload walking to all ordinary Leon reload families: pistols,
+  shotguns, automatic weapons, rifles outside scopes and the mine thrower.
+  Validate each native subphase table, including both automatic control schemes.
+- Process right-stick view/heading changes during reload in unified controls,
+  including released aim and neutral left input. Left-stick movement follows
+  the updated heading; native reload timing, ammo and upper-body animation stay
+  owned by the game. The existing RE6 profile enables both required settings.
+- Keep scopes stationary and drain look velocity on entry, pause/resume and
+  option changes. Reload does not enable gyro or invoke firearm aiming.
+- Full host tests and the ARM64 module/overlay/NRO build passed; public source,
+  history and packaged artifacts passed the audit. Per-weapon Switch hardware
+  acceptance remains pending.
+
 ## 0.17.2 (2026-11-04, gyro preview horizontal direction)
 
 - Correct the app's gyro preview X projection and its asymmetric angular bounds
