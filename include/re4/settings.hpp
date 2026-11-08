@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "re4/button_map.hpp"
 #include "re4/graphics.hpp"
+#include "re4/character_appearance.hpp"
 
 namespace re4 {
 constexpr std::size_t kLegacySettingsBytes = 64;
@@ -54,6 +55,14 @@ struct Settings {
     ReticleSize reticle_size = ReticleSize::Small;
     bool enemy_health_bars = false;
     bool enemy_health_numbers = false;
+    bool grenade_landing_spot = false;
+    bool skip_pickup_confirmation = false;
+    bool skip_startup_logos = false;
+    bool disable_aim_sway = false;
+    bool dpad_weapon_switching = false;
+    bool extended_weapon_upgrade = false;
+    bool case_ammo_counter = false;
+    CharacterAppearance character_appearance = CharacterAppearance::Leon;
 };
 bool valid_settings(const Settings& settings);
 bool encode_settings(const Settings& settings, std::uint8_t* out, std::size_t size);

@@ -137,6 +137,14 @@ def prepare(root: Path) -> Path:
     for start in range(0, len(health_pixels), 16):
         lines.append('    ' + ', '.join(f'0x{pixel:04x}' for pixel in health_pixels[start:start + 16]) + ',')
     lines.extend(['};', ''])
+    with Image.open(root / 'assets/graphics/re4-source.jpg') as scene:
+        floor = scene.convert('RGB').crop((735, 445, 1005, 625)).resize((256, 171), Image.Resampling.LANCZOS)
+    floor_pixels = [((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
+                    for r, g, b in zip(*[iter(floor.tobytes())] * 3)]
+    lines.append('inline constexpr std::uint16_t grenade_pixels[256 * 171] = {')
+    for start in range(0, len(floor_pixels), 16):
+        lines.append('    ' + ', '.join(f'0x{pixel:04x}' for pixel in floor_pixels[start:start + 16]) + ',')
+    lines.extend(['};', ''])
     lines.extend(['}  // namespace graphics_preview', ''])
     destination = root / 'build/graphics/graphics_preview_images.hpp'
     destination.parent.mkdir(parents=True, exist_ok=True)

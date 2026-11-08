@@ -16,6 +16,10 @@ inline void scale_saved_s0(void* context, float factor) {
     std::memcpy(context, &value, sizeof(value));
 }
 inline void set_saved_s0(void* context,float value){std::memcpy(context,&value,sizeof(value));}
+inline void set_saved_x(void* context,unsigned index,std::uintptr_t value){
+    if(index>30)return;
+    std::memcpy(static_cast<std::uint8_t*>(context)+0x200+index*8,&value,sizeof(value));
+}
 inline std::uintptr_t saved_x(const void* context,unsigned index){
     if(index>30)return 0;
     std::uintptr_t value=0;

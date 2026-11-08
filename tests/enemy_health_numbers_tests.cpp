@@ -88,9 +88,9 @@ void drawing(){
     const char* english[]={"###...###","#.#...#.#","#.#...#.#","#.#...#.#","###.#.###"};
     const char* const* russian=english;
     Recorder en;CHECK(draw_enemy_health_number(en.backend(),{256,100},1,150,false));
-    CHECK(en.commands.size()==175);raster(en,251.5f,85,9,5,102,english);
+    CHECK(en.commands.size()==175);raster(en,251.5f,85,9,5,128,english);
     Recorder ru;CHECK(draw_enemy_health_number(ru.backend(),{256,100},1,150,true,.5f));
-    CHECK(ru.commands.size()==175);raster(ru,251.5f,85,9,5,51,russian);
+    CHECK(ru.commands.size()==175);raster(ru,251.5f,85,9,5,64,russian);
     const char* digits[][5]={
         {"###","#.#","#.#","#.#","###"},
         {".#.","##.",".#.",".#.","###"},
@@ -106,19 +106,19 @@ void drawing(){
         Recorder draw;CHECK(draw_enemy_health_number(draw.backend(),{256,100},digit*150+1,150,false));
         char rows[5][10]{};const char* expected[5]{};
         for(unsigned y=0;y<5;++y){std::memcpy(rows[y],english[y],10);std::memcpy(rows[y],digits[digit][y],3);expected[y]=rows[y];}
-        raster(draw,251.5f,85,9,5,102,expected);
+        raster(draw,251.5f,85,9,5,128,expected);
     }
     Recorder large;CHECK(draw_enemy_health_number(large.backend(),{256,100},32767,1,true));
-    CHECK((large.commands.size()-5)/10<=64);raster(large,243.5f,85,25,5,102,nullptr);
+    CHECK((large.commands.size()-5)/10<=64);raster(large,243.5f,85,25,5,128,nullptr);
     for(const auto anchor:{ViewHudPoint{4,100},ViewHudPoint{508,100},ViewHudPoint{256,14},
             ViewHudPoint{256,459},ViewHudPoint{std::numeric_limits<float>::quiet_NaN(),100},
             ViewHudPoint{256,std::numeric_limits<float>::infinity()}}){
         Recorder draw;CHECK(!draw_enemy_health_number(draw.backend(),anchor,1,150,false));CHECK(draw.commands.empty());
     }
     // The decimal point and text bounds are identical in both interface languages.
-    Recorder tail;CHECK(draw_enemy_health_number(tail.backend(),{256,458},1,150,true));raster(tail,251.5f,443,9,5,102,english);
-    Recorder bottom;CHECK(draw_enemy_health_number(bottom.backend(),{507.5f,458},1,150,false));raster(bottom,503,443,9,5,102,english);
-    Recorder edge;CHECK(draw_enemy_health_number(edge.backend(),{4.5f,15},1,150,false));raster(edge,0,0,9,5,102,english);
+    Recorder tail;CHECK(draw_enemy_health_number(tail.backend(),{256,458},1,150,true));raster(tail,251.5f,443,9,5,128,english);
+    Recorder bottom;CHECK(draw_enemy_health_number(bottom.backend(),{507.5f,458},1,150,false));raster(bottom,503,443,9,5,128,english);
+    Recorder edge;CHECK(draw_enemy_health_number(edge.backend(),{4.5f,15},1,150,false));raster(edge,0,0,9,5,128,english);
     for(float opacity:{0.f,.001f,-.1f,1.1f,std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()}){
         Recorder draw;CHECK(!draw_enemy_health_number(draw.backend(),{256,100},1,150,false,opacity));CHECK(draw.commands.empty());
     }

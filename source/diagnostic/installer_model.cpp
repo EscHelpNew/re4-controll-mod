@@ -69,7 +69,8 @@ const std::array<HomeItem,10>& installer_home_items(){
 unsigned InstallerModel::item_count()const{
     if(game==GameTarget::RE6)return page==InstallerPage::Home?5:page==InstallerPage::Graphics?3:0;
     if(page==InstallerPage::GyroTest)return control_group_count(ControlGroup::Gyro)+1;
-    if(page==InstallerPage::Game)return 2;
+    if(page==InstallerPage::Game)return 10;
+    if(page==InstallerPage::CharacterAppearance)return 8;
     if(page==InstallerPage::Graphics)return unsigned(GraphicsId::Count);
     if(page==InstallerPage::ControlGroup)return control_group_count(control_group)+(control_group==ControlGroup::Gyro?1:0);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
@@ -155,6 +156,7 @@ InstallerAction InstallerModel::handle(UiEvent event){
     profile_note.clear();
     if(event==UiEvent::Exit)return InstallerAction::Exit;
     if(event==UiEvent::Back){
+        if(page==InstallerPage::CharacterAppearance){page=InstallerPage::Game;selected=9;return InstallerAction::None;}
         if(page==InstallerPage::Graphics){page=graphics_origin;selected=page==InstallerPage::Home?home_selected:controls_selected;return InstallerAction::None;}
         if(page==InstallerPage::MappingTargets){page=InstallerPage::Mapping;selected=mapping_source+1;return InstallerAction::None;}
         if(page==InstallerPage::Mapping || page==InstallerPage::ControlGroup){
@@ -193,14 +195,28 @@ InstallerAction InstallerModel::handle(UiEvent event){
         if(selected==0)return InstallerAction::CheckUpdates;
         return update.stage==UpdateStage::Available?InstallerAction::InstallUpdate:InstallerAction::None;
     }
+    if(page==InstallerPage::CharacterAppearance){
+        if(event!=UiEvent::Confirm||selected>=count||selected==unsigned(settings.character_appearance))return InstallerAction::None;
+        settings.character_appearance=static_cast<CharacterAppearance>(selected);return InstallerAction::SaveSettings;
+    }
     if(page==InstallerPage::Game){
         if(selected>=count)return InstallerAction::None;
+        if(selected==9){
+            if(event==UiEvent::Confirm){page=InstallerPage::CharacterAppearance;selected=unsigned(settings.character_appearance);}
+            return InstallerAction::None;
+        }
         if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
         if(selected==0)settings.enemy_health_bars=!settings.enemy_health_bars;
-        else{
+        else if(selected==1){
             if(!settings.enemy_health_bars)return InstallerAction::None;
             settings.enemy_health_numbers=!settings.enemy_health_numbers;
-        }
+        }else if(selected==2)settings.grenade_landing_spot=!settings.grenade_landing_spot;
+        else if(selected==3)settings.skip_pickup_confirmation=!settings.skip_pickup_confirmation;
+        else if(selected==4)settings.skip_startup_logos=!settings.skip_startup_logos;
+        else if(selected==5)settings.disable_aim_sway=!settings.disable_aim_sway;
+        else if(selected==6)settings.dpad_weapon_switching=!settings.dpad_weapon_switching;
+        else if(selected==7)settings.extended_weapon_upgrade=!settings.extended_weapon_upgrade;
+        else settings.case_ammo_counter=!settings.case_ammo_counter;
         return InstallerAction::SaveSettings;
     }
     if(page==InstallerPage::MappingTargets){
@@ -281,6 +297,7 @@ const char* InstallerModel::page_title()const{
     if(game==GameTarget::RE6 && page!=InstallerPage::Graphics)
         return Bilingual{"MOD INSTALLER","УСТАНОВКА МОДА"}.get(settings.language);
     if(page==InstallerPage::Game)return kGameMenuLabel.get(settings.language);
+    if(page==InstallerPage::CharacterAppearance)return kCharacterAppearanceLabel.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_group_spec(control_group).label.get(settings.language);
     if(page==InstallerPage::Graphics)return Bilingual{"GRAPHICS","ГРАФИКА"}.get(settings.language);
     if(page==InstallerPage::Mapping)return Bilingual{"BUTTON MAPPING","НАЗНАЧЕНИЕ КНОПОК"}.get(settings.language);
@@ -340,7 +357,8 @@ const char* InstallerModel::selected_help()const{
     }
     if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
         || selected_control()==ControlId::Profile))return profile_note.c_str();
-    if(page==InstallerPage::Game)return selected==1?enemy_health_numbers_help(settings):kEnemyHealthBarsHelp.get(settings.language);
+    if(page==InstallerPage::CharacterAppearance||(page==InstallerPage::Game&&selected==9))return kCharacterAppearanceHelp.get(settings.language);
+    if(page==InstallerPage::Game)return selected==1?enemy_health_numbers_help(settings):(selected==2?kGrenadeLandingSpotHelp:selected==3?kSkipPickupConfirmationHelp:selected==4?kSkipStartupLogosHelp:selected==5?kRemoveAimingSwayHelp:selected==6?kDpadWeaponSwitchingHelp:selected==7?kExtendedWeaponUpgradeHelp:selected==8?kCaseAmmoCounterHelp:kEnemyHealthBarsHelp).get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_help(selected,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);
@@ -369,7 +387,8 @@ std::string InstallerModel::item_label(unsigned index)const{
     }
     if(page==InstallerPage::Controls)return index==0?control_spec(ControlId::Profile).label.get(settings.language):control_group_spec(static_cast<ControlGroup>(index-1)).label.get(settings.language);
     if(page==InstallerPage::ControlGroup)return control_group==ControlGroup::Gyro && index==control_group_count(control_group)?Bilingual{"Debug mode","Режим отладки"}.get(settings.language):control_spec(control_group_item(control_group,index)).label.get(settings.language);
-    if(page==InstallerPage::Game)return (index==0?kEnemyHealthBarsLabel:kEnemyHealthNumbersLabel).get(settings.language);
+    if(page==InstallerPage::CharacterAppearance)return character_appearance_name(static_cast<CharacterAppearance>(index),settings.language);
+    if(page==InstallerPage::Game)return (index==0?kEnemyHealthBarsLabel:index==1?kEnemyHealthNumbersLabel:index==2?kGrenadeLandingSpotLabel:index==3?kSkipPickupConfirmationLabel:index==4?kSkipStartupLogosLabel:index==5?kRemoveAimingSwayLabel:index==6?kDpadWeaponSwitchingLabel:index==7?kExtendedWeaponUpgradeLabel:index==8?kCaseAmmoCounterLabel:kCharacterAppearanceLabel).get(settings.language);
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_label(index,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_label(index,settings.language);
@@ -393,7 +412,9 @@ std::string InstallerModel::item_value(unsigned index)const{
     }
     if(page==InstallerPage::Controls)return index==0?profile_name(profile_kind(settings,ProfileDomain::Controls),settings.language):"";
     if(page==InstallerPage::ControlGroup)return control_group==ControlGroup::Gyro && index==control_group_count(control_group)?"A":control_value_text(control_spec(control_group_item(control_group,index)),settings);
-    if(page==InstallerPage::Game)return index==0?enemy_health_bars_value(settings):enemy_health_numbers_value(settings);
+    if(page==InstallerPage::CharacterAppearance)return index==unsigned(settings.character_appearance)?kAppearanceRequested.get(settings.language):"";
+    if(page==InstallerPage::Game&&index==9)return character_appearance_name(settings.character_appearance,settings.language);
+    if(page==InstallerPage::Game)return index==0?enemy_health_bars_value(settings):index==1?enemy_health_numbers_value(settings):game_option_value(index==2?settings.grenade_landing_spot:index==3?settings.skip_pickup_confirmation:index==4?settings.skip_startup_logos:index==5?settings.disable_aim_sway:index==6?settings.dpad_weapon_switching:index==7?settings.extended_weapon_upgrade:settings.case_ammo_counter,settings.language);
     if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);
     if(page==InstallerPage::Mapping)return mapping_row_value(index,settings);
     if(page==InstallerPage::MappingTargets)return index==mapping_target_index(settings,mapping_source)?"*":"";

@@ -1,5 +1,6 @@
 #include "re4/settings.hpp"
 #include "re4/shared.hpp"
+#include "re4/version.hpp"
 #include <cassert>
 #include <algorithm>
 #include <array>
@@ -57,7 +58,11 @@ void rejected(const Bytes& bytes,std::size_t length=128) {
 int main() {
     using namespace re4;
     Settings defaults;
-    assert(kSharedAbi==19 && std::strcmp(kSharedMarker,"RE4CTL_SHARED19")==0 && sizeof(SharedControl)==400);
+    assert(defaults.character_appearance==CharacterAppearance::Leon);
+    assert(std::strcmp(kVersion,"0.27.2")==0);
+    assert(kSharedAbi==23 && std::strcmp(kSharedMarker,"RE4CTL_SHARED23")==0 && sizeof(SharedControl)==488);
+    assert(!defaults.grenade_landing_spot && !defaults.skip_pickup_confirmation && !defaults.skip_startup_logos && !defaults.disable_aim_sway && !defaults.dpad_weapon_switching);
+    assert(kSettingsBytes==128 && offsetof(SharedControl,settings)==32 && offsetof(SharedControl,frames)==160);
     assert(!defaults.re6_response && !defaults.move_while_reloading);
     assert(defaults.gyro_speed == 0.8f);
     for(auto member:{&Settings::turn_gain,&Settings::camera_gain,&Settings::aim_gain_x,&Settings::aim_gain_y,
@@ -67,11 +72,31 @@ int main() {
     assert(defaults.left_deadzone==0.05f && defaults.right_deadzone==0.05f && defaults.gyro_deadzone_dps==0.5f);
     Bytes bytes{};
     assert(encode_settings(defaults,bytes.data(),bytes.size()));
-    assert(bytes[4] == 15);
+    assert(bytes[4] == 19);
     assert(bytes[64]==0 && bytes[65]==1);
     for(unsigned i=0;i<20;++i)assert(bytes[68+i]==i);
     for(unsigned i:{66,67,88,89,100,123})assert(bytes[i]==0);
     auto resealed=bytes;seal(resealed);assert(resealed==bytes);
+    for(unsigned choice=0;choice<8;++choice){
+        Settings requested;requested.character_appearance=static_cast<CharacterAppearance>(choice);requested.dpad_weapon_switching=true;
+        Bytes wire{};assert(encode_settings(requested,wire.data(),wire.size()));
+        assert(wire[4]==19&&wire[110]==1&&wire[111]==choice);
+        Settings roundtrip;assert(decode_settings(wire.data(),wire.size(),roundtrip));
+        assert(roundtrip.character_appearance==requested.character_appearance&&roundtrip.dpad_weapon_switching);
+    }
+    for(unsigned choice:{8u,127u,255u}){
+        auto invalid=defaults;invalid.character_appearance=static_cast<CharacterAppearance>(choice);
+        assert(!valid_settings(invalid));auto wire=bytes;assert(!encode_settings(invalid,wire.data(),wire.size()));assert(wire==bytes);
+        wire[111]=std::uint8_t(choice);seal(wire);rejected(wire);
+    }
+    for(unsigned version=7;version<=17;++version){
+        auto wire=extended_legacy(version);wire[111]=0;
+        if(version>=17)wire[110]=1;
+        seal(wire);Settings migrated;migrated.character_appearance=CharacterAppearance::Merchant;
+        assert(decode_settings(wire.data(),wire.size(),migrated));
+        assert(migrated.character_appearance==CharacterAppearance::Leon&&migrated.dpad_weapon_switching==(version>=17));
+        wire[111]=1;seal(wire);rejected(wire); // Deployed0.22/wire17 must reject the new reserved byte.
+    }
     Settings custom;custom.turn_gain=0.25f;custom.gyro_speed=3.5f;custom.gyro_deadzone_dps=0.75f;
     custom.language=Language::Russian;custom.stick_curve=StickCurve::Hybrid;
     custom.right_aim_gain_x=0.25f;custom.right_aim_gain_y=0.75f;
@@ -101,14 +126,16 @@ int main() {
         assert(decoded.camera_return_speed==0.375f && decoded.free_camera && decoded.button_map[4]==1);
         assert(decoded.third_person_distance==(version>=10?1.35f:1.f));
         assert(decoded.texture_filtering==(version>=8?TextureFilter::Bilinear:TextureFilter::Native));
-        assert(encode_settings(decoded,resealed.data(),resealed.size()) && resealed[4]==15 && !(resealed[97]&16));
+        assert(encode_settings(decoded,resealed.data(),resealed.size()) && resealed[4]==19 && !(resealed[97]&16));
         auto bad=old;bad[97]|=16;seal(bad);rejected(bad);
     }
     for(unsigned version=1;version<=6;++version) {
         const auto old=legacy(version);
-        decoded.enemy_health_bars=true;decoded.enemy_health_numbers=true;
+        decoded.enemy_health_bars=true;decoded.enemy_health_numbers=true;decoded.grenade_landing_spot=true;decoded.skip_pickup_confirmation=true;decoded.skip_startup_logos=true;decoded.disable_aim_sway=true;decoded.dpad_weapon_switching=true;
+        decoded.character_appearance=CharacterAppearance::Merchant;
         assert(decode_settings(old.data(),64,decoded));
-        assert(!decoded.enemy_health_bars&&!decoded.enemy_health_numbers);
+        assert(!decoded.enemy_health_bars&&!decoded.enemy_health_numbers&&!decoded.grenade_landing_spot&&!decoded.skip_pickup_confirmation&&!decoded.skip_startup_logos&&!decoded.disable_aim_sway&&!decoded.dpad_weapon_switching);
+        assert(decoded.character_appearance==CharacterAppearance::Leon);
         assert(decoded.turn_gain==0.25f && decoded.camera_gain==0.5f && decoded.aim_gain_x==0.75f && decoded.aim_gain_y==1);
         assert(decoded.left_deadzone==0.1f && decoded.right_deadzone==0.2f);
         assert(decoded.gyro_gain_x==1.5f && decoded.gyro_gain_y==2.5f);
@@ -126,7 +153,7 @@ int main() {
         assert(!decoded.re6_response && !decoded.move_while_reloading);
         assert(decoded.texture_filtering==TextureFilter::Native && decoded.shadow_mode==ShadowMode::Native
             && decoded.anti_aliasing==AntiAliasing::Native && decoded.draw_distance_scale==1);
-        assert(encode_settings(decoded,resealed.data(),resealed.size()) && resealed[4]==15);
+        assert(encode_settings(decoded,resealed.data(),resealed.size()) && resealed[4]==19);
         rejected(old,128);
     }
     for(unsigned n=0;n<128;++n)rejected(bytes,n);
@@ -136,14 +163,14 @@ int main() {
         if(offset>=68 && offset<91)continue;
         if(offset>=92 && offset<96)continue;
         if(offset>=96 && offset<99)continue;
-        if(offset>=100 && offset<=105)continue; // Gameplay fields have their own strict tests.
+        if(offset>=100 && offset<=113)continue; // Gameplay fields have their own strict tests.
         auto bad=bytes;bad[offset]=1;seal(bad);rejected(bad);
     }
     for(unsigned offset:{64,65})for(unsigned value:{2,255}){auto bad=bytes;bad[offset]=std::uint8_t(value);seal(bad);rejected(bad);}
     for(unsigned offset=68;offset<88;++offset)for(unsigned value:{20,127,254}){auto bad=bytes;bad[offset]=std::uint8_t(value);seal(bad);rejected(bad);}
     for(unsigned bit:{7,15,23,24,31}){auto bad=bytes;put32(bad.data()+8,get32(bad.data()+8)|(1u<<bit));seal(bad);rejected(bad);}
     for(unsigned shift:{8,16}){auto bad=bytes;put32(bad.data()+8,(get32(bad.data()+8)&~(127u<<shift))|(101u<<shift));seal(bad);rejected(bad);}
-    for(unsigned version:{0,1,6,16,255}){auto bad=bytes;put32(bad.data()+4,version);seal(bad);rejected(bad);}
+    for(unsigned version:{0,1,6,20,255}){auto bad=bytes;put32(bad.data()+4,version);seal(bad);rejected(bad);}
     for(float value:{-0.01f,1.01f,std::numeric_limits<float>::infinity(),-std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
         auto bad=bytes;putfloat(bad.data()+60,value);seal(bad);rejected(bad);
         auto invalid=custom;invalid.camera_return_speed=value;
@@ -162,5 +189,5 @@ int main() {
     auto old=legacy(6);old[4]=7;seal(old,64);rejected(old,64);
     old=legacy(1);old[56]=1;seal(old,64);rejected(old,64);
     old=legacy(5);old[9]=1;seal(old,64);rejected(old,64);
-    std::puts("settings v15: defaults, complete legacy migration, strict wire checks, rollback and ranges PASS");
+    std::puts("settings v18: defaults, complete legacy migration, strict wire checks, rollback and ranges PASS");
 }

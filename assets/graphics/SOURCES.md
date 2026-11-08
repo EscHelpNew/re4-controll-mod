@@ -67,3 +67,9 @@ generated graphics header. Both menus composite the actual mod bar and number
 geometry over this close-up according to their current settings. It is an
 enlarged illustration, not a console capture. The original source attribution
 and CAPCOM copyright also apply to this crop.
+
+The grenade landing example crops the same unchanged RE4 source to rectangle
+(735, 445, 1005, 625), scaled to 256 x 171 RGB565 pixels. Both menus composite a
+soft red radial marker only when the grenade option is enabled. Its sample
+location demonstrates appearance rather than a measured throw; it is not a
+console capture. The same source attribution and CAPCOM copyright apply.

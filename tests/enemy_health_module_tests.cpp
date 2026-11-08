@@ -34,30 +34,45 @@ struct HealthFixture {
   const auto before=hud_rects.size();HudDraw::Callback(nullptr);return unsigned(hud_rects.size()-before);
  }
  unsigned advance(unsigned steps){
-  unsigned drawn=0;for(unsigned i=0;i<steps;++i){game_test::tick+=576000;drawn=hud();}return drawn;
+  unsigned drawn=0;for(unsigned i=0;i<steps;++i){game_test::tick+=192000;drawn=hud();}return drawn;
  }
- unsigned display(){scene();hud();return advance(10);}
+ unsigned display(){scene();hud();return advance(30);}
 };
 }
 int main(){
  {
   HealthFixture h;h.capture();h.scene();assert(h.hud()==0); // Fade begins transparent.
-  assert(h.advance(5)==1&&gx_colors.back()[3]==51);
-  assert(h.advance(5)==1&&gx_colors.back()[3]==102);
+  assert(h.advance(10)==1&&gx_colors.back()[3]==51); // Half visible after 100 ms.
+  assert(h.advance(10)==1&&gx_colors.back()[3]==102); // Fully visible after 200 ms.
   h.set(h.f.weapon,0x418,std::uintptr_t(0));h.capture();h.scene();
   assert(h.hud()==1&&gx_colors.back()[3]==102);
-  assert(h.advance(5)==1&&gx_colors.back()[3]==51);
-  assert(h.advance(5)==0); // Copied target fades away in300ms.
+  assert(h.advance(15)==1&&gx_colors.back()[3]==51);
+  assert(h.advance(15)==0); // Copied target fades away in300ms.
+ }
+ {
+  HealthFixture h;settings.enemy_health_numbers=true;publish_view_settings();h.capture();h.scene();
+  assert(h.hud()==0); // Bar and number both begin transparent.
+  auto before=gx_colors.size();assert(h.advance(10)>1);
+  // At 100 ms both use half their own peak alpha: digits are more opaque.
+  before=gx_colors.size();assert(h.hud()>1);
+  for(auto i=before;i<gx_colors.size();++i)assert(gx_colors[i][3]==(gx_colors[i][0]==235?64u:51u));
+  assert(h.advance(10)>1);before=gx_colors.size();assert(h.hud()>1);
+  for(auto i=before;i<gx_colors.size();++i)assert(gx_colors[i][3]==(gx_colors[i][0]==235?128u:102u));
+  h.set(h.f.weapon,0x418,std::uintptr_t(0));h.capture();h.scene();h.hud();
+  assert(h.advance(15)>1);before=gx_colors.size();assert(h.hud()>1);
+  for(auto i=before;i<gx_colors.size();++i)assert(gx_colors[i][3]==(gx_colors[i][0]==235?64u:51u));
+  assert(h.advance(15)==0);
  }
  {
   HealthFixture h;h.capture();assert(h.display()==1);
   const auto key=displayed_enemy_health.target_key.load();assert(key);
   h.set(h.f.weapon,0x418,std::uintptr_t(0));h.capture();h.scene();assert(h.hud()==1);
-  assert(h.advance(5)==1&&gx_colors.back()[3]==51);
+  assert(h.advance(15)==1&&gx_colors.back()[3]==51);
   h.set(h.f.weapon,0x418,reinterpret_cast<std::uintptr_t>(h.enemy()));
   h.capture();h.scene();assert(h.hud()==1&&gx_colors.back()[3]==51);
   assert(displayed_enemy_health.target_key.load()==key);
-  assert(h.advance(10)==1&&gx_colors.back()[3]==102); // Same target resumes without flashing.
+  assert(h.advance(10)==1&&gx_colors.back()[3]==77); // Reacquisition starts at half opacity.
+  assert(h.advance(10)==1&&gx_colors.back()[3]==102); // It reaches full opacity in 200 ms.
   h.set(h.enemy(),0x3C2,std::int16_t(25));h.capture();h.scene();
   assert(h.hud()==1&&gx_colors.back()[3]==102&&gx_colors.back()[0]>gx_colors.back()[1]);
  }
@@ -68,8 +83,8 @@ int main(){
   const auto old_key=displayed_enemy_health.target_key.load();
   h.set(h.f.weapon,0x418,reinterpret_cast<std::uintptr_t>(other));h.capture();h.scene();
   assert(h.hud()==1&&displayed_enemy_health.target_key.load()!=old_key);
-  assert(h.advance(5)==2&&gx_colors.back()[3]==51); // New target and old fading tail.
-  assert(h.advance(5)==1&&gx_colors.back()[3]==102);
+  assert(h.advance(10)==2&&gx_colors.back()[3]==51); // New target is half visible at 100 ms.
+  assert(h.advance(20)==1&&gx_colors.back()[3]==102); // Old target finishes its 300 ms fade.
  }
  for(unsigned routine:{1u,6u,11u,15u}){
   HealthFixture h;h.capture();assert(h.display()==1);const float old_x=gx_quad[0].x;
@@ -86,7 +101,7 @@ int main(){
   HealthFixture h;h.set(h.enemy(),0x3C2,std::int16_t(150));h.set(h.enemy(),0x3C4,std::int16_t(300));
   h.capture();assert(h.display()==1); // Numbers defaultOff: only one colored strip.
   settings.enemy_health_numbers=true;publish_view_settings();assert(h.hud()>1);
-  assert(gx_colors.back()[0]==235&&gx_colors.back()[1]==235&&gx_colors.back()[2]==235&&gx_colors.back()[3]==102);
+  assert(gx_colors.back()[0]==235&&gx_colors.back()[1]==235&&gx_colors.back()[2]==235&&gx_colors.back()[3]==128);
   const auto english_quads=h.hud();settings.language=re4::Language::Russian;publish_view_settings();
   assert(h.hud()==english_quads); // Decimal point is identical in both languages.
   settings.enemy_health_numbers=false;publish_view_settings();assert(h.hud()==1);
@@ -171,9 +186,9 @@ int main(){
   // enemy memory or main camera has changed.
   game_test::memory_maps.clear();std::memset(h.f.input_state.data()+0xD8,0,48);
   h.set(h.enemy(),0x3C2,std::int16_t(25));assert(h.hud()==0);
-  assert(h.advance(10)==1&&gx_colors.back()[1]>gx_colors.back()[0]);
+  assert(h.advance(30)==1&&gx_colors.back()[1]>gx_colors.back()[0]);
   h.f.input_state[0x5034]++;assert(h.hud()==1); // Weapon identity invalidates selection, camera still owns the tail.
-  assert(h.advance(10)==0);
+  assert(h.advance(30)==0);
  }
  std::puts("actual enemy health callbacks: native target, displayed scene, colors and camera independence PASS");
 }

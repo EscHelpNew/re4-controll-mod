@@ -1,12 +1,13 @@
 #pragma once
 #include "settings.hpp"
+#include "version.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <atomic>
 
 namespace re4 {
-constexpr char kSharedMarker[16] = "RE4CTL_SHARED19";
-constexpr unsigned kSharedAbi = 19;
+constexpr char kSharedMarker[16] = "RE4CTL_SHARED23";
+constexpr unsigned kSharedAbi = 23;
 // Wire layout is shared by the module and overlay, with no runtime pointers.
 // The overlay publishes an odd sequence, payload, then the next even sequence.
 // The module validates both sequence reads and the payload checksum.
@@ -68,18 +69,42 @@ struct alignas(8) SharedControl {
     std::int32_t graphics_back_index;
     std::uint32_t graphics_ready;
     std::uint32_t graphics_aa_latched;
-    std::uint32_t graphics_reserved;
+    std::uint32_t graphics_reserved; // ABI22: weapon popup producer/HUD/event/frame diagnostic bytes.
     std::uint32_t fps_overrides;
     std::uint32_t reticle_draws;
     std::uint32_t modern_move_steps;
     std::uint32_t modern_pose_steps;
     std::uint32_t modern_move_status;
     float modern_move_distance;
+    alignas(8) std::uint32_t appearance_applied; // Keep ABI21's trailing padding.
+    std::uint32_t appearance_status;
+    std::uint32_t appearance_error;
+    std::uint32_t appearance_generation; // Odd while publishing; even when stable.
+    std::uint32_t popup_capture_sequence; // Ordered native command writer, odd while publishing.
+    std::uint32_t popup_capture_status;
+    float popup_viewport[4];
+    std::int32_t popup_scissor[4];
+    std::uint64_t popup_tick;
+    std::uint64_t popup_event;
+    char module_version[16];
 };
 static_assert(offsetof(SharedControl, settings) == 32);
 static_assert(offsetof(SharedControl, frames) == 160);
 static_assert(offsetof(SharedControl, applied_sequence) == 184);
-static_assert(sizeof(SharedControl) == 400);
+static_assert(offsetof(SharedControl, appearance_applied) == 400);
+static_assert(offsetof(SharedControl, appearance_generation) == 412);
+static_assert(offsetof(SharedControl,popup_capture_sequence)==416);
+static_assert(offsetof(SharedControl,popup_viewport)==424);
+static_assert(offsetof(SharedControl,popup_scissor)==440);
+static_assert(offsetof(SharedControl,popup_tick)==456);
+static_assert(offsetof(SharedControl,popup_event)==464);
+static_assert(offsetof(SharedControl,module_version)==472);
+static_assert(sizeof(SharedControl) == 488);
+// Native64E084..B0 represents disabled scissor by this exact integer rect.
+// Keep it distinct from ordinary bounded rectangles and from framebuffer size.
+constexpr bool native_scissor_disabled(const std::int32_t* rect){
+    return rect&&rect[0]==0&&rect[1]==0&&rect[2]==0x7FFFFFFF&&rect[3]==0x7FFFFFFF;
+}
 constexpr unsigned kCapabilityTurning = 1;
 constexpr SharedControl initial_shared_control() {
     SharedControl result{};
@@ -88,6 +113,7 @@ constexpr SharedControl initial_shared_control() {
     result.graphics_filter_latched=255;
     result.graphics_aa_latched=255;
     result.graphics_display_index=result.graphics_back_index=-1;
+    for(unsigned i=0;i<15&&kVersion[i];++i)result.module_version[i]=kVersion[i];
     return result;
 }
 inline bool acknowledge_settings(volatile SharedControl& control, const Settings& settings,

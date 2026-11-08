@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <cmath>
+#include <limits>
 
 namespace {
 struct Extents { u64 base, size; };
@@ -30,19 +32,66 @@ Result write_memory(Service* service, u64 address, const void* data, size_t size
         .buffer_attrs = {SfBufferAttr_HipcMapAlias | SfBufferAttr_In},
         .buffers = {{data, size}});
 }
+// Optional observations from the authenticated main image's context0 pointer.
+// These are cached native renderer bounds, not measured popup clipping bounds.
+bool valid_popup_bounds(const float* v,const std::int32_t* s){
+    return re4::live_diagnostic_bounds_readable(v,s);
 }
+bool main_address(const Metadata& metadata,u64 offset,std::size_t size,u64& result){
+    constexpr auto maximum=std::numeric_limits<u64>::max();
+    if(!metadata.main.base||(metadata.main.base&0xFFF)||metadata.main.size>maximum-metadata.main.base
+        ||offset>metadata.main.size||size>metadata.main.size-offset)return false;
+    result=metadata.main.base+offset;return true;
+}
+bool read_main_pointer(Service* service,const Metadata& metadata,u64 offset,u64& pointer){
+    u64 address=0;
+    if(!main_address(metadata,offset,sizeof(pointer),address)||R_FAILED(read_memory(service,address,&pointer,sizeof(pointer))))return false;
+    return pointer>=0x1000&&!(pointer&7);
+}
+bool read_popup_bounds(Service* service,const Metadata& metadata,
+        std::array<float,4>& viewport,std::array<std::int32_t,4>& scissor){
+    constexpr u64 pointer_offset=0x1180D40+0x140;
+    constexpr u64 cache_offset=0xF80,cache_bytes=0x30;
+    constexpr auto maximum=std::numeric_limits<u64>::max();
+    if(!metadata.main.base||(metadata.main.base&0xFFF)||metadata.main.size>maximum-metadata.main.base
+        ||pointer_offset>metadata.main.size||sizeof(u64)>metadata.main.size-pointer_offset)return false;
+    u64 gfx=0;
+    if(R_FAILED(read_memory(service,metadata.main.base+pointer_offset,&gfx,sizeof(gfx)))
+        ||gfx<0x1000||(gfx&7)||gfx>maximum-cache_offset-cache_bytes)return false;
+    std::array<u8,cache_bytes> cache{};
+    if(R_FAILED(read_memory(service,gfx+cache_offset,cache.data(),cache.size())))return false;
+    std::array<float,4> v{};std::array<std::int32_t,4> s{};
+    std::memcpy(v.data(),cache.data(),sizeof(v));std::memcpy(s.data(),cache.data()+0x20,sizeof(s));
+    if(!valid_popup_bounds(v.data(),s.data()))return false; // Empty scissor is useful evidence.
+    viewport=v;scissor=s;return true;
+}
+}
+
+#include "live_knife.inc"
+#include "live_renderer.inc"
 
 void GameLink::initialize() {
     info_ready_ = R_SUCCEEDED(pminfoInitialize());
     if (R_FAILED(smGetService(&service_, "dmnt:cht")))
         message = tr("Debug service unavailable","Сервис отладки недоступен");
 }
+void GameLink::initialize_shared(const GameLink& owner) {
+    info_ready_ = R_SUCCEEDED(pminfoInitialize());
+    service_ = owner.service_;borrowed_ = true;
+    if (!serviceIsActive(&service_))
+        message = tr("Debug service unavailable","Сервис отладки недоступен");
+}
 void GameLink::close() {
-    if (serviceIsActive(&service_)) serviceClose(&service_);
+    appearance={};address_=process_=0;
+    popup_diagnostic=0;popup_bounds_valid=false;popup_viewport={};popup_scissor={};
+    if (!borrowed_ && serviceIsActive(&service_)) serviceClose(&service_);
+    service_ = {};borrowed_ = false;
     if (info_ready_) pminfoExit();
     info_ready_ = false;
 }
 bool GameLink::connect() {
+    appearance={};
+    popup_diagnostic=0;popup_bounds_valid=false;popup_viewport={};popup_scissor={};
     address_ = process_ = 0;
     details = "RE4 process unavailable";
     u64 pid = 0, title = 0;
@@ -167,4 +216,104 @@ bool GameLink::apply(const re4::Settings& settings) {
     message = applied ? tr("Settings sent to game","Настройки отправлены в игру")
                       : tr("Could not send settings","Не удалось отправить настройки");
     return applied;
+}
+bool GameLink::refresh_appearance(){
+    appearance={};
+    if(!address_)return false;
+    Metadata metadata{};
+    if(R_FAILED(serviceDispatchOut(&service_,65002,metadata))||!supported(metadata)||metadata.pid!=process_){
+        address_=process_=0;return false;
+    }
+    u32 before=0,after=0;re4::SharedControl block{};
+    const auto generation_address=address_+offsetof(re4::SharedControl,appearance_generation);
+    if(R_FAILED(read_memory(&service_,generation_address,&before,sizeof(before)))||(before&1)
+       ||R_FAILED(read_memory(&service_,address_,&block,sizeof(block)))
+       ||R_FAILED(read_memory(&service_,generation_address,&after,sizeof(after)))
+       ||before!=after||block.appearance_generation!=after||(after&1)
+       ||std::memcmp(block.marker,re4::kSharedMarker,16)||block.abi!=re4::kSharedAbi||block.status!=1
+       ||block.appearance_applied>=8||block.appearance_status>3)return false;
+    appearance.applied=static_cast<re4::CharacterAppearance>(block.appearance_applied);
+    appearance.status=static_cast<re4::CharacterAppearanceStatus>(block.appearance_status);
+    appearance.error=block.appearance_error;appearance.generation=after;appearance.valid=true;return true;
+}
+bool GameLink::refresh_popup(){
+    popup_diagnostic=0;
+    popup_bounds_valid=false;popup_viewport={};popup_scissor={};
+    if(!address_)return false;
+    Metadata metadata{};re4::SharedControl block{};
+    if(R_FAILED(serviceDispatchOut(&service_,65002,metadata))||!supported(metadata)||metadata.pid!=process_){
+        address_=process_=0;return false;
+    }
+    if(R_FAILED(read_memory(&service_,address_,&block,sizeof(block)))
+       ||std::memcmp(block.marker,re4::kSharedMarker,16)||block.abi!=re4::kSharedAbi||block.status!=1)return false;
+    popup_diagnostic=block.graphics_reserved;
+    popup_bounds_valid=read_popup_bounds(&service_,metadata,popup_viewport,popup_scissor);
+    return true;
+}
+bool GameLink::read_diagnostic_snapshot(re4::LiveDiagnosticSnapshot& out){
+    out={};using S=re4::LiveDiagnosticStatus;
+    if(!info_ready_||!serviceIsActive(&service_)){out.status=S::ServiceUnavailable;return false;}
+    u64 pid=0,title=0;
+    if(R_FAILED(pmdmntGetApplicationProcessId(&pid))||!pid
+        ||R_FAILED(pminfoGetProgramId(&title,pid))||title!=re4::profile::title_id){
+        address_=process_=0;out.status=S::NoGame;return false;
+    }
+    out.process_found=true;
+    if(!address_||process_!=pid){address_=process_=0;connect();} // One bounded scan at most per request.
+    Metadata metadata{};
+    if(R_FAILED(serviceDispatchOut(&service_,65002,metadata))){out.status=S::ReadFailed;address_=process_=0;return false;}
+    if(!supported(metadata)){out.status=S::UnsupportedBuild;address_=process_=0;return false;}
+    out.supported=true;
+    if(metadata.pid!=pid){out.status=S::ReadFailed;address_=process_=0;return false;}
+    if(!address_||process_!=pid){out.status=S::ModuleMissing;return false;}
+    if(address_>std::numeric_limits<u64>::max()-sizeof(re4::SharedControl)){out.status=S::ReadFailed;address_=process_=0;return false;}
+    const std::size_t offsets[]{offsetof(re4::SharedControl,sequence),offsetof(re4::SharedControl,appearance_generation),
+        offsetof(re4::SharedControl,popup_capture_sequence)};
+    u32 before[3]{};bool readable[3]{};
+    for(unsigned i=0;i<3;++i)readable[i]=R_SUCCEEDED(read_memory(&service_,address_+offsets[i],&before[i],sizeof(before[i])));
+    re4::SharedControl block{};
+    if(R_FAILED(read_memory(&service_,address_,&block,sizeof(block)))
+        ||std::memcmp(block.marker,re4::kSharedMarker,16)||block.abi!=re4::kSharedAbi||block.status!=1
+        ||!(block.capabilities&re4::kCapabilityTurning)){
+        out.status=S::ReadFailed;address_=process_=0;return false;
+    }
+    const u32 captured[]{block.sequence,block.appearance_generation,block.popup_capture_sequence};
+    bool stable[3]{};
+    for(unsigned i=0;i<3;++i){
+        u32 after=0;
+        stable[i]=readable[i]&&!(before[i]&1)
+            &&R_SUCCEEDED(read_memory(&service_,address_+offsets[i],&after,sizeof(after)))
+            &&before[i]==after&&captured[i]==after;
+    }
+    out.status=S::Connected;out.connected=true;out.shared=block;
+    out.settings_valid=stable[0]&&re4::decode_settings(block.settings,sizeof(block.settings),out.settings);
+    out.appearance_valid=stable[1]&&block.appearance_applied<8&&block.appearance_status<=3;
+    out.popup_capture_stable=stable[2];
+    out.popup_capture_bounds_valid=stable[2]&&(block.popup_capture_status==1||block.popup_capture_status==5)
+        &&valid_popup_bounds(block.popup_viewport,block.popup_scissor);
+    out.popup_cached_valid=read_popup_bounds(&service_,metadata,out.popup_cached_viewport,out.popup_cached_scissor);
+    u64 player=0;
+    if(read_main_pointer(&service_,metadata,re4::profile::player_slot,player)
+        &&player<=std::numeric_limits<u64>::max()-0x11C){
+        std::array<u8,8> bytes{};
+        if(R_SUCCEEDED(read_memory(&service_,player+0x114,bytes.data(),bytes.size()))){
+            std::copy_n(bytes.data(),4,out.player_routine.data());out.player_type=bytes[4];out.player_bones=bytes[6];out.player_valid=true;
+        }
+    }
+    u64 state=0;
+    if(read_main_pointer(&service_,metadata,0xB1AE08,state)&&state<=std::numeric_limits<u64>::max()-0x14C){
+        std::array<u8,0x74> matrices{};
+        if(R_SUCCEEDED(read_memory(&service_,state+0xD8,matrices.data(),matrices.size()))){
+            std::memcpy(out.camera_view.data(),matrices.data(),48);std::memcpy(out.camera_projection.data(),matrices.data()+0x34,64);
+            bool finite=true;double view_basis=0,projection=0;
+            for(unsigned i=0;i<12;++i){const float value=out.camera_view[i];finite&=std::isfinite(value)&&std::fabs(value)<=1e9;
+                if(i%4!=3)view_basis+=std::fabs(double(value));}
+            for(float value:out.camera_projection){finite&=std::isfinite(value)&&std::fabs(value)<=1e6;projection+=std::fabs(double(value));}
+            out.camera_valid=finite&&view_basis>0&&projection>0;
+            if(!out.camera_valid){out.camera_view={};out.camera_projection={};}
+        }
+    }
+    read_live_knife(&service_,metadata,out.knife);
+    read_live_hud_renderer(&service_,metadata,out.hud_cached);
+    return true;
 }

@@ -6,6 +6,7 @@
 #include "re4/gyro_preview.hpp"
 #include "re4/home_launcher.hpp"
 #include "re4/version.hpp"
+#include "re4/launch_mode.hpp"
 #include "re6/log_server.hpp"
 #include "re4/support_report.hpp"
 #include <algorithm>
@@ -189,10 +190,10 @@ void configure_reload(int argc, char** argv) {
     std::memset(token, 0, sizeof(token));
     std::memset(argument, 0, sizeof(argument));
 }
-void start_telemetry_downloads(){
+bool start_telemetry_downloads(){
     char token[65]{};
-    if(re6::load_log_token(NXDK_SD_ROOT "/token.txt",token))re6::start_log_server(token);
-    std::memset(token,0,sizeof(token));
+    const bool started=re6::load_log_token(NXDK_SD_ROOT "/token.txt",token)&&re6::start_log_server(token);
+    std::memset(token,0,sizeof(token));return started;
 }
 struct Sensors {
     HidSixAxisSensorHandle handles[2]{};
@@ -253,7 +254,11 @@ int main(int argc, char** argv) {
     configure_reload(argc, argv);
     mkdir("sdmc:/config", 0777); mkdir("sdmc:/config/re4-controls", 0777);
     mkdir("sdmc:/switch", 0777); mkdir(NXDK_SD_ROOT, 0777);
+    re4::LaunchMode launch_mode=re4::LaunchMode::Normal;
+    re4::load_launch_mode(re4::kLaunchModePath,launch_mode);
+    const bool diagnostics_enabled=re4::automatic_diagnostics(launch_mode);
     // Album/applet launch can inspect suspended RE4 without replacing it.
+    if(diagnostics_enabled){
     const auto debug_init = pmdmntInitialize();
     if (R_SUCCEEDED(debug_init)) {
         GameLink game;
@@ -293,15 +298,17 @@ int main(int argc, char** argv) {
         (unsigned long long)support_pid,(unsigned long long)armGetSystemTick());
     if(!re4::write_support_report("sdmc:",support_path,re4::kVersion))
         std::fprintf(stderr,"[support] Could not save diagnostic report\n");
+    }
+    bool telemetry_downloads=false;
     const Result sockets = socketInitializeDefault();
     if (R_SUCCEEDED(sockets)) {
-        nxlinkStdioForDebug();
+        if(diagnostics_enabled)nxlinkStdioForDebug();
         u64 process_id = 0;
         svcGetProcessId(&process_id, CUR_PROCESS_HANDLE);
         char instance[24];
         std::snprintf(instance, sizeof(instance), "%s-p%llX",re4::kVersion, (unsigned long long)process_id);
         game_reload_start(NXDK_APP_NAME, instance);
-        start_telemetry_downloads();
+        if(diagnostics_enabled)telemetry_downloads=start_telemetry_downloads();
     }
     PadState pad;
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
@@ -476,7 +483,7 @@ int main(int argc, char** argv) {
             std::printf("\n%s\x1b[K\n%s\nUP/DOWN  A select  B back  + exit\x1b[J\n",model.status_text(),model.detail.c_str());
             consoleUpdate(nullptr);
         }
-        if(++frame%120==0)std::fprintf(stderr,
+        if(diagnostics_enabled&&++frame%120==0)std::fprintf(stderr,
             "[input] style=%08lX raw=%ld,%ld,%ld,%ld gyro_samples=%u sensor_rc=%08lX\n",
             (unsigned long)sensors.style,(long)left.x,(long)left.y,(long)right.x,(long)right.y,
             unsigned(sample_count),(unsigned long)sensors.result);
@@ -491,7 +498,7 @@ int main(int argc, char** argv) {
     renderer.close();
     if(R_SUCCEEDED(font_service))plExit();
     if(!graphics)consoleExit(nullptr);
-    re6::stop_log_server();
+    if(telemetry_downloads)re6::stop_log_server();
     if(R_SUCCEEDED(sockets))socketExit();
     return 0;
 }

@@ -133,6 +133,12 @@ void test_AutomaticFire(void*);
 void* unified_root_actor=nullptr;float unified_root_yaw=0;bool test_unified_walk=false;
 void unified_player_update(void* actor,void(*original)(void*)){original(actor);}
 void unified_reload_root(void*){}
+void grenade_spot_update(void*){} // Marker queries have their own actual-callback fixture.
+void dpad_weapons_before_update(void*){}
+void dpad_weapons_update(void*){}
+void weapon_popup_validate_scene(void*){}
+void character_appearance_update(void*){} // Appearance owns a separate actual-module fixture.
+void character_menu_rotate(void*){} // Menu rotation is covered by case_rotation_module_tests.
 bool unified_walk_root(void*,float& yaw){yaw=-1.57079632679f;return test_unified_walk;}
 #include "../source/game/modern_move.inc"
 

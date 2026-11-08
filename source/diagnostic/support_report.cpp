@@ -77,7 +77,7 @@ void directory(Writer& w,const std::string& root,const char* relative,unsigned& 
   bool include=false;std::size_t maximum=65536;
   if(std::strstr(relative,"atmosphere/")&&(ends(e.name,".log")||ends(e.name,".txt"))&&log_count<12){include=true;++log_count;}
   if(std::strstr(relative,"/telemetry")&&e.name.rfind("support-",0)!=0&&(ends(e.name,".csv")||ends(e.name,".csv.part"))){include=true;maximum=8192;}
-  if(std::strcmp(relative,"/switch/re4-controls")==0&&(e.name=="reload-bridge.log"||e.name=="game-inspection.txt"))include=true;
+  if(std::strcmp(relative,"/switch/re4-controls")==0&&(e.name=="reload-bridge.log"||e.name=="game-inspection.txt"||e.name=="live-debug.log"))include=true;
   if(std::strstr(relative,"/config/")&&ends(e.name,".log")&&log_count<4){include=true;++log_count;}
   if(include){++files_read;contents(w,full+"/"+e.name,path,maximum);}
  }

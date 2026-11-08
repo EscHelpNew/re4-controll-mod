@@ -3,6 +3,7 @@
 #include <cstddef>
 
 namespace re4 {
+inline constexpr unsigned kEnemyHealthNumberAlpha=128;
 // The caller supplies the verified raw-HP value of one weapon power unit.
 // Decimal point is fixed in every interface language.
 // Round positive halves upward without floating point or partial buffer writes.
@@ -27,7 +28,7 @@ inline bool draw_enemy_health_number(const ReticleDrawBackend& backend,ViewHudPo
         ||!backend.prepare_hud||!backend.blend||!backend.vertex_format||!backend.begin
         ||!backend.position||!backend.color||!backend.end
         ||!std::isfinite(opacity)||opacity<0||opacity>1)return false;
-    const unsigned alpha=unsigned(std::lround(float(kEnemyHealthAlpha)*opacity));
+    const unsigned alpha=unsigned(std::lround(float(kEnemyHealthNumberAlpha)*opacity));
     if(!alpha)return false;
     char text[8]{};
     if(!format_enemy_health_number(current,hp_per_power_unit,russian,text,sizeof(text)))return false;

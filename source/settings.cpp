@@ -25,6 +25,7 @@ std::uint32_t checksum(const std::uint8_t* p, std::size_t size) {
 }
 bool valid_settings(const Settings& s) {
     if (!valid_graphics({s.texture_filtering,s.shadow_mode,s.anti_aliasing,s.draw_distance_scale})
+        || !valid_character_appearance(s.character_appearance)
         || unsigned(s.language)>1 || unsigned(s.stick_curve)>3 || unsigned(s.reticle)>2 || unsigned(s.reticle_size)>2 || !valid_button_map(s.button_map)
         || !std::isfinite(s.camera_return_speed) || s.camera_return_speed<0 || s.camera_return_speed>1
         || !std::isfinite(s.third_person_distance) || s.third_person_distance<1 || s.third_person_distance>2) return false;
@@ -45,7 +46,7 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
     if (!out || size != kSettingsBytes || !valid_settings(s)) return false;
     std::memset(out, 0, size);
     std::memcpy(out, "R4CT", 4);
-    put32(out + 4, 15);
+    put32(out + 4, 19);
     put32(out + 8, unsigned(s.analog_enabled) | unsigned(s.gyro_enabled) << 1
           | unsigned(s.invert_x) << 2 | unsigned(s.invert_y) << 3
           | unsigned(s.stick_curve) << 4 | unsigned(s.language) << 6
@@ -73,6 +74,14 @@ bool encode_settings(const Settings& s, std::uint8_t* out, std::size_t size) {
     std::memcpy(out+100,&s.third_person_distance,4);
     out[104]=std::uint8_t(s.enemy_health_bars);
     out[105]=std::uint8_t(s.enemy_health_numbers);
+    out[106]=std::uint8_t(s.grenade_landing_spot);
+    out[107]=std::uint8_t(s.skip_pickup_confirmation);
+    out[108]=std::uint8_t(s.skip_startup_logos);
+    out[109]=std::uint8_t(s.disable_aim_sway);
+    out[110]=std::uint8_t(s.dpad_weapon_switching);
+    out[111]=std::uint8_t(s.character_appearance);
+    out[112]=std::uint8_t(s.extended_weapon_upgrade);
+    out[113]=std::uint8_t(s.case_ammo_counter);
     put32(out + 124, checksum(out, 124));
     return true;
 }
@@ -80,7 +89,7 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
     if (!data || (size != kSettingsBytes && size != kLegacySettingsBytes)
         || std::memcmp(data, "R4CT", 4)) return false;
     const auto version = get32(data + 4);
-    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version < 7 || version > 15)
+    if ((size == kLegacySettingsBytes ? version < 1 || version > 6 : version < 7 || version > 19)
         || (get32(data + 8) & (version<4 ? ~15u : version<6 ? ~127u : ~0x007f7f7fu))
         || (version == 1 && get32(data + 56))
         || checksum(data, size - 4) != get32(data + size - 4)) return false;
@@ -94,9 +103,22 @@ bool decode_settings(const std::uint8_t* data, std::size_t size, Settings& out) 
             if(version<9){for (unsigned i = 96; i < 124; ++i) if (data[i]) return false;}
             else{
                 if(data[97]&~(version>=13?63u:version>=12?31u:version>=11?15u:7u) || data[99])return false;
-                for(unsigned i=version>=15?106:version>=14?105:version>=10?104:100;i<124;++i)if(data[i])return false;
+                for(unsigned i=version>=19?114:version>=18?112:version>=17?111:version>=16?110:version>=15?106:version>=14?105:version>=10?104:100;i<124;++i)if(data[i])return false;
                 if(version>=14){if(data[104]>1)return false;s.enemy_health_bars=data[104]!=0;}
                 if(version>=15){if(data[105]>1)return false;s.enemy_health_numbers=data[105]!=0;}
+                if(version>=16){
+                    if(data[106]>1 || data[107]>1 || data[108]>1 || data[109]>1)return false;
+                    s.grenade_landing_spot=data[106]!=0;
+                    s.skip_pickup_confirmation=data[107]!=0;
+                    s.skip_startup_logos=data[108]!=0;
+                    s.disable_aim_sway=data[109]!=0;
+                }
+                if(version>=17){if(data[110]>1)return false;s.dpad_weapon_switching=data[110]!=0;}
+                if(version>=18)s.character_appearance=static_cast<CharacterAppearance>(data[111]);
+                if(version>=19){
+                    if(data[112]>1||data[113]>1)return false;
+                    s.extended_weapon_upgrade=data[112]!=0;s.case_ammo_counter=data[113]!=0;
+                }
                 if(version>=10)std::memcpy(&s.third_person_distance,data+100,4);
                 s.reticle=static_cast<ReticleStyle>(data[96]);s.reticle_size=static_cast<ReticleSize>(data[98]);
                 s.first_person=data[97]&1;s.move_while_aiming=data[97]&2;s.move_while_knife=data[97]&4;

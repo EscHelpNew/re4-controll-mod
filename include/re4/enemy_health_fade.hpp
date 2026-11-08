@@ -17,7 +17,7 @@ struct EnemyHealthFadeEntry {
 };
 class EnemyHealthFade {
 public:
-    static constexpr std::uint64_t kDurationTicks=5760000;
+    static constexpr std::uint64_t kAppearTicks=3840000, kDisappearTicks=5760000;
     void reset() {
         entries_={}; transitions_={}; last_tick_=0; has_tick_=false;
     }
@@ -30,9 +30,10 @@ public:
             if (!entry.active) continue;
             auto& transition=transitions_[i];
             const auto elapsed=now-transition.start;
-            if (elapsed>=kDurationTicks) entry.opacity=transition.goal;
+            const auto duration=transition.goal>0?kAppearTicks:kDisappearTicks;
+            if (elapsed>=duration) entry.opacity=transition.goal;
             else {
-                const float t=float(elapsed)/float(kDurationTicks);
+                const float t=float(elapsed)/float(duration);
                 const float smooth=t*t*(3.f-2.f*t);
                 entry.opacity=transition.from+(transition.goal-transition.from)*smooth;
             }

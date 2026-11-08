@@ -90,12 +90,35 @@ int main() {
     assert(!std::memcmp(saved_context,expected_context,sizeof(saved_context))); // Other FP lanes and every GP untouched.
     std::size_t image_size=profile::build_id_offset+32;
     for(const auto site:profile::sites)image_size=std::max(image_size,site.offset+4);
+    for(const auto site:profile::relative_pointers){
+        image_size=std::max(image_size,site.offset+sizeof(std::uint64_t));
+        image_size=std::max(image_size,site.target_offset+1);
+    }
     std::vector<std::uint8_t> image(image_size, 0);
     assert(!profile::matches(image.data(), image.size()));
     std::memcpy(image.data() + profile::build_id_offset, profile::build_id, 32);
     for (const auto site : profile::sites)
         std::memcpy(image.data() + site.offset, &site.instruction, 4);
+    // Loader R_AARCH64_RELATIVE relocations: runtime pointers are image base
+    // plus the authenticated addend, never the on-disk addend itself.
+    for (const auto& site : profile::relative_pointers) {
+        const std::uint64_t value=reinterpret_cast<std::uintptr_t>(image.data())+site.target_offset;
+        std::memcpy(image.data()+site.offset,&value,sizeof(value));
+    }
     assert(profile::matches(image.data(), image.size()));
+    for (const auto& site : profile::relative_pointers) {
+        const std::uint64_t correct=reinterpret_cast<std::uintptr_t>(image.data())+site.target_offset;
+        std::memcpy(image.data()+site.offset,&site.target_offset,sizeof(site.target_offset));
+        assert(!profile::matches(image.data(),image.size())); // Unrelocated file rejected.
+        std::memcpy(image.data()+site.offset,&correct,sizeof(correct));
+        for(unsigned byte=0;byte<sizeof(correct);++byte){
+            image[site.offset+byte]^=1;
+            assert(!profile::matches(image.data(),image.size()));
+            image[site.offset+byte]^=1;
+        }
+        assert(!profile::matches(image.data(),site.offset+sizeof(correct)-1));
+        assert(profile::matches(image.data(),image.size()));
+    }
     for (const auto site : profile::sites) {
         image[site.offset] ^= 1;
         assert(!profile::matches(image.data(), image.size()));

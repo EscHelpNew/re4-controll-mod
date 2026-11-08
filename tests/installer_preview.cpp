@@ -194,6 +194,12 @@ int main(){
         model.settings.enemy_health_bars=false;
         renderer.draw(model);assert(renderer.save_preview("build/installer-health-hidden.bmp"));
         assert(check_health_change("build/installer-health-off.bmp","build/installer-health-hidden.bmp",0,0,0,0)==0);
+        model.selected=2;model.settings.grenade_landing_spot=false;
+        renderer.draw(model);assert(renderer.save_preview("build/installer-grenade-off.bmp"));
+        model.settings.grenade_landing_spot=true;
+        renderer.draw(model);const auto* grenade_path=language==re4::Language::English?"build/installer-grenade-en.bmp":"build/installer-grenade-ru.bmp";
+        assert(renderer.save_preview(grenade_path));
+        assert(check_health_change("build/installer-grenade-off.bmp",grenade_path,1025,460,1165,515)>500);
         model.page=re4::InstallerPage::Graphics;model.selected=0;
         renderer.draw(model);assert(renderer.save_preview(language==re4::Language::English?
             "build/installer-graphics-en.bmp":"build/installer-graphics-ru.bmp"));

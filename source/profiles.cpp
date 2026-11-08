@@ -87,6 +87,14 @@ void copy_profile(Settings& destination, const Settings& source, ProfileDomain d
         copy_graphics(destination, preserved);
         destination.enemy_health_bars = preserved.enemy_health_bars;
         destination.enemy_health_numbers = preserved.enemy_health_numbers;
+        destination.grenade_landing_spot = preserved.grenade_landing_spot;
+        destination.skip_pickup_confirmation = preserved.skip_pickup_confirmation;
+        destination.skip_startup_logos = preserved.skip_startup_logos;
+        destination.disable_aim_sway = preserved.disable_aim_sway;
+        destination.dpad_weapon_switching = preserved.dpad_weapon_switching;
+        destination.extended_weapon_upgrade = preserved.extended_weapon_upgrade;
+        destination.case_ammo_counter = preserved.case_ammo_counter;
+        destination.character_appearance = preserved.character_appearance;
         destination.language = preserved.language;
         destination.calibration_request = preserved.calibration_request;
         destination.gyro_bias_x = preserved.gyro_bias_x;

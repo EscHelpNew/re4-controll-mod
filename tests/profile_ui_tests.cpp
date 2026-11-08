@@ -20,6 +20,7 @@ tsl::elm::ListItem* row(tsl::elm::OverlayFrame* frame,const std::string& label){
 }
 }
 namespace overlay_storage {bool ready(){return true;}bool mount(){return true;}void close(){}}
+namespace overlay_debug {void start(const char*){}void share_link(const GameLink*){}void stop(){}void set_mode(re4::LaunchMode,const char*){}re4::LaunchMode mode(){return re4::LaunchMode::Normal;}State state(){return State::Off;}std::uint16_t port(){return 0;}}
 namespace re4 {
 bool save_settings_file(const char* path,const Settings& value){
     if(!writable || !valid_settings(value))return false;
@@ -34,6 +35,8 @@ void GameLink::initialize(){}
 void GameLink::close(){}
 bool GameLink::connect(){return true;}
 bool GameLink::apply(const re4::Settings& s){++sends;return re4::valid_settings(s);}
+bool GameLink::refresh_appearance(){appearance={};return false;}
+bool GameLink::refresh_popup(){popup_diagnostic=0;return false;}
 int main(){
     using namespace re4;
     // Saving through the actual Game toggle survives a fresh overlay lifecycle.
@@ -46,11 +49,20 @@ int main(){
         health->changed(true);assert(files.at(overlay_storage::settings_path).enemy_health_bars);
         assert(row(game,"Health numbers")->click(HidNpadButton_A));
         assert(files.at(overlay_storage::settings_path).enemy_health_numbers);
+        for(const auto label:{"Grenade explosion spot","Skip pickup confirmation","Skip startup logos","Remove aiming sway","D-pad weapon switching"})
+            assert(row(game,label)->click(HidNpadButton_A));
+        assert(files.at(overlay_storage::settings_path).grenade_landing_spot && files.at(overlay_storage::settings_path).skip_pickup_confirmation && files.at(overlay_storage::settings_path).skip_startup_logos && files.at(overlay_storage::settings_path).disable_aim_sway && files.at(overlay_storage::settings_path).dpad_weapon_switching);
+        assert(row(game,"Character appearance")->click(HidNpadButton_A));
+        auto* appearance=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+        assert(row(appearance,"Ashley")->click(HidNpadButton_A));
+        assert(settings.character_appearance==CharacterAppearance::Ashley&&files.at(overlay_storage::settings_path).character_appearance==CharacterAppearance::Ashley);
+        tsl::goBack();
         health->changed(false);
         assert(!files.at(overlay_storage::settings_path).enemy_health_bars && files.at(overlay_storage::settings_path).enemy_health_numbers);
         tsl::goBack();settings={};
         ControlsOverlay overlay;tsl::Overlay& lifecycle=overlay;
-        lifecycle.initServices();assert(!settings.enemy_health_bars && settings.enemy_health_numbers);lifecycle.exitServices();
+        lifecycle.initServices();assert(!settings.enemy_health_bars && settings.enemy_health_numbers && settings.grenade_landing_spot && settings.skip_pickup_confirmation && settings.skip_startup_logos && settings.disable_aim_sway && settings.dpad_weapon_switching);lifecycle.exitServices();
+        assert(settings.character_appearance==CharacterAppearance::Ashley);
         assert(row(frame,"Game")->click(HidNpadButton_A));
         auto* restored=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
         assert(row(restored,"Health numbers")->value=="Unavailable");
@@ -60,16 +72,19 @@ int main(){
         settings.language=Language::Russian;home.update();assert(row(frame,"Игра"));
         delete frame;files.clear();sends=0;settings=default_controls_profile();note.clear();
     }
-    // Profile application must preserve both independent Game preferences.
+    // Profile application must preserve all independent Game preferences.
     for(bool bars:{false,true}){
-        settings=default_controls_profile();settings.enemy_health_bars=bars;settings.enemy_health_numbers=true;
+        settings=default_controls_profile();settings.enemy_health_bars=bars;settings.enemy_health_numbers=true;settings.grenade_landing_spot=true;settings.skip_pickup_confirmation=true;settings.skip_startup_logos=true;settings.disable_aim_sway=true;settings.dpad_weapon_switching=true;
+        settings.character_appearance=CharacterAppearance::Merchant;
         ControlsGui controls;auto* controls_frame=static_cast<tsl::elm::OverlayFrame*>(controls.createUI());
         assert(row(controls_frame,"Controls profile")->click(HidNpadButton_A));
-        assert(settings.enemy_health_bars==bars && settings.enemy_health_numbers);
+        assert(settings.character_appearance==CharacterAppearance::Merchant);
+        assert(settings.enemy_health_bars==bars && settings.enemy_health_numbers && settings.grenade_landing_spot && settings.skip_pickup_confirmation && settings.skip_startup_logos && settings.disable_aim_sway && settings.dpad_weapon_switching);
         GraphicsGui graphics;auto* graphics_frame=static_cast<tsl::elm::OverlayFrame*>(graphics.createUI());
         assert(row(graphics_frame,"Graphics profile")->click(HidNpadButton_Right));
-        assert(settings.enemy_health_bars==bars && settings.enemy_health_numbers);
-        assert(files.at(overlay_storage::settings_path).enemy_health_bars==bars && files.at(overlay_storage::settings_path).enemy_health_numbers);
+        assert(settings.character_appearance==CharacterAppearance::Merchant&&files.at(overlay_storage::settings_path).character_appearance==CharacterAppearance::Merchant);
+        assert(settings.enemy_health_bars==bars && settings.enemy_health_numbers && settings.grenade_landing_spot && settings.skip_pickup_confirmation && settings.skip_startup_logos && settings.disable_aim_sway && settings.dpad_weapon_switching);
+        assert(files.at(overlay_storage::settings_path).enemy_health_bars==bars && files.at(overlay_storage::settings_path).enemy_health_numbers && files.at(overlay_storage::settings_path).grenade_landing_spot && files.at(overlay_storage::settings_path).skip_pickup_confirmation && files.at(overlay_storage::settings_path).skip_startup_logos && files.at(overlay_storage::settings_path).disable_aim_sway && files.at(overlay_storage::settings_path).dpad_weapon_switching);
         delete controls_frame;delete graphics_frame;
     }
     files.clear();sends=0;settings=default_controls_profile();note.clear();

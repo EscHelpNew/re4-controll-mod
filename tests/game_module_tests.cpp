@@ -2,7 +2,7 @@
 // Only external engine/SDK calls are substituted; no extracted game is needed.
 #include <cstdint>
 #include <cstddef>
-namespace re4 {struct ViewVec3;}
+namespace re4 {struct ViewVec3;struct ViewMatrix3x4;struct CharacterWeight8;}
 namespace exl::hook {struct InlineFloatCtx;}
 namespace {
 struct NpadState;
@@ -28,6 +28,23 @@ void test_ModernPose(void*,int);
 void test_AutomaticFire(void*);
 void test_ScopeUpdate(void*);
 void test_ScopedZoom(exl::hook::InlineFloatCtx*);
+void test_PickupConfirmation(exl::hook::InlineFloatCtx*);
+void test_PickupSuccess(exl::hook::InlineFloatCtx*);
+void test_InventoryDamageName(exl::hook::InlineFloatCtx*);
+void test_StartupLogos(void*);
+std::uint64_t test_ExtendedCanTune(void*,void*);
+void test_ExtendedFullyTuned(exl::hook::InlineFloatCtx*);
+void test_ExtendedRowPrice(exl::hook::InlineFloatCtx*);
+void test_ExtendedConfirmEnter(exl::hook::InlineFloatCtx*);
+void test_ExtendedCommit(exl::hook::InlineFloatCtx*);
+void test_ExtendedLevelBar(void*,unsigned,unsigned);
+void test_ExtendedPanel(void*,void*,unsigned);
+void test_ExtendedSquareDraw(void*);
+void test_ExtendedDamage(exl::hook::InlineFloatCtx*);
+std::uint64_t test_ExtendedSnapshotTake(void*,std::uint64_t,std::uint64_t,std::uint64_t);
+std::uint64_t test_ExtendedSnapshotRestore(void*,std::uint64_t,std::uint64_t,std::uint64_t);
+void test_ExtendedSave(exl::hook::InlineFloatCtx*);
+void test_ExtendedLoad(exl::hook::InlineFloatCtx*);
 void test_RootDisplacement(void*,void*,unsigned,re4::ViewVec3*,re4::ViewVec3*);
 int test_AimSensitivity(void*, int);
 void test_AimSway(void*, unsigned, float*, float*);
@@ -38,6 +55,22 @@ void test_ResolutionMap(int,int,int*,int*);
 void test_FrustumUpdate(void*);
 void test_SceneSubmit();
 void test_SceneDraw();
+int test_CharacterSkin(void*,void*);
+void test_CharacterDraw(void*,void*,const float*,unsigned);
+void test_CharacterFrameEnd(void*,unsigned);
+void test_CharacterTextureFree(void*,unsigned);
+void test_CharacterTextureGroup(void*,unsigned,unsigned);
+void test_CharacterTextureMasked(void*,unsigned,unsigned,unsigned);
+void test_CharacterTextureSweep(void*);
+void test_CharacterRendererDestroy();
+void test_CharacterMenuDestroy(void*);
+std::uintptr_t test_CharacterRendererInitialize(void*,void*,unsigned,unsigned,unsigned);
+int test_CharacterPackOpen(const char*,void*);
+void* test_CharacterPackAllocate(unsigned,unsigned);
+std::uintptr_t character_emitter_caller=0;
+void test_CharacterEmitterPoint(const re4::ViewMatrix3x4*,const re4::ViewVec3*,re4::ViewVec3*);
+void test_CharacterEmitterProduct(const re4::ViewMatrix3x4*,const re4::ViewMatrix3x4*,re4::ViewMatrix3x4*);
+void test_CharacterEmitterCopy(const re4::ViewMatrix3x4*,re4::ViewMatrix3x4*);
 }
 #include "../source/game/module.cpp"
 #include <cassert>
@@ -45,9 +78,49 @@ void test_SceneDraw();
 #include <cstring>
 #include <vector>
 #include "re4/reticle_preview.hpp"
+extern "C" std::size_t character_pack_budget_headroom(const void*){return 256*1024*1024;}
+extern "C" std::size_t re4_native_alloc_size(const void*,const void*){return 0;}
 #undef assert
 #define assert(c) do { if(!(c)){std::fprintf(stderr,"line %d: %s\n",__LINE__,#c);std::exit(1);} } while(0)
 namespace {
+int (*character_skin_probe)(void*,void*)=nullptr;
+void (*character_draw_probe)(void*,void*,const float*,unsigned)=nullptr;
+void (*character_free_probe)(void*,unsigned)=nullptr;
+void (*character_frame_probe)()=nullptr;
+void (*character_destroy_probe)()=nullptr;
+int test_CharacterSkin(void* actor,void* chain){return character_skin_probe?character_skin_probe(actor,chain):1;}
+void test_CharacterDraw(void* actor,void* chain,const float* view,unsigned flags){if(character_draw_probe)character_draw_probe(actor,chain,view,flags);}
+void test_CharacterFrameEnd(void*,unsigned){if(character_frame_probe)character_frame_probe();}
+void test_CharacterTextureFree(void* ctx,unsigned id){if(character_free_probe)character_free_probe(ctx,id);}
+void test_CharacterTextureGroup(void*,unsigned,unsigned){}
+void test_CharacterTextureMasked(void*,unsigned,unsigned,unsigned){}
+void test_CharacterTextureSweep(void*){}
+void test_CharacterMenuDestroy(void*){}
+void test_CharacterRendererDestroy(){if(character_destroy_probe)character_destroy_probe();}
+std::uintptr_t test_CharacterRendererInitialize(void*,void*,unsigned,unsigned,unsigned){return 0;}
+int test_CharacterPackOpen(const char*,void*){return 0;}
+void* test_CharacterPackAllocate(unsigned,unsigned){return nullptr;}
+unsigned character_emitter_point_calls=0,character_emitter_product_calls=0,character_emitter_copy_calls=0;
+void test_CharacterEmitterPoint(const re4::ViewMatrix3x4* matrix,const re4::ViewVec3* point,re4::ViewVec3* out){
+    ++character_emitter_point_calls;
+    const auto& m=matrix->m;const auto p=*point;
+    const re4::ViewVec3 value{m[0][0]*p.x+m[0][1]*p.y+m[0][2]*p.z+m[0][3],
+        m[1][0]*p.x+m[1][1]*p.y+m[1][2]*p.z+m[1][3],
+        m[2][0]*p.x+m[2][1]*p.y+m[2][2]*p.z+m[2][3]};
+    *out=value;
+}
+void test_CharacterEmitterProduct(const re4::ViewMatrix3x4* a,const re4::ViewMatrix3x4* b,re4::ViewMatrix3x4* out){
+    ++character_emitter_product_calls;re4::ViewMatrix3x4 value{};
+    for(unsigned r=0;r<3;++r)for(unsigned c=0;c<4;++c){
+        float v=c==3?a->m[r][3]:0;
+        for(unsigned k=0;k<3;++k)v+=a->m[r][k]*b->m[k][c];
+        value.m[r][c]=v;
+    }
+    *out=value;
+}
+void test_CharacterEmitterCopy(const re4::ViewMatrix3x4* matrix,re4::ViewMatrix3x4* out){
+    ++character_emitter_copy_calls;std::memmove(out,matrix,sizeof(*matrix));
+}
 bool modern_probe=false,unified_probe=false;
 unsigned aim_raise_native_calls=0,aim_raise_native_change=0;
 void test_AimRaise(void* actor){
@@ -68,6 +141,7 @@ void change_reload_identity(void* actor,unsigned change){
     if(change==4){auto* state=*reinterpret_cast<std::uint8_t**>(main_base+0xB1AE08);++state[0x5034];}
 }
 unsigned modern_original_updates=0,modern_original_roots=0,modern_original_poses=0;
+void (*modern_root_observer)(void*)=nullptr;
 bool native_root_probe=false,grenade_native_order=false;
 re4::ViewVec3 grenade_release_position{};
 re4::ViewVec3 native_primary{0,3,10},native_secondary{0,5,6},root_result{};
@@ -93,6 +167,7 @@ void test_ModernPlayerUpdate(void* actor){
 }
 unsigned test_ModernRoot(void* actor,void*){
  ++modern_original_roots;
+ if(modern_root_observer)modern_root_observer(actor);
  if(native_root_probe){
   auto* bytes=static_cast<std::uint8_t*>(actor);re4::ViewVec3 a,b,r;
   RootDisplacement::Callback(actor,bytes+0x228,0,&a,&r);assert(r.x==1&&r.y==2&&r.z==3);
@@ -129,6 +204,29 @@ bool scope_zoom_feedback=false;
     *directions|=0x100; // Preserve unrelated native changes on restoration.
 }
 void test_ScopedZoom(exl::hook::InlineFloatCtx*){}
+void test_PickupConfirmation(exl::hook::InlineFloatCtx*){}
+void test_PickupSuccess(exl::hook::InlineFloatCtx*){}
+void test_InventoryDamageName(exl::hook::InlineFloatCtx*){}
+#ifndef RE4_STARTUP_LOGOS_TEST_NATIVE
+void test_StartupLogos(void*){}
+#endif
+#ifndef RE4_EXTENDED_UPGRADE_TEST_NATIVE
+std::uint64_t test_ExtendedCanTune(void*,void*){return 0;}
+void test_ExtendedLevelBar(void*,unsigned,unsigned){}
+void test_ExtendedPanel(void*,void*,unsigned){}
+std::uint64_t test_ExtendedSnapshotTake(void*,std::uint64_t,std::uint64_t,std::uint64_t){return 0;}
+std::uint64_t test_ExtendedSnapshotRestore(void*,std::uint64_t,std::uint64_t,std::uint64_t){return 0;}
+#endif
+#ifndef RE4_EXTENDED_SQUARE_TEST_NATIVE
+void test_ExtendedSquareDraw(void*){}
+#endif
+void test_ExtendedFullyTuned(exl::hook::InlineFloatCtx*){}
+void test_ExtendedRowPrice(exl::hook::InlineFloatCtx*){}
+void test_ExtendedConfirmEnter(exl::hook::InlineFloatCtx*){}
+void test_ExtendedCommit(exl::hook::InlineFloatCtx*){}
+void test_ExtendedDamage(exl::hook::InlineFloatCtx*){}
+void test_ExtendedSave(exl::hook::InlineFloatCtx*){}
+void test_ExtendedLoad(exl::hook::InlineFloatCtx*){}
 std::vector<re4::SensorState> sensor_batch;
 std::uint8_t sampler_seen[20]{};
 std::uint32_t shadow_flags_seen=0;
@@ -167,7 +265,7 @@ void test_WeaponLaser(void* weapon,unsigned draw,unsigned reuse,unsigned){
     }
 }
 void test_HudDraw(void*){++hud_native_calls;}
-bool calculate_probe=false;unsigned look_calls=0;re4::ViewVec3 look_seen{};
+bool calculate_probe=false,camera_projection_probe=false;unsigned look_calls=0;re4::ViewVec3 look_seen{};
 void test_FinalLookAt(void* out,const re4::ViewVec3* eye,const re4::ViewVec3* up,const re4::ViewVec3* target){
  ++look_calls;look_seen=*target;
  re4::ViewVec3 back{eye->x-target->x,eye->y-target->y,eye->z-target->z};
@@ -185,6 +283,7 @@ void test_CameraCalculate(){
  if(world_follow_probe){
   auto* input=reinterpret_cast<void*>(main_base+0x1131998);
   std::memcpy(input,s+0x14C,12);std::memcpy(static_cast<std::uint8_t*>(input)+12,s+0x158,12);
+  if(camera_projection_probe)std::memcpy(static_cast<std::uint8_t*>(input)+24,s+0x164,8);
   auto* follow=reinterpret_cast<std::uint8_t*>(main_base+0x1131F50);
   auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
   if(world_follow_gate==1)*reinterpret_cast<float*>(main_base+0x1131718+0x2A0)=1;
@@ -203,6 +302,17 @@ void test_CameraCalculate(){
   if(world_follow_gate==14)*reinterpret_cast<float*>(main_base+0x1131718+0x2A0)=std::numeric_limits<float>::quiet_NaN();
   CameraFollow::Callback(follow,input);
   std::memcpy(s+0x14C,follow+0x100,12);std::memcpy(s+0x158,follow+0x10C,12);
+  if(camera_projection_probe)std::memcpy(s+0x164,follow+0x118,8);
+ }
+ if(camera_projection_probe){
+  // FDB0 consumes the collision/follow FOV before building its current
+  // projection, then calls the final look-at and rebuilds the frustum.
+  const float fov=*reinterpret_cast<const float*>(s+0x168);
+  assert(std::isfinite(fov)&&fov>0&&fov<180);
+  const float cot=1/std::tan(fov*.00872664626f);
+  const re4::ViewMatrix4x4 projection{{{cot*.75f,0,0,0},{0,cot,0,0},
+      {0,0,-.001001001f,-100.1001f},{0,0,-1,0}}};
+  std::memcpy(s+0x10C,&projection,sizeof(projection));
  }
  FinalLookAt::Callback(s+0xD8,reinterpret_cast<re4::ViewVec3*>(s+0x14C),reinterpret_cast<re4::ViewVec3*>(s+0x16C),reinterpret_cast<re4::ViewVec3*>(s+0x158));
  // FDB0's native frustum construction occurs only after this view is built.
@@ -216,7 +326,8 @@ void test_CameraFollow(void* object,void* input){
  const float alpha=(f[0xF8]&1)?0:std::pow(follow_coefficient_seen,*reinterpret_cast<const float*>(s+0xA4));
  auto* history=reinterpret_cast<float*>(f+0x100);const auto* desired=static_cast<const float*>(input);
  const auto* delta=reinterpret_cast<const float*>(s+0x4FE8);
- for(unsigned i=0;i<6;++i)history[i]=(history[i]+delta[i%3])*alpha+desired[i]*(1-alpha);
+ for(unsigned i=0;i<(camera_projection_probe?8u:6u);++i)
+  history[i]=(history[i]+(i<6?delta[i%3]:0))*alpha+desired[i]*(1-alpha);
  f[0xF8]&=~1;f[0x12C]=0;std::memcpy(f+0x130,f+0x100,32);
  // Native near-body correction comes after the smoothing; the hook must
  // preserve it rather than copying the desired eye over the final result.
@@ -309,6 +420,7 @@ void test_CameraInput(void* camera) {
                 re4::ViewVec3 eye,target;assert(re4::view_transform_point(basis,result.eye,eye));
                 assert(re4::view_transform_point(basis,result.target,target));
                 std::memcpy(state+0x14C,&eye,sizeof(eye));std::memcpy(state+0x158,&target,sizeof(target));
+                if(camera_projection_probe)std::memcpy(state+0x168,&result.fov,4);
                 const re4::ViewVec3 up{0,1,0};std::memcpy(state+0x16C,&up,sizeof(up));
             }
         }else CameraApply::Callback(camera,nullptr);
@@ -384,6 +496,7 @@ struct Fixture {
         unified_root_actor=nullptr;unified_camera_calculation=false;
         native_view_test=submit_models=short_laser_ray=simulate_weapon_sway=false;laser_endpoint={0,0,-1000};camera_native_calls=basis_native_calls=laser_native_calls=hud_native_calls=ortho_native_calls=0;
         native_follow_probe=false;world_follow_probe=false;world_follow_gate=0;follow_near_correction={};follow_calls=0;native_collision_fraction=1;camera_collision_calls=0;camera_collision_invalid=false;
+        camera_projection_probe=false;
         submitted_models.clear();hud_rects.clear();test_weapon=test_other_model=nullptr;
         native_basis={{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
         native_profile={{-500,1765,-1190},{-180,1700,-110},{0,1340,1480},0.2f,50};
@@ -396,9 +509,11 @@ struct Fixture {
         fps_override_count=0;reticle_draw_count=0;
         main_view_actor=nullptr;
         health_color_probe=false;gx_colors.clear();native_target_probe=false;native_trace_target=nullptr;
-        modern_probe=false;grenade_native_order=false;grenade_release_position={};modern_original_updates=modern_original_roots=modern_original_poses=0;
+        modern_probe=false;grenade_native_order=false;grenade_release_position={};modern_original_updates=modern_original_roots=modern_original_poses=0;modern_root_observer=nullptr;
         aim_raise_native_calls=aim_raise_native_change=0;
         game_test::memory_maps.clear();modern_update_actor=nullptr;modern_cycle.reset();modern_pose.discard();modern_body_pose.discard();modern_body_owner={};modern_body_yaw=0;
+        inventory_damage_enabled=false;inventory_damage_clear();weapon_popup_clear();
+        inventory_damage_glyph_native={};grenade_spot_zoom_reset();
         modern_native={};modern_bound_owner={};modern_bound_asset=modern_bound_clip=0;
         modern_epoch=0;modern_root_done=modern_stepped=modern_pose_done=false;
         native_ortho=test_native_ortho;native_projection=test_native_projection;
@@ -429,6 +544,10 @@ struct Fixture {
         std::memset(const_cast<re4::SharedControl*>(&control),0,sizeof(control));
         std::memcpy(image.data()+re4::profile::build_id_offset,re4::profile::build_id,32);
         for(auto s:re4::profile::sites)std::memcpy(image.data()+s.offset,&s.instruction,4);
+        for(auto s:re4::profile::relative_pointers){
+            const std::uint64_t target=reinterpret_cast<std::uintptr_t>(image.data())+s.target_offset;
+            std::memcpy(image.data()+s.offset,&target,sizeof(target));
+        }
         main_base=reinterpret_cast<std::uintptr_t>(image.data());
         game_test::module.m_Total={main_base,image.size()};
         *reinterpret_cast<void**>(image.data()+re4::profile::player_slot)=actor;
@@ -1789,8 +1908,14 @@ int main(){
         assert(control.status==2 && game_test::installed==0 && game_test::initialized==0);
         game_test::program=re4::profile::title_id;f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
         assert(control.status==2 && game_test::installed==0);
-        f.image[0x19B20]^=1;exl_main(nullptr,nullptr);
-        assert(control.status==1 && game_test::installed==32 && game_test::initialized==1);
+        f.image[0x19B20]^=1;
+        for(const std::size_t offset:{0xB280F0,0xB0AB70}){
+            f.image[offset]^=1;exl_main(nullptr,nullptr);
+            assert(control.status==2 && game_test::installed==0 && game_test::initialized==0);
+            f.image[offset]^=1;
+        }
+        exl_main(nullptr,nullptr);
+        assert(control.status==1 && game_test::installed==64 && game_test::initialized==1);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }

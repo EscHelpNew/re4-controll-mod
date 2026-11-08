@@ -9,27 +9,40 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current release is **[0.20.0](docs/releases/v0.20.0.md)** (2026-11-07),
-including all changes since 0.17.2.
+The current release is **[0.27.2](docs/releases/v0.27.2.md)** (2026-11-08),
+including all changes since 0.20.0.
 
-**Game → Enemy health bars** shows a thin translucent green/yellow/red strip
-above the enemy under your aim, fading in and out over 300 ms. Optional
-**Health numbers** show current health in weapon firepower units, for example
-`5.0`. Both options start off and are saved independently of profiles. Game
-follows Graphics; both menus include a compact preview that follows the toggles.
+- Cosmetic character selection in **Game**, also available in the overlay:
+  Ashley, Ada, Luis, Krauser, Merchant, Ramon and Villager over Leon's gameplay.
+  Natural proportions, height-adjusted cameras, matching held weapons, visible
+  knives and horizontal right-stick rotation in the attache case.
+- Current-position laser, muzzle flashes and ejected shells for cosmetic bodies.
+  Character names and spare ammunition follow the native health gauge.
+- Optional D-pad weapon/grenade cycling, native-font weapon names with animated
+  mist, current attack values in the case, additional weapon upgrades and an
+  ammunition counter.
+- Optional soft grenade explosion marker, instant item pickup, startup-logo
+  skipping by button and aiming-sway removal. Game options include compact previews.
+- **Launch mode → Normal / Diagnostics**. Normal mode leaves the overlay's
+  diagnostic server and automatic diagnostic logs off. Diagnostics enables
+  authenticated, read-only collection, including while the overlay is hidden.
 
-This release also adds reload walking and right-stick steering, grenade aim
-movement, unified controls and a rear shoulder camera for playable Ashley, stable
-character framing during strafe/camera turns, and corrected extreme aim framing.
-Select the **RE6** controls profile or enable the corresponding movement options
-and **Unified sticks**. Native reload timing is preserved; scopes stay stationary.
-It repairs the known legacy installation-receipt conflict while preserving
-protection for unknown files from other mods.
+Enemy health bars appear only under your aim: thin translucent green/yellow/red
+strips with a 200 ms appearance and 300 ms disappearance. Optional numbers show
+health in weapon firepower units, for example `5.0`. Both start off. **Game**
+follows **Graphics** in the menu.
 
-Host tests, ARM64 builds and public artifact audits passed. The application
-transfer and restart were verified on console; camera/movement behavior was
-confirmed in local 0.18.5. Broader gameplay and graphics acceptance remains
-incomplete; see the release notes for scope and installation instructions.
+Reload walking, grenade-aim movement, unified controls, playable Ashley's rear
+shoulder camera and stable character framing remain available through the
+**RE6** controls profile or the corresponding movement and **Unified sticks**
+options. Native reload timing is preserved; scopes stay stationary.
+
+All 104 automated cases passed: 103 native programs and 175 Python tests.
+Executable-line coverage is **91.09% C++ / 96.18% Python**, including unexecuted
+target-only code in the denominator. Module, overlay and installer builds passed;
+the delivered application restarted on Switch with its exact verified image hash.
+See the [release notes](docs/releases/v0.27.2.md) and
+[testing instructions](docs/testing.md).
 
 ## Features
 
@@ -218,7 +231,7 @@ See [build instructions](docs/building.md) and [test coverage](docs/testing.md).
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 Copy-Item project.release.json project.json
-.venv\Scripts\python.exe build.py --test
+.venv\Scripts\python.exe build.py --test --jobs 4 --coverage
 .venv\Scripts\python.exe build.py --module --overlay --nro
 ```
 

@@ -25,20 +25,20 @@ int main(){
             assert(game.handle(UiEvent::Left)==InstallerAction::None);
             assert(game.handle(UiEvent::Right)==InstallerAction::None);
             assert(game.handle(UiEvent::Confirm)==InstallerAction::None);
-            assert(game.page==InstallerPage::Game && game.item_count()==2 && game.selected==0);
+            assert(game.page==InstallerPage::Game && game.item_count()==10 && game.selected==0);
             assert(std::string(game.page_title())==(lang==Language::English?"Game":"Игра"));
             assert(game.item_label(0)==(lang==Language::English?"Enemy health bars":"Полоска здоровья врагов"));
-            assert(game.selected_control()==ControlId::Count && game.item_label(2).empty() && game.item_value(2).empty());
+            assert(game.selected_control()==ControlId::Count && game.item_label(10).empty() && game.item_value(10).empty());
             assert(game.item_label(1)==(lang==Language::English?"Health numbers":"Числа здоровья"));
             assert(game.item_value(1)==(lang==Language::English?"Unavailable":"Недоступно"));
             assert(std::string(game.selected_help()).find(lang==Language::English?"aiming":"прицел")!=std::string::npos);
             assert(game.item_value(0)==(lang==Language::English?"Off":"Выкл."));
-            assert(game.handle(UiEvent::Up)==InstallerAction::None && game.selected==1);
+            assert(game.handle(UiEvent::Down)==InstallerAction::None && game.selected==1);
             assert(std::string(game.selected_help()).find(lang==Language::English?"Enable enemy health bars first":"Сначала включите полоски здоровья врагов")!=std::string::npos);
             for(auto event:{UiEvent::Confirm,UiEvent::Left,UiEvent::Right}){
                 assert(game.handle(event)==InstallerAction::None && !game.settings.enemy_health_numbers);
             }
-            assert(game.handle(UiEvent::Down)==InstallerAction::None && game.selected==0);
+            assert(game.handle(UiEvent::Up)==InstallerAction::None && game.selected==0);
             for(auto event:{UiEvent::Confirm,UiEvent::Left,UiEvent::Right,UiEvent::Confirm}){
                 const auto before=game.settings.enemy_health_bars;
                 assert(game.handle(event)==InstallerAction::SaveSettings);
@@ -69,6 +69,39 @@ int main(){
             assert(game.item_value(1)==(lang==Language::English?"On":"Вкл."));
             game.handle(UiEvent::Confirm);assert(!game.settings.enemy_health_numbers);
             game.handle(UiEvent::Up);game.handle(UiEvent::Confirm);assert(!game.settings.enemy_health_bars);
+            for(unsigned row=2;row<9;++row){
+                game.selected=row;
+                const auto member=row==2?&Settings::grenade_landing_spot:row==3?&Settings::skip_pickup_confirmation:row==4?&Settings::skip_startup_logos:row==5?&Settings::disable_aim_sway:row==6?&Settings::dpad_weapon_switching:row==7?&Settings::extended_weapon_upgrade:&Settings::case_ammo_counter;
+                assert(!game.item_label(row).empty() && !std::string(game.selected_help()).empty());
+                for(auto event:{UiEvent::Confirm,UiEvent::Left,UiEvent::Right}){
+                    const bool before=game.settings.*member;
+                    assert(game.handle(event)==InstallerAction::SaveSettings && game.settings.*member!=before);
+                    assert(!game.settings.enemy_health_bars && !game.settings.enemy_health_numbers);
+                    assert(save_profiled_settings(path.c_str(),game.settings));Settings loaded;
+                    assert(load_settings_file(path.c_str(),loaded) && loaded.*member==game.settings.*member);
+                }
+                game.handle(UiEvent::Confirm);assert(!(game.settings.*member));
+            }
+            game.selected=9;
+            assert(game.item_label(9)==(lang==Language::English?"Character appearance":"Внешность персонажа"));
+            for(auto event:{UiEvent::Left,UiEvent::Right})assert(game.handle(event)==InstallerAction::None);
+            assert(game.handle(UiEvent::Confirm)==InstallerAction::None&&game.page==InstallerPage::CharacterAppearance&&game.item_count()==8);
+            const char* english[]={"Leon","Ashley","Ada","Luis Sera","Krauser","Merchant","Ramon Salazar","Village Ganado"};
+            const char* russian[]={"Леон","Эшли","Ада","Луис Сера","Краузер","Торговец","Рамон Салазар","Деревенский ганадо"};
+            for(unsigned choice=0;choice<8;++choice){
+                game.selected=choice;assert(game.item_label(choice)==(lang==Language::English?english[choice]:russian[choice]));
+                const auto before=game.settings.character_appearance;
+                assert(game.handle(UiEvent::Left)==InstallerAction::None&&game.settings.character_appearance==before);
+                const auto action=game.handle(UiEvent::Confirm);
+                assert(action==(unsigned(before)==choice?InstallerAction::None:InstallerAction::SaveSettings));
+                assert(unsigned(game.settings.character_appearance)==choice&&game.item_value(choice)==(lang==Language::English?"Requested":"Выбрано"));
+                assert(game.handle(UiEvent::Confirm)==InstallerAction::None);
+                assert(save_profiled_settings(path.c_str(),game.settings));Settings saved;
+                assert(load_settings_file(path.c_str(),saved)&&saved.character_appearance==game.settings.character_appearance);
+                assert(std::string(game.selected_help()).find(lang==Language::English?"Leon weapons":"оружие и управление Леона")!=std::string::npos);
+            }
+            assert(game.handle(UiEvent::Back)==InstallerAction::None&&game.page==InstallerPage::Game&&game.selected==9);
+            assert(game.item_value(9)==(lang==Language::English?english[7]:russian[7]));
             assert(game.handle(UiEvent::QuickInstall)==InstallerAction::None);
             assert(game.handle(UiEvent::Back)==InstallerAction::None);
             assert(game.page==InstallerPage::Home && game.selected==6);
@@ -317,7 +350,7 @@ int main(){
         assert(std::strlen(graphics.selected_help())>20);
         assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None); // Invalid rows cannot mutate a valid row.
         for(auto stale:{InstallerPage::Controls,InstallerPage::ControlGroup,InstallerPage::Diagnostics,
-            InstallerPage::Mapping,InstallerPage::MappingTargets,InstallerPage::Updates,InstallerPage::Game}){
+            InstallerPage::Mapping,InstallerPage::MappingTargets,InstallerPage::Updates,InstallerPage::Game,InstallerPage::CharacterAppearance}){
             graphics.page=stale;graphics.selected=0;
             assert(graphics.item_count()==0 && graphics.item_label(0).empty() && graphics.item_value(0).empty());
             assert(std::strlen(graphics.selected_help())==0);

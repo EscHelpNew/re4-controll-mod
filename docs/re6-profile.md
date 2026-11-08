@@ -2,8 +2,8 @@
 
 Select **Controls → Controls profile → RE6** in the installer or overlay.
 The profile is the first row; change it with A or Left/Right. Install the matching
-module and overlay before selecting it: local version0.20.0 uses settings wire15
-and shared ABI19. Game options are saved independently of this profile.
+module and overlay before selecting it: local version0.21.0 uses settings wire16
+and shared ABI20. Game options are saved independently of this profile.
 
 The preset is an initial adaptation of RE6 response to RE4's proven camera and
 movement hooks. It is based on1437 synchronized, fully valid samples recorded

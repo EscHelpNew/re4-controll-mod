@@ -3,6 +3,8 @@
 #include "nn/fs.hpp"
 #include "re4/input.hpp"
 #include "re4/profile.hpp"
+#include "re4/weapon_popup_viewport.hpp"
+#include "re4/native_weapon_popup.hpp"
 #include "re4/settings.hpp"
 #include "re4/shared.hpp"
 #include "re4/turn.hpp"
@@ -19,11 +21,32 @@
 #include "re4/enemy_health.hpp"
 #include "re4/enemy_health_fade.hpp"
 #include "re4/enemy_health_numbers.hpp"
+#include "re4/grenade_prediction.hpp"
+#include "re4/grenade_focus.hpp"
+#include "re4/grenade_explosion_prediction.hpp"
+#include "re4/grenade_spot_draw.hpp"
+#include "re4/weapon_cycle.hpp"
+#include "re4/weapon_popup.hpp"
+#include "re4/weapon_text.hpp"
+#include "re4/weapon_mist.hpp"
+#include "re4/native_inventory_text.hpp"
+#include "re4/extended_upgrade.hpp"
+#include "re4/ammo_counter.hpp"
+#include "re4/character_assets.hpp"
+#include "re4/character_knife.hpp"
+#include "re4/character_height_view.hpp"
+#include "re4/character_emitter.hpp"
+#include "re4/health_name.hpp"
+#include "re4/character_loading.hpp"
+#include "re4/character_textures.hpp"
 #include "re4/gyro_frame.hpp"
 #include "re6/journal.hpp"
 #include <atomic>
+#include <cstdio>
 
 namespace {
+extern "C" std::size_t re4_native_alloc_size(const void*,const void*)
+    asm("_ZNK2nn3mem17StandardAllocator9GetSizeOfEPKv");
 struct NpadState {
     std::uint64_t sample, buttons;
     std::int32_t lx, ly, rx, ry;
@@ -226,9 +249,30 @@ unsigned unified_pitch_route=0;
 unsigned unified_pitch_character=0;
 std::uint64_t unified_command_frame=0,unified_command_tick=0;
 bool unified_camera_calculation=false;
+void invalidate_grenade_spot_frames();
+std::uint64_t dpad_weapons_filter(std::uint64_t buttons,bool connected);
+void dpad_weapons_before_update(void* actor);
+void dpad_weapons_update(void* actor);
+void weapon_popup_clear();
+void weapon_popup_validate_scene(void* actor);
+void weapon_popup_commit(void* actor,unsigned raw_id);
+void weapon_popup_trace(unsigned producer,unsigned draw=0,bool commit=false,bool rendered=false);
+void draw_weapon_popup_hud();
+void draw_inventory_damage_hud();
+void draw_extended_upgrade_hud();
+void draw_case_ammo_hud();
+bool health_name_sprite(void* sprite);
+void draw_health_name_hud();
+float extended_upgrade_display_ratio(std::uintptr_t record);
+void character_appearance_update(void* actor);
+bool character_appearance_height(void* actor,float& difference);
+void character_appearance_mount(const char* name);
+void character_menu_rotate(void* actor);
 void publish_view_settings(){
-    const unsigned word=unsigned(settings.first_person)|(unsigned(settings.reticle)<<1)|(unsigned(settings.reticle_size)<<3)|(unsigned(settings.unified_controls)<<5)|(unsigned(settings.enemy_health_bars)<<6)|(unsigned(settings.enemy_health_numbers)<<7)|(unsigned(settings.language==re4::Language::Russian)<<8);
+    const unsigned word=unsigned(settings.first_person)|(unsigned(settings.reticle)<<1)|(unsigned(settings.reticle_size)<<3)|(unsigned(settings.unified_controls)<<5)|(unsigned(settings.enemy_health_bars)<<6)|(unsigned(settings.enemy_health_numbers)<<7)|(unsigned(settings.language==re4::Language::Russian)<<8)|(unsigned(settings.grenade_landing_spot)<<9)|(unsigned(settings.dpad_weapon_switching)<<10);
     const auto before=view_settings_snapshot.exchange(word,std::memory_order_acq_rel);
+    if((before^word)&512)invalidate_grenade_spot_frames();
+    if((before^word)&1024)weapon_popup_clear();
     if((before^word)&64){
         enemy_health_point.frame.store(0,std::memory_order_release);pending_enemy_health.frame.store(0,std::memory_order_release);displayed_enemy_health.frame.store(0,std::memory_order_release);
         enemy_health_camera.frame.store(0,std::memory_order_release);
@@ -303,7 +347,10 @@ bool gyro_aim_ready(void* actor,bool allow_arm=false){
         native_raise|=handler==main_base+offset;
     if(native_raise){
         if(b[0x116]!=1 && b[0x116]!=2)gyro_session.ready=false;
-        else if(allow_arm && b[0x116]==1 && b[0x117]==1)gyro_session.ready=true;
+        // TMP can enter2/0 in the same native update as its transient1/1.
+        // Its ordinary firing phases prove the weapon has finished raising.
+        else if(allow_arm&&((b[0x116]==1&&b[0x117]==1)
+            ||(handler==main_base+0x3270F0&&b[0x116]==2&&b[0x117]<=1)))gyro_session.ready=true;
     }else if(allow_arm)gyro_session.ready=true; // Other tables keep their own semantics.
     if(!before && gyro_session.ready)gyro_session.drain=true;
     return gyro_session.ready;
@@ -395,7 +442,8 @@ bool unified_aim_allowed(void* actor,bool allow_arm=false){
         }
         const bool before=unified_aim_session.ready;
         if(b[0x116]!=1&&b[0x116]!=2)unified_aim_session.ready=false;
-        else if(allow_arm&&b[0x116]==1&&b[0x117]==1)unified_aim_session.ready=true;
+        else if(allow_arm&&((b[0x116]==1&&b[0x117]==1)
+            ||(handler==main_base+0x3270F0&&b[0x116]==2&&b[0x117]<=1)))unified_aim_session.ready=true;
         unified_new_aim=!before&&unified_aim_session.ready;
         return unified_aim_session.ready;
     }
@@ -520,6 +568,11 @@ bool draw_native_reticle(re4::ViewHudPoint point,unsigned style,unsigned size){
     return native_hud_ready()&&re4::draw_reticle(native_hud_backend(),point,style,size);
 }
 #include "enemy_health.inc"
+#include "grenade_spot.inc"
+#include "pickup_confirmation.inc"
+#include "inventory_damage.inc"
+#include "inventory_damage_native_text.inc"
+#include "startup_logos.inc"
 void poll_sensors() {
     gyro_pending = {};
     const auto& previous=gyro_tuning_cache;
@@ -688,6 +741,7 @@ void poll_settings() {
 }
 void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
     telemetry_write_input(pad,id,style); // Exact original SDK state, before remapping.
+    const auto physical_buttons=pad.buttons;
     // Transform the original SDK state once, including menu and QTE input.
     // Overlay/HOME controls belong to other processes and remain physical.
     pad.buttons=re4::remap_buttons(pad.buttons,settings.button_map,settings.remap_enabled);
@@ -697,10 +751,12 @@ void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
     const bool connected = pad.attributes & 1;
     const bool changed=connected?(sensor_pad!=id||sensor_style!=style||sensor_attributes!=(pad.attributes&21u))
         :(id==sensor_pad&&style==sensor_style&&sensor_attributes!=0);
-    if(changed){unified_look.reset();unified_aim_session={};reset_scoped_controls();gyro_session={};gyro_pending={};gyro.reset();gyro_frame.reset();}
+    if(changed){dpad_weapons_filter(0,false);unified_look.reset();unified_aim_session={};reset_scoped_controls();gyro_session={};gyro_pending={};gyro.reset();gyro_frame.reset();}
     if (connected) {
         sensor_pad = id; sensor_style = style; sensor_attributes = pad.attributes & 21u;
     } else if (id == sensor_pad && style == sensor_style) sensor_attributes = 0;
+    if(connected||(id==sensor_pad&&style==sensor_style))
+        pad.buttons=re4::remap_buttons(dpad_weapons_filter(physical_buttons,connected),settings.button_map,settings.remap_enabled);
     raw_left_x = connected ? pad.lx / 32767.f : 0;
     if (std::fabs(raw_left_x) > control.maximum_raw_lx) control.maximum_raw_lx = std::fabs(raw_left_x);
     dpad_turn = connected && (pad.buttons & ((1ull << 12) | (1ull << 14)));
@@ -714,6 +770,7 @@ void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
 HOOK_DEFINE_TRAMPOLINE(RomMount) {
     static Result Callback(const char* name,void* cache,std::size_t size){
         const Result result=Orig(name,cache,size);
+        if(R_SUCCEEDED(result))character_appearance_mount(name);
         if(R_SUCCEEDED(result) && !file_read && !rom_settings_attempted.test_and_set(std::memory_order_acq_rel)){
             next_file_retry=0;read_initial_settings(); // FS is ready before graphics allocations.
         }
@@ -796,6 +853,7 @@ HOOK_DEFINE_TRAMPOLINE(SceneSubmit) {
             publish_aim_point(pending_aim_point,actor,player_weapon(actor),point,frame);
         }
         enemy_health_submit(actor,frame);
+        grenade_spot_submit(actor,frame);
     }
 };
 HOOK_DEFINE_TRAMPOLINE(SceneDraw) {
@@ -816,6 +874,7 @@ HOOK_DEFINE_TRAMPOLINE(SceneDraw) {
         }
         pending_aim_point.frame.store(0,std::memory_order_release);
         enemy_health_draw_scene(actor,frame,state);
+        grenade_spot_draw_scene(actor,frame,state);
         shadow_frame([]{Orig();});
     }
 };
@@ -946,6 +1005,10 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
         auto* context=camera_context;
         if(context&&context->camera==camera){context->shoulder=false;context->shoulder_profile=nullptr;}
         const auto* bytes=static_cast<const std::uint8_t*>(camera);
+        const bool zoom_camera=camera==reinterpret_cast<void*>(main_base+0x11319C0);
+        if(zoom_camera&&(!context||context->camera!=camera||!context->view_allowed||context->reset||bytes[0x222]
+            ||!settings.re6_response||settings.first_person||!unified_scene(context->actor)
+            ||!view_camera_allowed(camera,context->actor)))grenade_spot_zoom_reset();
         const bool fps=settings.first_person && context && context->view_allowed;
         if(!settings.unified_controls && context && context->camera==camera && ordinary_camera(camera,context->actor) && (settings.analog_enabled||fps)
             && !context->reset && !bytes[0x222] && bytes[0x26C]==2){
@@ -980,7 +1043,7 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
         re4::ViewQfpsOutput native;std::memcpy(&native,output,sizeof(native));
         // Also validate unmodified native output before publishing render eligibility.
         if(!re4::view_finite(native.eye0)||!re4::view_finite(native.eye1)||!re4::view_finite(native.target)
-            ||!std::isfinite(native.roll)||!std::isfinite(native.fov))return;
+            ||!std::isfinite(native.roll)||!std::isfinite(native.fov)){if(zoom_camera)grenade_spot_zoom_reset();return;}
         float render_pitch=unified_pitch;bool native_pitch=false;
         if(fps){
             re4::ViewMatrix3x4 body;std::memcpy(&body,actor+0x18,sizeof(body));
@@ -1015,6 +1078,18 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
             // 18990 traces eye1->eye0 and selects clipped candidates nearest
             // eye1. Keep that anchor; native collision/smoothing runs next.
             std::memcpy(output,&result,sizeof(result));
+        }
+        float height_difference=0;
+        re4::ViewQfpsOutput height_adjusted;
+        if(character_appearance_height(context->actor,height_difference)
+            &&re4::character_height_camera(*static_cast<re4::ViewQfpsOutput*>(output),
+                context->basis,height_difference,height_adjusted))
+            std::memcpy(output,&height_adjusted,sizeof(height_adjusted));
+        if(zoom_camera){
+            if(character==0&&settings.re6_response&&!settings.first_person&&unified_scene(context->actor)){
+                auto* selected=static_cast<re4::ViewQfpsOutput*>(output);
+                selected->fov=grenade_spot_zoom(context->actor,selected->fov);
+            }else grenade_spot_zoom_reset();
         }
         view_camera_pitch.store(render_pitch,std::memory_order_relaxed);
         view_camera_native_pitch.store(native_pitch,std::memory_order_relaxed);
@@ -1095,7 +1170,9 @@ HOOK_DEFINE_TRAMPOLINE(CameraInput) {
         auto* actor=*reinterpret_cast<std::uint8_t**>(main_base+re4::profile::player_slot);
         const bool normal=actor&&actor[0x114]==0&&actor[0x115]<=4;
         const bool framing=settings.third_person_distance>1&&settings.third_person_distance<=2;
-        const bool wanted=settings.unified_controls||settings.first_person||framing||settings.reticle!=re4::ReticleStyle::Off;
+        float height_difference=0;
+        const bool height_rig=character_appearance_height(actor,height_difference)&&height_difference!=0;
+        const bool wanted=settings.unified_controls||settings.first_person||framing||settings.reticle!=re4::ReticleStyle::Off||height_rig;
         const bool view_allowed=wanted&&view_camera_allowed(camera,actor);
         const bool unified=settings.unified_controls&&unified_scene(actor);
         const bool shape=!unified&&normal&&(settings.analog_enabled||(settings.first_person&&view_allowed));
@@ -1196,7 +1273,13 @@ HOOK_DEFINE_TRAMPOLINE(WeaponLaser) {
 HOOK_DEFINE_TRAMPOLINE(HudDraw) {
     static void Callback(void* list){
         Orig(list);
+        draw_weapon_popup_hud();
+        draw_inventory_damage_hud();
+        draw_extended_upgrade_hud();
+        draw_case_ammo_hud();
+        draw_health_name_hud();
         draw_enemy_health_hud();
+        draw_grenade_spot_hud();
         const auto options=view_settings_snapshot.load(std::memory_order_acquire);
         const auto style=(options>>1)&3u,size=(options>>3)&3u;
         if(!style||style>2||size>2||!native_ortho||!native_projection||!native_pose||!native_matrix||!native_rect)return;
@@ -1216,7 +1299,14 @@ HOOK_DEFINE_TRAMPOLINE(HudDraw) {
 };
 #include "aim_raise.inc"
 #include "modern_move.inc"
+#include "character_appearance.inc"
+#include "character_pack_budget.inc"
+#include "dpad_weapons.inc"
+#include "weapon_popup.inc"
 #include "scoped_aim.inc"
+#include "extended_upgrade.inc"
+#include "ammo_counter.inc"
+#include "health_name.inc"
 HOOK_DEFINE_TRAMPOLINE(RootDisplacement) {
     static void Callback(void* actor,void* motion,unsigned flags,re4::ViewVec3* translation,re4::ViewVec3* rotation){
         Orig(actor,motion,flags,translation,rotation);
@@ -1318,9 +1408,10 @@ HOOK_DEFINE_TRAMPOLINE(AimSensitivity) {
 };
 HOOK_DEFINE_TRAMPOLINE(AimSway) {
     static void Callback(void* actor, unsigned flags, float* pitch, float* offset) {
-        // Native sway clamps to the previous manual-input baseline unless bit0
-        // is set. Gyro is manual input too; retain native sway everywhere else.
-        if (actor && actor == gyro_input_actor) flags |= 1u;
+        // Native bit0 publishes the current manual-input baseline and bypasses
+        // random sway while retaining both native pitch unit conversions.
+        if(actor&&(actor==gyro_input_actor||(settings.disable_aim_sway
+            &&enemy_health_scene_allowed(actor)&&firearm_aim(actor))))flags|=1u;
         Orig(actor, flags, pitch, offset);
     }
 };
@@ -1341,6 +1432,20 @@ extern "C" void exl_main(void*, void*) {
     re6::BuildId telemetry_build{};std::memcpy(telemetry_build.data(),re4::profile::build_id,32);
     telemetry_ring.initialize(svcGetSystemTick(),telemetry_build,re4::profile::title_id);
     aiming_predicate = reinterpret_cast<int (*)(void*)>(main_base + 0x317630);
+    native_grenade_bone=reinterpret_cast<decltype(native_grenade_bone)>(main_base+0x2B4F90);
+    native_grenade_segment=reinterpret_cast<decltype(native_grenade_segment)>(main_base+0x8330);
+    native_grenade_sphere=reinterpret_cast<decltype(native_grenade_sphere)>(main_base+0x85E0);
+    native_grenade_water=reinterpret_cast<decltype(native_grenade_water)>(main_base+0x1EA5C0);
+    dpad_weapons_native.classify=reinterpret_cast<decltype(dpad_weapons_native.classify)>(main_base+0x2970D0);
+    dpad_weapons_native.effective_id=reinterpret_cast<decltype(dpad_weapons_native.effective_id)>(main_base+0x298B40);
+    dpad_weapons_native.weapon=reinterpret_cast<decltype(dpad_weapons_native.weapon)>(main_base+0x2939B0);
+    dpad_weapons_native.variant=reinterpret_cast<decltype(dpad_weapons_native.variant)>(main_base+0x296E10);
+    dpad_weapons_native.select=reinterpret_cast<decltype(dpad_weapons_native.select)>(main_base+0x294600);
+    dpad_weapons_native.prepare=reinterpret_cast<decltype(dpad_weapons_native.prepare)>(main_base+0x263B00);
+    dpad_weapons_native.teardown=reinterpret_cast<decltype(dpad_weapons_native.teardown)>(main_base+0x33B190);
+    dpad_weapons_native.load=reinterpret_cast<decltype(dpad_weapons_native.load)>(main_base+0x33B3B0);
+    dpad_weapons_native.initialize=reinterpret_cast<decltype(dpad_weapons_native.initialize)>(main_base+0x33B3E0);
+    dpad_weapons_native.reset_motion=reinterpret_cast<decltype(dpad_weapons_native.reset_motion)>(main_base+0x3118A0);
     native_ortho=reinterpret_cast<decltype(native_ortho)>(main_base+0x27A0D0);
     native_projection=reinterpret_cast<decltype(native_projection)>(main_base+0x2515E0);
     native_pose=reinterpret_cast<decltype(native_pose)>(main_base+0x2507D0);
@@ -1352,9 +1457,39 @@ extern "C" void exl_main(void*, void*) {
     native_gx_position=reinterpret_cast<decltype(native_gx_position)>(main_base+0x250BC0);
     native_gx_color=reinterpret_cast<decltype(native_gx_color)>(main_base+0x24FD80);
     native_gx_end=reinterpret_cast<decltype(native_gx_end)>(main_base+0x250060);
+    weapon_popup_capture_native.command=reinterpret_cast<decltype(weapon_popup_capture_native.command)>(main_base+0x24FB80);
+    weapon_popup_capture_native.context=reinterpret_cast<decltype(weapon_popup_capture_native.context)>(main_base+0x24FB20);
     publish_settings();
     exl::hook::Initialize();
+    pickup_confirmation_native.classify=reinterpret_cast<decltype(pickup_confirmation_native.classify)>(main_base+0x2970D0);
+    pickup_confirmation_native.sound=reinterpret_cast<decltype(pickup_confirmation_native.sound)>(main_base+0x261C20);
+    inventory_damage_native.hovered=reinterpret_cast<decltype(inventory_damage_native.hovered)>(main_base+0x3562A0);
+    inventory_damage_native.classify=reinterpret_cast<decltype(inventory_damage_native.classify)>(main_base+0x2970D0);
+    inventory_damage_native.weapon=reinterpret_cast<decltype(inventory_damage_native.weapon)>(main_base+0x2939B0);
+    inventory_damage_native.power=reinterpret_cast<decltype(inventory_damage_native.power)>(main_base+0x293910);
+    inventory_damage_glyph_native.prefix=+[](const char* text,float x,float y,float cap,unsigned rgba){
+        return native_hud_ready()&&re4::draw_serif_text_color(native_hud_backend(),text,x,y,cap,rgba&255,{rgba>>24,rgba>>16&255,rgba>>8&255});
+    };
+    inventory_damage_glyph_native.draw=reinterpret_cast<decltype(inventory_damage_glyph_native.draw)>(main_base+0x2B28E0);
+    weapon_popup_name_native.allocation_size=re4_native_alloc_size;
+    weapon_popup_name_native.file_size=+[](const char* path,std::uint64_t& bytes){
+        bytes=0;nn::fs::FileHandle file{};
+        if(!path||R_FAILED(nn::fs::OpenFile(&file,path,1)))return false;
+        long size=-1;const auto result=nn::fs::GetFileSize(&size,file);nn::fs::CloseFile(file);
+        if(R_FAILED(result)||size<=0||size>8*1024*1024)return false;
+        bytes=std::uint64_t(size);return true;
+    };
+    weapon_popup_native_reset();
+    inventory_damage_enabled.store(true,std::memory_order_release);
+    PickupConfirmation::InstallAtOffset(0x4A0970);
+    PickupSuccess::InstallAtOffset(0x4A0C44);
+    InventoryDamageName::InstallAtOffset(0x4CFFCC);
+    StartupLogos::InstallAtOffset(0x4E3960);
+    extended_upgrade_install();
+    ammo_counter_install();
     modern_move_install();
+    character_appearance_install();
+    character_pack_budget_install();
     RootDisplacement::InstallAtOffset(0x2B8370);
     CameraCalculate::InstallAtOffset(0xFDB0);
     FinalLookAt::InstallAtOffset(0x279F70);

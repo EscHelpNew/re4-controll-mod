@@ -10,6 +10,7 @@
 #include "re4/gyro_test_background.hpp"
 #include "re4/gyro_preview.hpp"
 #include "re4/enemy_health_preview.hpp"
+#include "re4/grenade_spot_preview.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -51,6 +52,8 @@ struct InstallerRenderer::Impl {
     SDL_Texture* gyro_image=nullptr;
     SDL_Texture* health_image=nullptr;
     unsigned health_options=~0u;
+    SDL_Texture* grenade_image=nullptr;
+    unsigned grenade_option=~0u;
     stbtt_fontinfo font{};
     std::map<std::uint64_t,Glyph> glyphs;
     std::vector<std::uint32_t> preview;
@@ -144,6 +147,21 @@ struct InstallerRenderer::Impl {
         }
         const SDL_Rect destination{862,286,344,298};SDL_RenderCopy(renderer,health_image,nullptr,&destination);
         text(tr(m,"Enlarged example","Увеличенный пример"),862,592,14,muted,344);
+    }
+    void grenade_picture(const InstallerModel& m){
+        const unsigned option=unsigned(m.settings.grenade_landing_spot);
+        if(!grenade_image)grenade_image=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,grenade_preview::width,grenade_preview::height);
+        if(!grenade_image){text(tr(m,"Illustration unavailable","Иллюстрация недоступна"),862,310,18,muted,344);return;}
+        if(grenade_option!=option){
+            std::vector<std::uint8_t> pixels(grenade_preview::width*grenade_preview::height*4);
+            grenade_preview::draw_rows(m.settings,0,0,[&](int,int y,int w,int,const std::uint8_t* row){
+                std::copy(row,row+w*4,pixels.data()+y*grenade_preview::width*4);
+            });
+            if(SDL_UpdateTexture(grenade_image,nullptr,pixels.data(),grenade_preview::width*4)!=0)return;
+            grenade_option=option;
+        }
+        const SDL_Rect destination{862,310,344,230};SDL_RenderCopy(renderer,grenade_image,nullptr,&destination);
+        text(tr(m,"Enlarged example","Увеличенный пример"),862,553,14,muted,344);
     }
     void graphics_picture(const InstallerModel& m){
         const unsigned index=m.game==GameTarget::RE6?1:0;
@@ -388,7 +406,8 @@ void InstallerRenderer::draw(const InstallerModel& m){
                     "В Uberhand: RE6 Graphics.\nФильтрация и сглаживание.\nШтатный гироскоп."),862,399,19,cream,344,true,4);
         if(!m.detail.empty())p.text(m.detail,862,486,16,cream,344,true,4);
     }else if(m.page==InstallerPage::Game){
-        p.health_picture(m);
+        if(m.selected<2)p.health_picture(m);
+        else if(m.selected==2)p.grenade_picture(m);
     }else if(m.page==InstallerPage::Updates){
         p.text(tr(m,"BEFORE YOU UPDATE","ПЕРЕД ОБНОВЛЕНИЕМ"),862,360,16,muted);
         p.text(tr(m,"Keep Wi-Fi connected.\nReopen the app after installation.\nYour settings are preserved.",
@@ -438,6 +457,7 @@ void InstallerRenderer::close(){
     for(auto* texture:impl_->graphics_images)if(texture)SDL_DestroyTexture(texture);
     if(impl_->gyro_image)SDL_DestroyTexture(impl_->gyro_image);
     if(impl_->health_image)SDL_DestroyTexture(impl_->health_image);
+    if(impl_->grenade_image)SDL_DestroyTexture(impl_->grenade_image);
     if(impl_->background)SDL_DestroyTexture(impl_->background);
     if(impl_->renderer)SDL_DestroyRenderer(impl_->renderer);
     if(impl_->window)SDL_DestroyWindow(impl_->window);

@@ -37,7 +37,7 @@ def stage_hook_pool(stage: Path, root: Path) -> dict:
 
     The upstream allocation has 200-byte slots. The original 4096-byte pool
     exhausted at our 22nd hook because its limit comparison admitted index20.
-    A second page provides40 valid slots; the native assertion tracks installs.
+    Four pages provide81 valid slots; the native assertion tracks installs.
     """
     stage, root = Path(stage), Path(root)
     setting_path = stage / 'source/program/setting.hpp'
@@ -45,17 +45,17 @@ def stage_hook_pool(stage: Path, root: Path) -> dict:
     setting = setting_path.read_text(encoding='utf-8')
     hook = hook_path.read_text(encoding='utf-8')
     setting = _replace_once(setting, 'constexpr size_t JitSize = 0x1000;',
-                            'constexpr size_t JitSize = 0x2000;', 'JIT size')
+                            'constexpr size_t JitSize = 0x4000;', 'JIT size')
     hook = _replace_once(hook, _CONSTANTS, _CONSTANTS, 'hook-slot constants')
     hook = _replace_once(hook, _ALLOCATOR,
                          _ALLOCATOR.replace('if(i > HookMax)', 'if(i >= HookMax)'),
                          'trampoline allocator')
     required = 0
-    for name in ('module.cpp', 'modern_move.inc'):
+    for name in ('module.cpp', 'modern_move.inc', 'character_appearance.inc', 'character_pack_budget.inc', 'extended_upgrade.inc'):
         source = (root / 'source/game' / name).read_text(encoding='utf-8')
         source = re.sub(r'//[^\n]*|/\*.*?\*/', '', source, flags=re.DOTALL)
         required += len(re.findall(r'\bInstallAt(?:FuncPtr|Offset|Ptr)\s*\(', source))
-    jit_bytes, slot_bytes = 0x2000, 5 * 10 * 4
+    jit_bytes, slot_bytes = 0x4000, 5 * 10 * 4
     capacity = jit_bytes // slot_bytes
     if jit_bytes % 0x1000 or required <= 0 or required > capacity:
         raise ValueError(f'Invalid hook-pool budget: {required} hooks, {capacity} slots')

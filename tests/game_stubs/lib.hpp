@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 #include <utility>
+#include <string>
 using u64 = std::uint64_t;
 using Result = unsigned;
 #define R_FAILED(v) ((v) != 0)
@@ -11,12 +12,24 @@ using Result = unsigned;
 #define NORETURN [[noreturn]]
 #define EXL_ABORT(...) std::abort()
 constexpr unsigned InfoType_ProgramId=1, CUR_PROCESS_HANDLE=0;
+constexpr unsigned CUR_THREAD_HANDLE=0xffff8000;
+inline Result svcGetThreadId(u64* out,unsigned){*out=1;return 0;}
 struct MemoryInfo {std::uintptr_t addr=0;std::size_t size=0;unsigned perm=0;};
 namespace game_test {
 inline u64 program=0x010099A00BC1E000, tick=1;
 inline unsigned installed=0, initialized=0, mounts=0, fs_opens=0;
+inline unsigned memory_queries=0;
 inline unsigned mount_result=1, mount_failures=0, fs_reads=0, fs_closes=0;
 inline std::vector<std::uint8_t> settings_primary,settings_backup;
+inline std::vector<std::uint8_t> resource_file;
+inline std::vector<std::uint8_t> extended_upgrade_file;
+inline unsigned extended_upgrade_writes=0;
+inline bool extended_upgrade_file_exists=false;
+inline Result extended_upgrade_open_read_result=0,extended_upgrade_open_write_result=0;
+inline Result extended_upgrade_size_result=0,extended_upgrade_read_result=0;
+inline Result extended_upgrade_create_result=0,extended_upgrade_write_result=0;
+inline std::string resource_path;
+inline std::size_t resource_max_read=0;
 inline unsigned sensor_starts=0, sensor_stops=0, sensor_reads=0, start_result=0;
 inline unsigned pad_attributes=1, native_aim=1;
 inline std::uint64_t pad_buttons=0;
@@ -35,6 +48,7 @@ inline Main module;
 inline std::vector<MemoryInfo> memory_maps;
 }
 inline Result svcQueryMemory(MemoryInfo* out,std::uint32_t* page,std::uintptr_t address){
+    ++game_test::memory_queries;
     for(const auto& region:game_test::memory_maps)if(address>=region.addr && address-region.addr<region.size){
         *out=region;*page=0;return 0;
     }

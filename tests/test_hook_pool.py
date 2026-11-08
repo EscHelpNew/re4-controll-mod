@@ -27,7 +27,7 @@ class HookPoolTests(unittest.TestCase):
             target = self.stage / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / 'third_party/exlaunch' / name, target)
-        for name in ('module.cpp', 'modern_move.inc'):
+        for name in ('module.cpp', 'modern_move.inc', 'character_appearance.inc', 'character_pack_budget.inc', 'extended_upgrade.inc'):
             target = self.root / 'source/game' / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / 'source/game' / name, target)
@@ -35,21 +35,25 @@ class HookPoolTests(unittest.TestCase):
     def test_capacity_and_native_compile_guard(self):
         before = {p: (ROOT / 'third_party/exlaunch' / p).read_bytes() for p in (SETTING, HOOK)}
         report = stage_hook_pool(self.stage, self.root)
-        self.assertEqual(report, dict(required_hooks=32, capacity=40, slot_bytes=200, jit_bytes=8192))
-        self.assertIn('constexpr size_t JitSize = 0x2000;', (self.stage / SETTING).read_text())
+        self.assertEqual(report, dict(required_hooks=64, capacity=81, slot_bytes=200, jit_bytes=16384))
+        self.assertIn('constexpr size_t JitSize = 0x4000;', (self.stage / SETTING).read_text())
         hook = (self.stage / HOOK).read_text()
         self.assertIn('if(i >= HookMax)', hook)
-        self.assertRegex(hook, r'static_assert\(HookMax\s*>=\s*32\b')
+        self.assertRegex(hook, r'static_assert\(HookMax\s*>=\s*64\b')
         for p, data in before.items():
             self.assertEqual((ROOT / 'third_party/exlaunch' / p).read_bytes(), data)
 
     def test_derived_hook_budget_tracks_new_install_and_ignores_comments(self):
         source = self.root / 'source/game/module.cpp'
+        original = source.read_text()
+        install = 'FullPad::InstallAtFuncPtr(get_full);'
+        self.assertEqual(original.count(install), 1)
+        source.write_text(original.replace(install, ''))
         with source.open('a') as stream:
             stream.write('\nExtra::InstallAtPtr(pointer); // Fake::InstallAtOffset(1);\n')
             stream.write('/* Fake::InstallAtFuncPtr(pointer); */\n')
-        self.assertEqual(stage_hook_pool(self.stage, self.root)['required_hooks'], 33)
-        self.assertRegex((self.stage / HOOK).read_text(), r'HookMax\s*>=\s*33\b')
+        self.assertEqual(stage_hook_pool(self.stage, self.root)['required_hooks'], 64)
+        self.assertRegex((self.stage / HOOK).read_text(), r'HookMax\s*>=\s*64\b')
 
     def test_unknown_revisions_or_over_budget_leave_both_files_unchanged(self):
         cases = [(SETTING, 'JitSize = 0x1000', 'JitSize = 0x3000'),
@@ -70,7 +74,7 @@ class HookPoolTests(unittest.TestCase):
         for p, data in originals.items():
             (self.stage / p).write_text(data)
         with (self.root / 'source/game/module.cpp').open('a') as stream:
-            stream.write('\nExtra::InstallAtOffset(1);' * 18)
+            stream.write('\nExtra::InstallAtOffset(1);' * 30)
         before = {p: (self.stage / p).read_bytes() for p in originals}
         with self.assertRaises(ValueError):
             stage_hook_pool(self.stage, self.root)
@@ -130,7 +134,7 @@ int main(){
   assert(rx==sentinel&&rw==sentinel); // Old22nd allocation abort condition.
  }
 }
-'''.replace('POOL_BYTES', '8192' if fixed else '4096').replace('FIXED', 'true' if fixed else 'false'))
+'''.replace('POOL_BYTES', '16384' if fixed else '4096').replace('FIXED', 'true' if fixed else 'false'))
         binary = source.with_suffix('.exe')
         compiled = subprocess.run([compiler, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
                                    str(source), '-o', str(binary)], capture_output=True, text=True, timeout=20)
@@ -142,7 +146,7 @@ int main(){
         original = (self.stage / HOOK).read_text()
         self.compile_allocator(original, 20, False)
         stage_hook_pool(self.stage, self.root)
-        self.compile_allocator((self.stage / HOOK).read_text(), 40, True)
+        self.compile_allocator((self.stage / HOOK).read_text(), 81, True)
 
 
 if __name__ == '__main__':

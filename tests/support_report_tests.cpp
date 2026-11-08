@@ -15,6 +15,7 @@ int main(){
  put(root/"switch/re4-controls/token.txt","PRIVATE_TEST_SENTINEL");
  put(root/"switch/re4-controls/telemetry/test.csv.part","#capture\nPartial frame\n");
  put(root/"switch/re4-controls/reload-bridge.log","installed_game=RE6\nprogram_main_build=TEST\n");
+ put(root/"switch/re4-controls/live-debug.log","stage=3 fd=63 result=-1 errno=22 bsd=00000000 ms=0\n");
  put(root/"atmosphere/contents/010099A00BC1E000/exefs/subsdk9","old-module");
  put(root/"atmosphere/contents/010099A00BC1E000/exefs/main.npdm","old-permissions");
  put(root/"switch/.overlays/re4-controls.ovl","old-overlay");
@@ -27,6 +28,7 @@ int main(){
  CHECK(text.find("001_01002a000cd48000.log")!=std::string::npos&&text.find("RE6 failure, \"\"quoted\"\"")!=std::string::npos);
  CHECK(text.find("test.csv.part")!=std::string::npos&&text.find("Partial frame")!=std::string::npos);
  CHECK(text.find("program_main_build=TEST")!=std::string::npos&&text.find("PRIVATE_TEST_SENTINEL")==std::string::npos);
+ CHECK(text.find("stage=3 fd=63 result=-1 errno=22 bsd=00000000 ms=0")!=std::string::npos);
  CHECK(text.size()<re4::kSupportReportLimit);
  CHECK(text.find("install_file")!=std::string::npos);
  CHECK(text.find("/atmosphere/contents/010099A00BC1E000/exefs/subsdk9")!=std::string::npos);

@@ -373,14 +373,17 @@ int main() {
     builtin_saves_preserve_existing_custom(); native_default_and_legacy_migration();
     re6_recipe_and_custom_restore();
     quality_graphics_and_custom_restore();
-    const auto game_file=path("game-options.bin");Settings game=custom();game.enemy_health_bars=true;game.enemy_health_numbers=true;
+    const auto game_file=path("game-options.bin");Settings game=custom();game.enemy_health_bars=true;game.enemy_health_numbers=true;game.grenade_landing_spot=true;game.skip_pickup_confirmation=true;game.skip_startup_logos=true;game.disable_aim_sway=true;game.dpad_weapon_switching=true;
+    game.character_appearance=CharacterAppearance::Merchant;
     CHECK(save_profiled_settings(game_file.c_str(),game));
     for(auto domain:{ProfileDomain::Controls,ProfileDomain::Graphics}){
         for(auto kind:{ProfileKind::Default,domain==ProfileDomain::Controls?ProfileKind::RE6:ProfileKind::Quality,ProfileKind::Custom}){
             const auto result=switch_profile(game_file.c_str(),game,domain,kind);
             CHECK(result==ProfileResult::Applied||result==ProfileResult::Unchanged);
-            CHECK(game.enemy_health_bars&&game.enemy_health_numbers);Settings saved;
-            CHECK(load_settings_file(game_file.c_str(),saved)&&saved.enemy_health_bars&&saved.enemy_health_numbers);
+            CHECK(game.enemy_health_bars&&game.enemy_health_numbers&&game.grenade_landing_spot&&game.skip_pickup_confirmation&&game.skip_startup_logos&&game.disable_aim_sway&&game.dpad_weapon_switching);Settings saved;
+            CHECK(game.character_appearance==CharacterAppearance::Merchant);
+            CHECK(load_settings_file(game_file.c_str(),saved)&&saved.enemy_health_bars&&saved.enemy_health_numbers&&saved.grenade_landing_spot&&saved.skip_pickup_confirmation&&saved.skip_startup_logos&&saved.disable_aim_sway&&saved.dpad_weapon_switching);
+            CHECK(saved.character_appearance==CharacterAppearance::Merchant);
         }
     }
     fs::remove_all(root);

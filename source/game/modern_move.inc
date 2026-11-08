@@ -187,6 +187,7 @@ HOOK_DEFINE_TRAMPOLINE(AutomaticFire) {
 HOOK_DEFINE_TRAMPOLINE(ModernPlayerUpdate) {
     static void Callback(void* actor){
         if(!actor||actor!=reinterpret_cast<void*>(modern_move_slot(re4::profile::player_slot))){Orig(actor);return;}
+        dpad_weapons_before_update(actor);
         // Restoration runs before native code even when a mode was just turned
         // off, changed state, or received zero input.
         re4::ModernMoveIdentity owner;std::array<re4::ModernMoveBone,9> bones;
@@ -205,11 +206,16 @@ HOOK_DEFINE_TRAMPOLINE(ModernPlayerUpdate) {
         control.modern_move_distance=0;
         modern_body_applied=false;
         unified_player_update(actor,+[](void* value){Orig(value);});modern_update_actor=previous;
+        grenade_spot_update(actor);
+        dpad_weapons_update(actor);
+        weapon_popup_validate_scene(actor);
+        character_appearance_update(actor);
         if(!modern_body_applied){modern_body_yaw=0;modern_body_owner={};}
     }
 };
 HOOK_DEFINE_TRAMPOLINE(ModernRoot) {
     static std::uint32_t Callback(void* actor,void* flag){
+        character_menu_rotate(actor);
         if(actor&&actor==modern_update_actor&&!modern_root_done){
             modern_root_done=true;
             unified_reload_root(actor);

@@ -18,6 +18,7 @@ from tools.prepare_icon import prepare as prepare_app_icon, prepare_bitmap
 from tools.prepare_graphics import prepare as prepare_graphics
 from tools.payload import stage_payload
 from tools.hook_pool import stage_hook_pool
+from tools.shared_layout import stage_shared_layout
 
 OUT = ROOT / 'build'
 VERSION = re.search(r'kVersion="([^"]+)"',(ROOT/'include/re4/version.hpp').read_text()).group(1)
@@ -27,175 +28,12 @@ def run(args, **kwargs):
     subprocess.run([str(a) for a in args], check=True, cwd=ROOT, **kwargs)
 
 
-def tests():
-    prepare_graphics(ROOT)
-    def native(name):
-        # Windows CRT assertion dialogs must not leave an unattended test run
-        # hanging indefinitely. Successful native cases finish in milliseconds.
-        run([OUT / name], timeout=20)
-    run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'])
-    host = os.environ.get('CXX', 'C:/msys64/mingw64/bin/g++.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
-         'tests/input_tests.cpp', 'source/input.cpp', 'source/settings.cpp',
-         '-o', OUT / 'input_tests.exe'])
-    native('input_tests.exe')
-    for name,sources in [('button_map_tests',[]),('settings_v7_tests',['source/settings.cpp']),('camera_tests',[]),
-                         ('graphics_tests',[]),('graphics_settings_tests',['source/settings.cpp']),('view_tests',[]),('reticle_preview_tests',[]),
-                         ('view_settings_tests',['source/settings.cpp','source/profiles.cpp','source/settings_file.cpp'])]:
-        run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-             'tests/'+name+'.cpp',*sources,'-o',OUT/(name+'.exe')])
-        native(name+'.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
-         'tests/settings_file_tests.cpp', 'source/settings.cpp', 'source/settings_file.cpp',
-         '-o', OUT / 'settings_file_tests.exe'])
-    native('settings_file_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/profiles_tests.cpp','source/profiles.cpp','source/settings.cpp','source/settings_file.cpp',
-         '-o',OUT/'profiles_tests.exe'])
-    native('profiles_tests.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
-         'tests/install_tests.cpp', 'source/install.cpp', '-o', OUT / 'install_tests.exe'])
-    native('install_tests.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static',
-         '-Itests/stubs', '-Isource/overlay', 'tests/overlay_storage_tests.cpp',
-         'source/overlay/storage.cpp', '-o', OUT / 'overlay_storage_tests.exe'])
-    native('overlay_storage_tests.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
-         'tests/sensor_tests.cpp', '-o', OUT / 'sensor_tests.exe'])
-    native('sensor_tests.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static',
-         '-Itests/app_exit_stubs', '-Isource/diagnostic', 'tests/app_exit_tests.cpp',
-         '-o', OUT / 'app_exit_tests.exe'])
-    native('app_exit_tests.exe')
-    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
-         '-Itests/game_stubs', '-Iinclude', 'tests/game_module_tests.cpp',
-         'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'game_module_tests.exe'])
-    native('game_module_tests.exe')
-    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
-         '-Itests/game_stubs', '-Iinclude', 'tests/enemy_health_module_tests.cpp',
-         'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'enemy_health_module_tests.exe'])
-    native('enemy_health_module_tests.exe')
-    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
-         '-Itests/game_stubs', '-Iinclude', 'tests/aim_raise_tests.cpp',
-         'source/input.cpp', 'source/settings.cpp', '-o', OUT / 'aim_raise_tests.exe'])
-    native('aim_raise_tests.exe')
-    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static',
-         '-Itests/game_stubs','-Iinclude','tests/re6_module_tests.cpp',
-         'source/re6/settings.cpp','-o',OUT/'re6_module_tests.exe'])
-    native('re6_module_tests.exe')
-    for name in ('re6_settings_tests','re6_shared_tests'):
-        run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
-             'tests/'+name+'.cpp','source/re6/settings.cpp','source/re6/settings_file.cpp',
-             '-o',OUT/(name+'.exe')])
-        native(name+'.exe')
-    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Itests/overlay_stubs',
-         '-Iinclude','-Isource/re6_controls','tests/re6_game_link_tests.cpp','source/re6/settings.cpp',
-         '-o',OUT/'re6_game_link_tests.exe'])
-    native('re6_game_link_tests.exe')
-    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Itests/overlay_stubs',
-         '-Iinclude','-Ibuild/graphics','-Isource/re6_controls','tests/re6_overlay_ui_tests.cpp','source/re6/settings.cpp',
-         '-o',OUT/'re6_overlay_ui_tests.exe'])
-    native('re6_overlay_ui_tests.exe')
-    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Itests/stubs',
-         '-Isource/re6_controls','tests/re6_overlay_storage_tests.cpp','source/re6_controls/storage.cpp',
-         '-o',OUT/'re6_overlay_storage_tests.exe'])
-    native('re6_overlay_storage_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/re6_graphics_tests.cpp','-o',OUT/'re6_graphics_tests.exe'])
-    native('re6_graphics_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/graphics_preview_tests.cpp','-o',OUT/'graphics_preview_tests.exe'])
-    native('graphics_preview_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static',
-         '-Iinclude','-Isource/re6_overlay','tests/re6_recorder_tests.cpp',
-         '-o',OUT/'re6_recorder_tests.exe'])
-    native('re6_recorder_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/telemetry_transfer_tests.cpp','source/re6/log_server.cpp',
-         '-ladvapi32','-lws2_32','-o',OUT/'telemetry_transfer_tests.exe'])
-    native('telemetry_transfer_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-static','-Iinclude',
-         'tests/support_report_tests.cpp','source/diagnostic/support_report.cpp','-o',OUT/'support_report_tests.exe'])
-    native('support_report_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/re6_capture_status_tests.cpp','-o',OUT/'re6_capture_status_tests.exe'])
-    native('re6_capture_status_tests.exe')
-    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/modern_move_tests.cpp','source/input.cpp','-o',OUT/'modern_move_tests.exe'])
-    native('modern_move_tests.exe')
-    for name in ('unified_tests','scope_tests','gyro_frame_tests','gyro_preview_tests','reticle_draw_tests','enemy_health_tests','enemy_health_fade_tests','enemy_health_numbers_tests','re6_journal_tests'):
-        run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static','-Iinclude',
-             'tests/'+name+'.cpp','source/input.cpp','-o',OUT/(name+'.exe')])
-        native(name+'.exe')
-    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
-         '-Itests/overlay_stubs', '-Iinclude','-Ibuild/graphics', '-Isource/overlay',
-         'tests/overlay_ui_tests.cpp', 'source/settings.cpp', 'source/control_menu.cpp','source/profiles.cpp', '-o', OUT / 'overlay_ui_tests.exe'])
-    native('overlay_ui_tests.exe')
-    run([host,'-std=c++20','-Wall','-Wextra','-Werror','-static',
-         '-Itests/overlay_stubs','-Iinclude','-Ibuild/graphics','-Isource/overlay','tests/profile_ui_tests.cpp',
-         'source/settings.cpp','source/control_menu.cpp','source/profiles.cpp','source/diagnostic/installer_model.cpp',
-         'source/re6/settings.cpp',
-         '-o',OUT/'profile_ui_tests.exe'])
-    native('profile_ui_tests.exe')
-    run([host, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-static',
-         '-Itests/overlay_stubs', '-Iinclude', '-Isource/overlay',
-         'tests/game_link_tests.cpp', 'source/settings.cpp', '-o', OUT / 'game_link_tests.exe'])
-    native('game_link_tests.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
-         'tests/response_curve_tests.cpp', 'source/input.cpp', 'source/settings.cpp',
-         '-o', OUT / 'response_curve_tests.exe'])
-    native('response_curve_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/gyro_filter_tests.cpp','source/input.cpp','source/settings.cpp','-o',OUT/'gyro_filter_tests.exe'])
-    native('gyro_filter_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/aim_input_tests.cpp','source/input.cpp','source/settings.cpp','-o',OUT/'aim_input_tests.exe'])
-    native('aim_input_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/home_launcher_tests.cpp','source/diagnostic/home_policy.cpp','-o',OUT/'home_launcher_tests.exe'])
-    native('home_launcher_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-static',
-         '-Itests/home_stubs','-Iinclude','tests/actual_home_tests.cpp','source/diagnostic/home_policy.cpp',
-         '-ladvapi32','-o',OUT/'actual_home_tests.exe'])
-    native('actual_home_tests.exe')
-    run([host.replace('g++','gcc'),'-std=c11','-Itests/update_stubs','-I'+str(KIT/'receiver'),
-         '-c',KIT/'receiver/reload_core.c','-o',OUT/'reload_core_host.o'])
-    for name,sources in [('update_tests',['source/update.cpp']),
-                         ('update_worker_tests',['source/update.cpp','source/diagnostic/update_worker.cpp'])]:
-        run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static',
-             '-Itests/update_stubs','-Iinclude','-I'+str(KIT/'receiver'),
-             'tests/'+name+'.cpp',*sources,OUT/'reload_core_host.o','-ladvapi32','-o',OUT/(name+'.exe')])
-        native(name+'.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
-         'tests/control_menu_tests.cpp', 'source/control_menu.cpp', 'source/settings.cpp','source/profiles.cpp','source/settings_file.cpp',
-         '-o', OUT / 'control_menu_tests.exe'])
-    native('control_menu_tests.exe')
-    run([host, '-std=c++17', '-Wall', '-Wextra', '-Werror', '-static', '-Iinclude',
-         'tests/installer_model_tests.cpp', 'source/diagnostic/installer_model.cpp',
-         'source/control_menu.cpp', 'source/settings.cpp','source/profiles.cpp','source/settings_file.cpp',
-         'source/re6/settings.cpp','source/re6/settings_file.cpp', '-o', OUT / 'installer_model_tests.exe'])
-    native('installer_model_tests.exe')
-    run([host,'-std=c++17','-Wall','-Wextra','-Werror','-static','-Iinclude',
-         'tests/calibration_tests.cpp','-o',OUT/'calibration_tests.exe'])
-    native('calibration_tests.exe')
-    prepare_bitmap(ROOT / 'assets/icon-original.png',OUT / 'app-logo.bmp')
-    prepare_bitmap(ROOT / 'assets/icon-re6.png',OUT / 'app-logo-re6.bmp')
-    run([host,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static-libgcc','-static-libstdc++',
-         '-Iinclude','-Ibuild/graphics','-IC:/msys64/mingw64/include/SDL2','-isystem','third_party/libtesla/include',
-         'tests/installer_preview.cpp','source/diagnostic/installer_renderer.cpp',
-         'source/diagnostic/installer_model.cpp','source/control_menu.cpp','source/settings.cpp','source/input.cpp','source/profiles.cpp','source/settings_file.cpp',
-         'source/re6/settings.cpp','source/re6/settings_file.cpp',
-         '-LC:/msys64/mingw64/lib','-lSDL2','-o',OUT/'installer_preview.exe'])
-    preview_env=os.environ.copy()
-    preview_env['PATH']='C:/msys64/mingw64/bin'+os.pathsep+preview_env.get('PATH','')
-    preview_env['SDL_VIDEODRIVER']='dummy'
-    run([OUT/'installer_preview.exe'],env=preview_env,timeout=20)
-    from PIL import Image
-    for bitmap in OUT.glob('installer-*.bmp'):
-        with Image.open(bitmap) as frame:
-            if frame.size!=(1280,720) or len(frame.getcolors(1280*720))<30:
-                raise RuntimeError('Installer rendered a blank or malformed frame')
-            frame.save(bitmap.with_suffix('.png'))
+def tests(jobs=4, coverage=False):
+    from tools.test_runner import run_tests
+    result = run_tests(ROOT, jobs=jobs, coverage=coverage)
+    if result:
+        raise SystemExit(result)
+    return result
 
 
 def diagnostic():
@@ -219,8 +57,8 @@ def diagnostic():
         dest = OUT / (name + '.o')
         run([tool('gcc'), '-std=gnu11', *common, '-c', receiver / (name + '.c'), '-o', dest])
         objects.append(dest)
-    for source in ('source/input.cpp', 'source/settings.cpp', 'source/control_menu.cpp', 'source/settings_file.cpp','source/profiles.cpp', 'source/install.cpp','source/update.cpp',
-                   'source/overlay/game_link.cpp',
+    for source in ('source/input.cpp', 'source/settings.cpp', 'source/control_menu.cpp', 'source/settings_file.cpp','source/profiles.cpp','source/launch_mode.cpp', 'source/install.cpp','source/update.cpp',
+                   'source/overlay/game_link.cpp','source/overlay/live_diagnostics.cpp',
                    'source/overlay/storage.cpp',
                    'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
                    'source/diagnostic/home_policy.cpp','source/diagnostic/home_launcher.cpp',
@@ -243,7 +81,8 @@ def diagnostic():
     base = OUT / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
     payload_files={'app-logo.bmp':OUT/'app-logo.bmp','app-logo-re6.bmp':OUT/'app-logo-re6.bmp',
         'home-launcher.bin':ROOT/'assets/home-launcher.bin','subsdk9':base/'subsdk9','main.npdm':base/'main.npdm',
-        're4-controls.ovl':OUT/'experimental/switch/.overlays/re4-controls.ovl'}
+        're4-controls.ovl':OUT/'experimental/switch/.overlays/re4-controls.ovl',
+        'liberation-serif-OFL.txt':ROOT/'assets/fonts/liberation-serif/LICENSE'}
     re6_base=OUT/'experimental/atmosphere/contents/01002A000CD48000/exefs'
     payload_files.update({'re6-subsdk9':re6_base/'subsdk9','re6-main.npdm':re6_base/'main.npdm',
         're6-telemetry.ovl':OUT/'experimental/switch/.overlays/re6-telemetry.ovl',
@@ -269,11 +108,12 @@ def module():
     for name in ('Makefile', 'config.mk'):
         shutil.copy2(vendor / name, stage / name)
     budget=stage_hook_pool(stage,ROOT)
+    stage_shared_layout(stage)
     print('Trampoline budget:',budget)
     profile = ROOT / 'profiles/010099A00BC1E000/npdm.json'
     (stage / 'config.json').write_text(profile.read_text(encoding='utf-8'), encoding='utf-8')
     shutil.copy2(ROOT / 'source/game/module.cpp', stage / 'source/program/main.cpp')
-    for name in ('modern_move.inc','aim_raise.inc','scoped_aim.inc','enemy_health.inc'):
+    for name in ('modern_move.inc','character_appearance.inc','character_pack_budget.inc','aim_raise.inc','scoped_aim.inc','enemy_health.inc','grenade_spot.inc','pickup_confirmation.inc','startup_logos.inc','dpad_weapons.inc','weapon_popup.inc','weapon_popup_native_text.inc','inventory_damage.inc','inventory_damage_native_text.inc','extended_upgrade.inc','ammo_counter.inc','health_name.inc'):
         shutil.copy2(ROOT / 'source/game' / name, stage / 'source/program' / name)
     core = stage / 'source/re4-core'
     core.mkdir(exist_ok=True)
@@ -320,6 +160,12 @@ def module():
     package = OUT / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
     package.mkdir(parents=True, exist_ok=True)
     shutil.copy2(stage / 'deploy/subsdk9', package / 'subsdk9')
+    from tools.inspect_nso import load_nso
+    image = load_nso(package / 'subsdk9')
+    data = image.segments[2]
+    if data.size < 488 or image.memory[data.memory_offset:data.memory_offset+16] != b'RE4CTL_SHARED23\0':
+        raise RuntimeError('RE4 IPC block is outside the first writable data page')
+    print('RE4 IPC discovery: shared block at writable data offset0 PASS')
     result = subprocess.run([sdk_tool('npdmtool'), str(profile), str(package / 'main.npdm')],
                             capture_output=True, text=True, check=True)
     if 'Failed' in result.stdout + result.stderr:
@@ -339,8 +185,8 @@ def overlay():
     elf = OUT / 're4-controls-overlay.elf'
     env = os.environ.copy(); env['DEVKITPRO'] = SDK.as_posix()
     run([tool('g++'), *flags, 'source/overlay/main.cpp', 'source/overlay/game_link.cpp',
-         'source/overlay/storage.cpp',
-         'source/settings.cpp', 'source/settings_file.cpp', 'source/control_menu.cpp','source/profiles.cpp',
+         'source/overlay/storage.cpp','source/overlay/live_debug.cpp','source/overlay/live_debug_server.cpp','source/overlay/live_diagnostics.cpp',
+         'source/settings.cpp', 'source/settings_file.cpp', 'source/control_menu.cpp','source/profiles.cpp','source/launch_mode.cpp',
          '-specs=' + str(SDK / 'libnx/switch.specs'), '-L' + str(SDK / 'libnx/lib'),
          '-lnx', '-lm', '-o', elf], env=env)
     output = OUT / 'experimental/switch/.overlays/re4-controls.ovl'
@@ -393,13 +239,18 @@ def re6_graphics_overlay():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--test', action='store_true')
+    parser.add_argument('--jobs', type=int, choices=(2, 3, 4), default=4,
+                        help='parallel host-test workers (2 to 4; default: 4)')
+    parser.add_argument('--coverage', action='store_true')
     parser.add_argument('--nro', action='store_true')
     parser.add_argument('--module', action='store_true')
     parser.add_argument('--overlay', action='store_true')
     args = parser.parse_args()
+    if args.coverage and not args.test:
+        parser.error('--coverage requires --test')
     OUT.mkdir(exist_ok=True)
     if args.test:
-        tests()
+        tests(jobs=args.jobs, coverage=args.coverage)
     if args.module:
         module()
         from tools.re6_module import build as build_re6

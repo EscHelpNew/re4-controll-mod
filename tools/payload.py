@@ -1,7 +1,7 @@
 """Rebuild the generated RomFS from a fixed allowlist."""
 from pathlib import Path
 import shutil
-FILES={'app-logo.bmp','app-logo-re6.bmp','home-launcher.bin','subsdk9','main.npdm','re4-controls.ovl'}
+FILES={'app-logo.bmp','app-logo-re6.bmp','home-launcher.bin','subsdk9','main.npdm','re4-controls.ovl','liberation-serif-OFL.txt'}
 RE6_FILES={'re6-subsdk9','re6-main.npdm','re6-telemetry.ovl','re6-controls.ovl'}
 def stage_payload(root,files):
     root=Path(root).resolve();base=root/'build';stage=base/'diagnostic-romfs'

@@ -1,5 +1,158 @@
 # Changelog
 
+## 0.27.2 (2026-11-08)
+
+- Show the spare-ammo count and cosmetic character name only when the actual native health arc is drawn in the same frame; follow its fade, hierarchy visibility and screen bounds.
+- Correct cosmetic laser, ordinary shot, retained muzzle-particle and shell origins using current donor grip displacement and exact live weapon ownership. Preserve native bones, weapon size, spread and direction; detached particles receive one correction.
+- Add one complete test command with 2–4 workers, isolated per-case outputs and per-translation-unit coverage profiles. Report executable lines separately from branches and enforce a 90% line threshold independently for own C++ and Python.
+- Reject incomplete, stale or excluded production coverage, failed tests and compiler/profile errors. Record input content identities so source changes during a run cannot produce an accepted report.
+- Module, overlay and NRO builds pass. The complete four-worker command passes all 104 cases (103 native programs and 175 Python tests), with 91.09% C++ and 96.18% Python executable-line coverage. Console application delivery and restart are verified; the user approved this build for release.
+
+## 0.27.1 (local, unpublished; 2026-11-08)
+
+- Pin the shared IPC block to the first writable data page and reject builds that lose this layout, restoring bounded overlay discovery as initialized character data grows.
+- Qualify held weapons by their actual common model methods and resource archives, including the player archive for grenades and the separate case-preview weapon archive.
+- Shift the complete camera rig by the donor/Leon neutral head-height difference before native collision; lift short case previews consistently across the body and held objects.
+- Position cosmetic health names using the native HUD projection and correction; display Luis/Ramon without surnames. Keep the original sprite when correction sampling is unavailable.
+- Preserve ordinary weapon size and opt-in diagnostics. New console acceptance remains pending.
+
+## 0.27.0 (local, unpublished; 2026-11-08)
+
+- Use donor bone lengths for cosmetic bodies and translate owned held-weapon geometry to the new grip positions, keeping weapons at their ordinary size. Gameplay collision and effects retain native positions; short characters may lose offhand contact with long two-handed weapons.
+- Reverse Krauser's knife around its posed grip without changing blade size.
+- Hide the spare-ammo counter with the native health gauge and show the applied character's name on that panel using native glyphs. Use canonical Latin names when a complete localized glyph mapping cannot be verified.
+- Draw the optional extra attack-upgrade square beside the native row, gray before purchase and red afterward, preserving the native fade and existing upgrade ownership.
+- Add an explicit launch-mode choice: Normal by default, or opt-in Diagnostics. Normal mode does not start the RE4 diagnostic server or write its automatic logs.
+- Preserve the accepted camera, controls, weapon captions and case rotation. Console acceptance of these new changes is pending.
+
+## 0.26.8 (local, unpublished; 2026-11-08)
+
+- Recognize the fully prepared native blade BIN after the game's offset relocation, restoring the ordinary and Krauser attachment paths without accepting raw or partially prepared data.
+- Rotate the attache-case character preview horizontally with the right stick, retaining the chosen angle on release.
+- Preserve the user-confirmed appearance switching and native weapon caption behavior from 0.26.7.
+
+## 0.26.7 (local, unpublished; 2026-11-08)
+
+- Keep valid donor bodies active when optional blade data is unavailable; hidden blades no longer require copied geometry.
+- Use the attache case's native font, localized name records and palette for weapon popups; make the fog's light contribution visible through additive blending.
+- Extend bounded read-only blade metadata and sample observations without changing shared ABI or settings.
+
+## 0.26.6 (local, unpublished; 2026-11-08)
+
+- Preserve the native attached blade on replacement bodies with frame-owned geometry; use Krauser's owned blade for his appearance.
+- Compensate weapon-name/mist vertices for native viewport adjustment without changing the global HUD, camera or approved layout/timing.
+
+## 0.26.5 (local, unpublished; 2026-11-08)
+
+- Add bounded read-only knife-source/visibility and cached HUD-transform observations to the diagnostic snapshot. No gameplay or rendering correction; cached matrices are explicitly unordered with the popup.
+
+## 0.26.4 (local, unpublished; 2026-11-08)
+
+- Spare ammunition: remove bullet icon and center actual count in the original three-digit field, without leading zeros.
+
+- Fix donor texture reservations by collecting and validating original DDS IDs before the native creator rewrites shared TPL references. Preserve resource, capacity, ownership and render fences.
+- Preserve the exact native disabled-scissor sentinel in module/overlay diagnostics and mark it explicitly in JSON. This changes observation only; weapon-popup visibility remains under investigation.
+
+## 0.26.3 (local, unpublished; 2026-11-07)
+
+- Fix the overlay diagnostic port resetting every connection. A single accept failure (for example a client that disconnects right after the handshake) or a listener select failure after sleep/dock/network loss used to stop the server thread permanently while the bound socket stayed open, so the console completed TCP handshakes and reset them until the overlay was reloaded. Accept failures now only drop that client; a failed listener is rebuilt with a one-second retry.
+- Root cause of the reset-before-reply: the overlay initialized BSD with `sb_efficiency=1`, i.e. transfer memory for one socket's TCP buffers. The listener consumed it, so the stack could not allocate the accepted socket and reset every client before `accept` returned (no log, no data). Reserve four sockets' buffers (about 160 KiB).
+- The diagnostic worker borrows the overlay's existing `dmnt:cht` session instead of opening a second one that could block in sm at the service's session limit.
+- Record listener failures in `live-debug.log` as stage 9 (listener select, rebuilt) and stage 10 (accept).
+
+## 0.26.2 (local diagnostic candidate, unpublished; 2026-11-07)
+
+- Capture the first terminal overlay transport failure with its stage, descriptor, return value, errno, native BSD result and elapsed time. Send bounded numeric failure metadata when possible; save a capped local log for automatic support reports.
+- Keep one read-only game-module snapshot in the local failure log so authenticated application reports can recover observations when the overlay TCP transport fails.
+- Parse and preserve strictly bounded transport fields on the desktop without echoing arbitrary remote text or credentials. The console's pre-authentication disconnect is still under investigation.
+- Retain the shared project's optional additional weapon upgrade and case ammunition counter. Both default off; paired module/overlay use settings wire19. Their console acceptance is pending.
+- Protect additional-upgrade ownership from failed/corrupt sidecar reads, resolve pending loaded ownership before saving, and retry failed writes without treating the unpersisted cache as durable.
+
+## 0.26.1 (local, unpublished; 2026-11-07)
+
+- Correct the0.26.0 startup rejection that disabled every game feature. Two native knife pointers use loader-relative relocations; validate their exact relocated targets with bounds/overflow checks, retaining strict instruction/build guards.
+- Reproduce the failure using a runtime-relocated fixture and cover corrupted/unrelocated pointers, truncated memory and real entrypoint hook rejection.
+
+## 0.26.0 (local, unpublished; 2026-11-07)
+
+- Add an authenticated read-only diagnostic server on TCP28773 in the RE4 overlay. A separate worker keeps serving when the overlay UI is hidden; unload stops it before BSD/SD teardown. Reuse the existing local connection key and expose only bounded schema1 snapshots, with no arbitrary memory/file/write commands.
+- Add the host snapshot/watch client, actual module/overlay version reporting, appearance/loading/control/render observations and independent snapshot validity. SharedABI23 appends ordered popup GPU-cache capture plus module version while retaining settings wire18 and previous field offsets.
+- Record viewport/scissor after the popup text's native End command without changing renderer state. Preserve zero/negative finite observations separately from rendering usability. Gameplay popup visibility remains unresolved pending console captures.
+- Include complete owned donor hands, corrected flash-grenade inventory hand handling, standalone Krauser blade and native-font Attack captions from the pre-network0.25.1 candidate. Keep the user-accepted grenade camera unchanged.
+
+
+## 0.25.1 (local, unpublished; 2026-11-07)
+
+- Complete authenticated donor bodies with their own native hand pieces and explicit geometry roles. Ramon already has complete hands. Both gameplay and inventory draw owned body chains, removing Leon glove borrowing, the incomplete flash-grenade hand classifier and the hand-suffix admission that reports122.
+- Replace Krauser's blade at the exact standalone native knife draw owner, preserving native visibility, effects and weapon actors. Keep the blade out of body/menu chains and retain acknowledged deformation slots.
+- Render the inventory Attack prefix with the same live native glyph font, color, baseline and21px size as the numbers. Derive supported Russian glyph indices through cross-letter constraints in four localized item names; retain the licensed prefix fallback for unknown translations.
+- Add optional native viewport/scissor readings under the focused D-pad setting. Published events/render counters and visible inventory prefix rule out missing publication and a generic triangle failure; gameplay weapon popup presentation remains under investigation.
+- Preserve the grenade camera accepted by the user in0.25.0. Settings/sharedABI and hook count are unchanged. Hardware model/hand/knife and localized-caption validation remains required.
+
+
+## 0.25.0 (local, unpublished; 2026-11-07)
+
+- Separate gameplay and attache appearance bindings, keep cosmetic ownership through scope/scripted camera states, and invalidate the menu binding before native destruction. Share authenticated resources with disjoint acknowledged deformation storage.
+- Correct donor shoulder/head placement in an owned render palette while preserving native wrists, root and legs; cap additional arm spacing changes at12%. Preserve native knives and use Krauser's authenticated own blade with native visibility.
+- Report appearance read progress and the precise failing texture-loading stage without changing allocation margins or retry policy. Intermittent console error10 still needs a live stage report.
+- Bring the stable grenade lens target slightly closer,70 to68degrees. Enlarge native inventory numbers14 to21px and show `Атака: XX` / `Attack: XX` with a licensed serif prefix, matched to measured numeral ink.
+- Instrument D-pad event publication and HUD rendering in ABI22's reserved diagnostic word. Expose the four diagnostic bytes under the focused D-pad option. Missing console weapon-name/mist visibility remains unresolved pending those observations; retain500/2000/500ms animation.
+
+
+## 0.24.2 (local, unpublished; 2026-11-07)
+
+- Resolve appearance wait109 for the normal six-record native Leon bone-effect table. Preserve the real actor/effect call and reject unknown or malformed owners; retain all other resource, rig and render-lifetime checks.
+- Replace grenade prediction-following camera rotation with a smooth native-lens widening toward70degrees during RE6 grenade aim. Apply FOV before the native wall solver, retain stable look input, and let the real projected spot clip at viewport edges instead of disappearing when one edge crosses them.
+- Draw weapon names and mist after the native HUD list. Add a real-item end-to-end D-pad transaction/popup test and keep500/2000/500ms timing. Console visibility still needs rechecking.
+- Show compact numeric firepower using the selected weapon name's live native font, color and baked outline at60% size. Remove the large custom `Урон:` text; preserve exact instance/upgrade calculation.
+- Include0.24.1 TMP recovery and all0.24 features. Wire18/sharedABI22 are unchanged; paired module/overlay installation and console validation are required.
+
+## 0.24.1 (local, unpublished; 2026-11-07)
+
+- Recover both unified right-stick and gyro readiness during ordinary TMP firing after a lost aim session. Native steady aim can be transient inside one update; the verified held-fire loop proves raising completed. Keep native safety exclusions and discard stale gyro samples on re-entry.
+- In RE6 third-person grenade aim, minimally turn the camera to keep the real predicted explosion-floor disc in view. Preserve native wall-safe eye, throw direction, aim state, physics and visibility checks. Strengthen the red center and retain soft outer edges; update both menu previews.
+- Replace generic appearance Pending with localized stage diagnostics and bounded model/bone observations. The reported console appearance blocker is still under investigation; this change locates it without relaxing rig, loader or render-lifetime gates.
+- Include all0.24.0 weapon labels, inventory firepower and pickup polish. Settings wire18/sharedABI22 are unchanged.
+
+## 0.24.0 (local, unpublished; 2026-11-07)
+
+- Show weapon/grenade names after successful D-pad equips, tied to the existing D-pad option. Gray bold italic serif text without an outline sits beside the health HUD over a light feathered mist. Text and mist fade in for500ms, stay for2s and fade out for500ms; a new equip immediately replaces the old animation.
+- Show the exact hovered firearm's current upgraded firepower below its native name in the attache case, rounded to one decimal place. This readout is independent of the D-pad setting.
+- Suppress the native whole-frame pickup fade when skipping confirmation, and restore the short native firearm pickup sound once after successful acquisition. Preserve native grants and inventory-full handling.
+- Retain0.23 appearance support and camera continuity. Settings wire18/sharedABI22 are unchanged. Physical-console layout, audio and gameplay acceptance remain pending.
+
+## 0.23.0 (local, unpublished; 2026-11-07)
+
+- Add Game → Character appearance in the app and overlay: Leon default, Ashley, Ada, Luis Sera, normal Krauser, Merchant, human Ramon Salazar and an intact village Ganado. Preserve Leon's actual player type, weapons, inventory and native skeleton/chain. Track requested and applied appearance separately; only an owned draw activates telemetry.
+- Read and authenticate the installed donor resources, retarget onto Leon's major joints, and retain native weapon hands. Use owned deformation slots, ordered CPU consumption acknowledgements and post-frame GPU retirement; keep native async loading, descriptor admission and allocation ownership separate.
+- Preserve at least128MiB contiguous native heap headroom after a new pack reservation. Unpinned packs follow future native unloads; the seven-pack passive cache is bounded (about196MiB CPU worst case). Unsupported states retain native rendering and report failure.
+- Include the0.22.1 D-pad camera continuity fix. Settings wire18/sharedABI22 migrate earlier appearance to Leon and require a paired module/overlay update. Console appearance/gameplay validation remains pending.
+
+## 0.22.1 (local, unpublished; 2026-11-07)
+
+- Preserve camera pitch ownership and free-orbit continuity during D-pad weapon changes. Keep weapon, pose, gyro and stale reticle invalidation; native scope/FOV transitions retain their own behavior. Regression covers both pitch directions, guns/grenades and the next player update.
+- Separate hotfix build keeps wire17/shared ABI21 and the seven-row Game menu; unfinished appearance work is excluded.
+
+## 0.22.0 (local, unpublished; 2026-11-07)
+
+- Predict the grenade explosion position after native bounces and fuse timing instead of first floor contact. Include material/rest/water removal handling and native burst clearance; project airborne bursts onto real ground below. The red fog center is slightly redder, with the same soft transparent edges.
+- Add optional D-pad weapon switching: Left/Right cycles owned gun instances and launchers; Up/Down cycles distinct available grenade types. Use native equip/rebuild with inventory parameters, menu/QTE/busy guards and a bounded request queue. Default off, independent of profiles.
+- Make HP numbers slightly more opaque:128/255 instead of102/255; bar opacity stays102/255 and fade timings stay200/300ms. Menu examples use the same number rendering.
+- Settings wire17/shared ABI21 preserve deployed wire16 preferences and migrate D-pad switching off. Update the paired module and overlay after the application.
+
+## 0.21.1 (local, unpublished; 2026-11-07)
+
+- Make enemy HP numbers slightly more opaque: peak alpha128/255, while the bar stays102/255. Preserve the shared200ms appearance and300ms disappearance in gameplay and menu examples.
+
+## 0.21.0 (local, unpublished; 2026-11-07)
+
+- Add optional grenade first-floor landing spot: soft red fog with lower opacity, private bounded trajectory queries and displayed-camera projection. Current pose and the center of native throw randomness provide an approximate landing position; no RNG or projectile is created by the preview. Include a compact live example in both menus.
+- Add optional skip of fresh pickup confirmation/information popups. Native item grants, inventory-space checks and rearrangement remain responsible for completing the pickup.
+- Add optional button skipping for the native Capcom/CRIWARE startup logo sequence through its own continuation path.
+- Add optional removal of native aiming sway, preserving manual stick/gyro input and native pitch conversions.
+- Reduce enemy-health appearance to 200 ms while keeping disappearance at 300 ms. Bars and numbers share the same fade.
+- All four new Game options default off and remain independent of profiles. Settings wire16 migrates earlier formats with these options off; shared ABI20 requires paired application, overlay and module. Console gameplay acceptance pending.
+
 ## 0.20.0 (2026-11-07, includes local 0.18.x and 0.19.0)
 
 - Put Game immediately after Graphics. Enemy health bars and optional Health numbers default off; numbers can be changed only while bars are enabled.

@@ -15,7 +15,7 @@ No game files or console keys are needed for normal builds.
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 Copy-Item project.release.json project.json
-.venv\Scripts\python.exe build.py --test
+.venv\Scripts\python.exe build.py --test --jobs 4 --coverage
 .venv\Scripts\python.exe build.py --module --overlay --nro
 .venv\Scripts\python.exe tools\package.py
 .venv\Scripts\python.exe tools\release.py
@@ -23,6 +23,16 @@ Copy-Item project.release.json project.json
 
 `project.json` is local and ignored. The public release template contains only
 application identity and a loopback development address. It contains no credential.
+
+The test command accepts `--jobs 2`, `3` or `4` (default: `4`). Each case uses
+private temporary files, executables and coverage profiles. Omit `--coverage`
+for a faster test-only run. Logs and reports are retained in a unique
+`build/tests/run-*` directory; `build/tests/latest.json` identifies the last run.
+The coverage report is `coverage/index.html` inside that directory. The command
+fails if tests fail, a production source is unaccounted for, or executable-line
+coverage is below 90% for either C++ or Python. Branch coverage is reported
+separately. Target-only C++ code remains in the denominator through an ARM
+compiler baseline; instrumented objects are never packaged into the mod.
 
 The own HOME payload is already built in `assets/home-launcher.bin`. Packaging can
 reconstruct the own forwarder NSP from it without keys. Regeneration is optional:
