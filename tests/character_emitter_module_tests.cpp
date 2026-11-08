@@ -34,7 +34,7 @@ struct EmitterFixture:HeldFixture {
         character_store(effects[0],0x40,identity_matrix);
         emitter_script=reinterpret_cast<std::uintptr_t>(weapon_archive+0x480);character_store(effects[0],0x20,emitter_script);
         character_native.effect_script=+[](unsigned group,unsigned variant,unsigned silent)->void*{
-            assert((group==0x38||group==0x3B||group==0x3D||group==0x3E||group==0x3F||group==0x48||group==0x49||group==0x4C)&&silent==1&&variant<2);
+            assert((group==0x38||group==0x39||group==0x3B||group==0x3C||group==0x3D||group==0x3E||group==0x3F||group==0x48||group==0x49||group==0x4C||group==0x4E)&&silent==1&&variant<2);
             return reinterpret_cast<void*>(emitter_script);
         };
         character_banks[0].token.store(character_serial.fetch_add(1)+1);
@@ -49,6 +49,7 @@ struct EmitterFixture:HeldFixture {
 };
 bool emitter_near(re4::ViewVec3 a,re4::ViewVec3 b){return std::fabs(a.x-b.x)<.002&&std::fabs(a.y-b.y)<.002&&std::fabs(a.z-b.z)<.002;}
 }
+#ifndef RE4_EMITTER_FIXTURE_ONLY
 int main(){
     {
         EmitterFixture y;game_test::memory_queries=0;
@@ -175,5 +176,13 @@ int main(){
         CharacterEmitterCopy::Callback(reinterpret_cast<const re4::ViewMatrix3x4*>(y.effects[0]+0x40),&out);
         assert(out.m[1][3]==0&&character_emitter_copy_calls==1);
     }
+    for(unsigned group:{0x39u,0x3Cu,0x4Eu})for(unsigned variant=0;variant<(group==0x39?2u:1u);++variant){
+        EmitterFixture y;re4::ViewMatrix3x4 out{};
+        y.effects[0][3]=std::uint8_t(group);y.effects[0][0x10]=std::uint8_t(variant);
+        character_emitter_caller=main_base+0x1E81F0;
+        CharacterEmitterCopy::Callback(reinterpret_cast<const re4::ViewMatrix3x4*>(y.effects[0]+0x40),&out);
+        assert(out.m[1][3]==-300&&character_emitter_copy_calls==1);
+    }
     std::puts("actual current-pose laser/shot/muzzle/shell callbacks and native fallbacks PASS");
 }
+#endif

@@ -1,12 +1,13 @@
 #pragma once
-#include "re4/character_retarget.hpp"
+#include "re4/character_grip.hpp"
 
 namespace re4 {
 enum class CharacterEmitterMath : unsigned {Point,Product,Copy};
-enum class CharacterEmitterSource : unsigned {None,Laser,Held,BodyHand,Emitter};
+enum class CharacterEmitterSource : unsigned {None,Laser,Held,BodyHand,Emitter,HeldPart};
 struct CharacterEmitterSite {
     CharacterEmitterSource source=CharacterEmitterSource::None;
     unsigned operand=0;
+    unsigned part=0;
 };
 // LR is the original native BL return address, relative to the authenticated
 // main image. Only consumers of an exact native world matrix are listed.
@@ -15,11 +16,20 @@ inline CharacterEmitterSite character_emitter_site(CharacterEmitterMath math,std
     if(math==CharacterEmitterMath::Point){
         switch(lr){
             case 0x2E8FB0:return {S::Laser,0};
-            case 0x31DF10:
+            // Independent native BODY10 hit producers: ordinary handguns,
+            // both automatic-fire branches, shotgun pellets and alternate
+            // handgun fire. Scoped camera-origin rays have no entry here.
+            case 0x31DF10:case 0x328288:case 0x3283BC:case 0x336898:case 0x346F04:
+            case 0x351BB8: // Bow projectile origin, before native wall clipping.
+            case 0x2D6310:case 0x2DA670:case 0x2DAF40:
+            case 0x2E2A90:case 0x2E5594:case 0x2E7FD0:
             case 0x340190:case 0x340D00:case 0x3416F8:case 0x34212C:
             case 0x3483B0:case 0x34A4F8:case 0x34C110:case 0x34CBE0:
             case 0x34EEE0:case 0x350858:case 0x351234:case 0x352BB0:return {S::BodyHand,0};
             case 0x1D6A4C:case 0x1F4A48:case 0x1F68AC:case 0x1E0194:return {S::Held,0};
+            // These older shell families consume held root0/part1, not BODY10.
+            case 0x2DB2AC:case 0x2DBD94:return {S::HeldPart,0,0};
+            case 0x2E3238:return {S::HeldPart,0,1};
             default:return {};
         }
     }
@@ -73,12 +83,15 @@ inline bool inverse(const ViewMatrix3x4& a,ViewMatrix3x4& out){
     out=value;return true;
 }
 }
-struct CharacterEmitterPose {ViewVec3 delta[3]{};};
+struct CharacterEmitterPose {
+    ViewVec3 delta[4]{}; // BODY10, BODY16, BODY17, qualified Mine BODY9.
+    ViewMatrix3x4 source10{},donor10{};
+};
 // Mirror native4EC0D0: inverse(rootWorld)*currentBoneWorld*inverseBind.
 // The existing donor FK then supplies exactly the displacement used by the
 // ordinary-size held render path, evaluated from the consumed CURRENT worlds.
 inline bool character_emitter_pose(const CharacterRetargetMap& map,const ViewMatrix3x4* world,
-        const ViewMatrix3x4* inverse_bind,CharacterEmitterPose& out){
+        const ViewMatrix3x4* inverse_bind,CharacterEmitterPose& out,bool two_handed=false){
     if(!world||!inverse_bind
         ||character_retarget_detail::overlaps(&out,sizeof(out),world,26*sizeof(*world))
         ||character_retarget_detail::overlaps(&out,sizeof(out),inverse_bind,26*sizeof(*inverse_bind))
@@ -91,10 +104,12 @@ inline bool character_emitter_pose(const CharacterRetargetMap& map,const ViewMat
             ||!character_emitter_detail::product(normalized,inverse_bind[i],palette[i]))return false;
     }
     CharacterRetargetPose natural{};
-    if(!character_retarget_pose(map,palette,26,natural))return false;
+    if(!character_grip_pose(map,palette,26,two_handed,natural))return false;
     CharacterEmitterPose value{};auto linear=world[0];for(auto& row:linear.m)row[3]=0;
-    for(unsigned i=0;i<3;++i)
-        if(!view_transform_point(linear,natural.joint_shift[i==0?10:i==1?16:17],value.delta[i]))return false;
+    constexpr unsigned parent[4]{10,16,17,9};
+    for(unsigned i=0;i<4;++i)
+        if(!view_transform_point(linear,natural.joint_shift[parent[i]],value.delta[i]))return false;
+    value.source10=palette[10];value.donor10=natural.core[10];
     out=value;return true;
 }
 }

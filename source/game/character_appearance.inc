@@ -10,9 +10,12 @@ struct CharacterAttachedSource {
     std::uintptr_t part=0,bin=0,tpl=0,archive=0;
     unsigned flags=0;std::uint8_t alpha=0;
     re4::ViewMatrix3x4 matrix{};
-    bool operator==(const CharacterAttachedSource& other)const {
+    bool same_geometry(const CharacterAttachedSource& other)const {
         return part==other.part&&bin==other.bin&&tpl==other.tpl&&archive==other.archive
-            &&flags==other.flags&&alpha==other.alpha&&!std::memcmp(&matrix,&other.matrix,sizeof(matrix));
+            &&!std::memcmp(&matrix,&other.matrix,sizeof(matrix));
+    }
+    bool operator==(const CharacterAttachedSource& other)const {
+        return same_geometry(other)&&flags==other.flags&&alpha==other.alpha;
     }
 };
 struct CharacterNative {
@@ -46,7 +49,7 @@ struct CharacterEmitterCache {
     std::uintptr_t bones[26]{};
     re4::ViewMatrix3x4 world[26]{},inverse_bind[26]{};
     re4::CharacterEmitterPose pose{};
-    bool valid=false;
+    bool valid=false,two_handed=false;
 };
 
 // Keep large zeroed storage separate from nonzero bind-table defaults, so it is
@@ -108,7 +111,8 @@ struct CharacterBank : CharacterBinding {
     // Independent of the seven donor recipe slots (Ashley uses all seven).
     alignas(32) std::uint8_t attached_parts[3][0x1A8]{};
     re4::CharacterKnifeOrientation knife_orientation{};
-    bool knife_orientation_valid=false;
+    bool knife_orientation_valid=false,knife_tip_valid=false;
+    re4::CharacterBladeTip knife_tip{};
     CharacterAttachedSource attached_source[3]{};
     bool attached_valid[3]{};
     std::atomic<CharacterPhase> phase{CharacterPhase::Free};
@@ -227,7 +231,7 @@ void character_appearance_reset(){
         b.opened=false;b.pinned.store(false);b.phase.store(CharacterPhase::Free);b.ack.store(0);b.token.store(0);
         b.menu.parts=b.menu_parts;b.menu.deformed=nullptr;b.menu.identity={};b.menu.prepared=false;b.prepared=false;
         b.height.appearance.store(0,std::memory_order_release);b.height.token.store(0,std::memory_order_release);
-        b.knife_orientation_valid=false;b.emitter.valid=false;
+        b.knife_orientation_valid=b.knife_tip_valid=false;b.emitter.valid=false;
         for(auto& slot:b.held_skin)for(auto& h:slot)h={};
         for(auto& slot:b.menu.held_skin)for(auto& h:slot)h={};
         for(auto& v:b.visual){v.valid=v.knife_valid=false;for(auto& h:v.held)h.captured=false;}
@@ -357,12 +361,17 @@ void character_menu_invalidate(){
 }
 bool character_appearance_prepare(CharacterBank& b,const CharacterIdentity& identity){
     // Prepare from relative authenticated bytes before the first native attach.
-    b.knife_orientation_valid=false;
+    b.knife_orientation_valid=b.knife_tip_valid=false;
     if(b.appearance==re4::CharacterAppearance::Krauser)
         for(unsigned i=0;i<b.ready.piece_count;++i)if(b.ready.pieces[i].role==re4::CharacterAssetRole::Knife){
             const auto bin=b.ready.pieces[i].bin;
             b.knife_orientation_valid=re4::character_knife_prepare({bin.data,bin.size},
                 b.ready.body_bind.data(),b.ready.body_bone_count,b.knife_orientation);
+            re4::ViewVec3 bind[re4::character_bone_limit];re4::CharacterBytes positions;
+            if(b.knife_orientation_valid&&re4::character_bind_positions(b.ready.body_bind.data(),b.ready.body_bone_count,bind)
+                &&re4::character_asset_detail::array({bin.data,bin.size},0x48,b.ready.pieces[i].vertex_count,12,4,positions))
+                b.knife_tip_valid=re4::character_blade_tip_prepare(reinterpret_cast<const re4::ViewVec3*>(positions.data),
+                    b.ready.pieces[i].vertex_count,bind[10],b.knife_tip);
             break;
         }
     const auto* recipe=re4::character_asset_recipe(b.appearance);if(!recipe)return false;
@@ -1012,6 +1021,8 @@ bool character_attached_link(CharacterBank& bank,unsigned slot,void*& tail){
     if(!last||character_value<void*>(last,0x28))return false;
     character_store(last,0x28,static_cast<void*>(bank.attached_parts[slot]));tail=last;return true;
 }
+void character_held_capture(CharacterBank&,CharacterBinding&,unsigned);
+bool character_grip_enabled(const CharacterBank&,const CharacterBinding&);
 bool character_appearance_skin_binding(CharacterBank& bank,CharacterBinding& b,unsigned slot,std::uintptr_t state){
     if(!character_native.output||!character_native.positions||!character_native.normals
         ||!character_region(state+0x1CC,119*sizeof(re4::ViewMatrix3x4)))return false;
@@ -1020,7 +1031,8 @@ bool character_appearance_skin_binding(CharacterBank& bank,CharacterBinding& b,u
     re4::CharacterRetargetPose pose;
     auto& frame=b.visual[slot];frame.valid=frame.knife_valid=false;
     for(auto& h:frame.held)h.captured=false;
-    if(!re4::character_retarget_pose(b.map,source,119,pose))return false;
+    character_held_capture(bank,b,slot);
+    if(!re4::character_grip_pose(b.map,source,119,character_grip_enabled(bank,b),pose))return false;
     for(unsigned i=0;i<3;++i)frame.shift[i]=pose.joint_shift[i==0?10:i==1?16:17];
     if(bank.appearance==re4::CharacterAppearance::Krauser&&bank.knife_orientation_valid)
         frame.knife_valid=re4::character_knife_half_turn(bank.knife_orientation,pose.core[10],frame.knife_half_turn);
@@ -1036,7 +1048,6 @@ bool character_appearance_skin_binding(CharacterBank& bank,CharacterBinding& b,u
     }
     frame.valid=true;return true;
 }
-void character_held_capture(CharacterBank&,CharacterBinding&,unsigned);
 void character_held_skin(void*,void*,int);
 HOOK_DEFINE_TRAMPOLINE(CharacterSkin) {
     static int Callback(void* actor,void* chain){
@@ -1054,7 +1065,6 @@ HOOK_DEFINE_TRAMPOLINE(CharacterSkin) {
                 if(character_appearance_skin_binding(*b,*target,slot,state)){
                     // These persistent descriptors are prepared only while this
                     // entire binding slot has no pending native/GPU consumer.
-                    character_held_capture(*b,*target,slot);
                     // Attachment failure affects only the optional blade.
                     if(target==static_cast<CharacterBinding*>(b))character_attached_capture(*b,slot);
                     target->skinned[slot].store(view_frame.load(std::memory_order_relaxed),std::memory_order_release);
@@ -1245,6 +1255,62 @@ template<class Reader> bool character_held_archive_read(const CharacterBinding& 
 }
 bool character_held_archive(const CharacterBinding& binding,std::uintptr_t actor,bool menu,std::uintptr_t& out){CharacterMemoryReader reader;return character_held_archive_read(binding,actor,menu,out,reader);}
 
+// The two contact targets are meaningful only in native two-handed contact
+// states. Menu models use the independent equipped-item dispatcher, never cEm.
+template<class Reader> bool character_grip_enabled_read(const CharacterBank& bank,const CharacterBinding& binding,Reader& reader){
+    const bool menu=&binding==&bank.menu;
+    if(menu){
+        std::uint16_t equipped=0;unsigned mode=0,matches=0;
+        if(!reader.value(main_base+0x124D918+0x18,equipped))return false;
+        for(unsigned i=0;i<43;++i){
+            std::uint16_t raw=0;std::uint8_t candidate=0;
+            if(!reader.value(main_base+0xA07CC6+i*0x16,raw)
+                ||!reader.value(main_base+0xA07CC6+i*0x16+3,candidate))return false;
+            if(raw==equipped){mode=candidate;++matches;}
+        }
+        if(matches!=1||!(mode==7||mode==8||mode==9||mode==10||mode==11||mode==33))return false;
+    }else {
+        std::uintptr_t handler=0;std::uint8_t mode=0,routine=0,phase=0,subphase=0,script=0,script_camera=0,event=0,freeze=0;
+        if(!reader.value(main_base+0x1265A28,handler)
+            ||!(handler==main_base+0x3270F0||handler==main_base+0x332CC0||handler==main_base+0x3351A0)
+            ||!reader.value(binding.identity.actor+0x114,mode)||mode
+            ||!reader.value(binding.identity.actor+0x115,routine)||routine!=6
+            ||!reader.value(binding.identity.actor+0x116,phase)
+            ||!reader.value(binding.identity.actor+0x117,subphase)
+            ||!((phase==1&&subphase==1)||(phase==2&&subphase<=1))
+            ||!reader.value(binding.identity.state+0x5092,script)||(script&4)
+            ||!reader.value(binding.identity.state+0x509E,script_camera)||(script_camera&0x80)
+            ||!reader.value(binding.identity.state+0x1AB,event)||(event&0x40)
+            ||!reader.value(binding.identity.state+0x86FF,freeze)||freeze)return false;
+    }
+    // The native two-handed dispatchers consume primary holder+38 (case index1).
+    // An auxiliary knife must not authorize an unsupported primary firearm.
+    // That exact currently owned geometry snapshot must be supported.
+    // A pelvis-held or unknown attachment cannot consume palm contact fitting.
+    for(unsigned handle=0;handle<1;++handle){
+        std::uintptr_t actor=0,owner=0,root=0,parent=0,chain=0,archive=0;unsigned index=0;
+        if(menu){if(!reader.value(main_base+(handle?0x1272158:0x1272148),actor))continue;}
+        else if(!reader.value(binding.identity.actor+0x938,owner)||!owner||!reader.value(owner+0x38+handle*8,actor))continue;
+        if(!actor||!character_held_parent_read(binding,actor,menu,handle,root,parent,index,reader)||index>1
+            ||!reader.value(actor+0x180,chain)||!character_held_archive_read(binding,actor,menu,archive,reader))continue;
+        for(const auto& frame:binding.visual){const auto& held=frame.held[handle];
+            if(!held.captured||!held.count||held.count>character_held_piece_limit||held.actor!=actor
+                ||held.chain!=chain||held.root!=root||held.parent!=parent||held.archive!=archive)continue;
+            bool exact=true;
+            for(unsigned i=0;i<held.count;++i){
+                if(!reader.region(held.source_parts[i],0x1A8)){exact=false;break;}
+                const auto* native=reinterpret_cast<const std::uint8_t*>(held.source_parts[i]);
+                if(held.weighted[i]){
+                    if(std::memcmp(held.original[i],native,0xB0)||std::memcmp(held.original[i]+0xE0,native+0xE0,0xC8)){exact=false;break;}
+                }else if(std::memcmp(held.original[i],native,0x1A8)){exact=false;break;}
+            }
+            if(exact)return true;
+        }
+    }
+    return false;
+}
+bool character_grip_enabled(const CharacterBank& bank,const CharacterBinding& binding){CharacterEmitterReader reader;return character_grip_enabled_read(bank,binding,reader);}
+
 bool character_emitter_current(CharacterBank& bank,re4::CharacterEmitterPose& out,
         std::uintptr_t (&pointers)[26],CharacterEmitterReader& reader){
     const auto token=bank.token.load(std::memory_order_acquire);
@@ -1268,14 +1334,15 @@ bool character_emitter_current(CharacterBank& bank,re4::CharacterEmitterPose& ou
             node=next[i];
         }
     }
+    const bool two_handed=character_grip_enabled_read(bank,bank,reader);
     auto& cache=bank.emitter;
-    if(!cache.valid||cache.token!=token||!(cache.identity==bank.identity)
+    if(!cache.valid||cache.two_handed!=two_handed||cache.token!=token||!(cache.identity==bank.identity)
         ||std::memcmp(cache.bones,pointers,sizeof(cache.bones))
         ||std::memcmp(cache.world,world,sizeof(world))
         ||std::memcmp(cache.inverse_bind,inverse_bind,sizeof(inverse_bind))){
         re4::CharacterEmitterPose pose{};
-        if(!re4::character_emitter_pose(bank.map,world,inverse_bind,pose)){cache.valid=false;return false;}
-        cache.identity=bank.identity;cache.token=token;cache.pose=pose;
+        if(!re4::character_emitter_pose(bank.map,world,inverse_bind,pose,two_handed)){cache.valid=false;return false;}
+        cache.identity=bank.identity;cache.token=token;cache.pose=pose;cache.two_handed=two_handed;
         std::memcpy(cache.bones,pointers,sizeof(cache.bones));
         std::memcpy(cache.world,world,sizeof(world));
         std::memcpy(cache.inverse_bind,inverse_bind,sizeof(inverse_bind));cache.valid=true;
@@ -1329,8 +1396,8 @@ bool character_emitter_record(std::uintptr_t matrix,std::uintptr_t actor,Charact
         ||!memory.value(record+0x10,variant)||!memory.value(record+0x20,script)||!script)return false;
     unsigned variants=0;
     switch(group){
-        case 0x38:case 0x3B:case 0x3D:case 0x48:variants=2;break;
-        case 0x3E:case 0x3F:case 0x49:case 0x4C:variants=1;break;
+        case 0x38:case 0x39:case 0x3B:case 0x3D:case 0x48:variants=2;break;
+        case 0x3C:case 0x3E:case 0x3F:case 0x49:case 0x4C:case 0x4E:variants=1;break;
         default:return false;
     }
     return variant<variants&&reinterpret_cast<std::uintptr_t>(character_native.effect_script(group,variant,1))==script;
@@ -1366,6 +1433,9 @@ bool character_emitter_input(re4::CharacterEmitterSite site,const re4::ViewMatri
                 else if(site.source==S::BodyHand){
                     std::uintptr_t bone=0;match=character_model_bone_read(identity.actor,10,bone,reader)&&matrix==bone+0x18;
                     parent=0; // These native producers explicitly consume BODY10.
+                }else if(site.source==S::HeldPart){
+                    std::uintptr_t bone=0;
+                    match=character_model_bone_read(actor,site.part,bone,reader)&&matrix==bone+0x18;
                 }else {
                     const unsigned begin=site.source==S::Laser?0:2,end=site.source==S::Laser?2:5;
                     for(unsigned id=begin;id<end;++id){
@@ -1395,6 +1465,141 @@ bool character_emitter_input(re4::CharacterEmitterSite site,const re4::ViewMatri
     character_render_lock.clear(std::memory_order_release);return result;
 }
 
+// The native independent ordinary knife uses WEP16 BIN2, not body BIN9.
+// Its one influence is weapon bone1; mirror that current weighted palette and
+// owned held root/part route rather than applying the body-mesh tip to it.
+bool character_knife_independent_tip(CharacterBank& bank,const re4::CharacterEmitterPose& pose,CharacterEmitterReader& reader,re4::ViewVec3& out,bool require_visible=false){
+    std::uintptr_t holder=0,actor=0,vptr=0,root=0,parent=0,chain=0,archive=0,bin=0,tpl=0,next=0;
+    unsigned index=0,bo=0,to=0;std::uint8_t type=0,bones=0;
+    if(!reader.value(bank.identity.actor+0x938,holder)||!holder||!reader.value(holder+0x38,actor)||!actor
+        ||!reader.value(actor,vptr)||vptr!=main_base+0xB0AAF8||!reader.value(actor+0x118,type)||type!=0x24
+        ||!reader.value(actor+0x11A,bones)||bones!=2
+        ||!character_emitter_owner(bank,actor,0,index,reader)||index!=0
+        ||!character_held_parent_read(bank,actor,false,0,root,parent,index,reader)
+        ||!reader.value(actor+0x180,chain)||!chain||!reader.value(chain+0x28,next)||next
+        ||!character_held_archive_read(bank,actor,false,archive,reader)
+        ||!reader.value(archive+0x18,bo)||!reader.value(archive+0x14,to)
+        ||archive>~std::uintptr_t(0)-std::max(bo,to)
+        ||!reader.value(chain+0x18,bin)||bin!=archive+bo||!reader.value(chain+0x20,tpl)||tpl!=archive+to)return false;
+    if(require_visible){
+        unsigned flags=0;std::uint8_t alpha=0;
+        if(!reader.value(chain+8,flags)||(flags&~9u)||(flags&9)!=9
+            ||!reader.value(chain+0xA7,alpha)||!alpha)return false;
+    }
+    std::uintptr_t positions=0,table=0,weights=0,indices=0,bone=0;std::uint8_t records=0,count=0;std::uint16_t vertices=0,extended=0;
+    re4::CharacterWeight8 weight{};re4::ViewVec3 bind0{},bind1{};std::uint8_t id0=0,parent0=0,id1=0,parent1=0;
+    if(!reader.value(bin+0x29,records)||records!=2||!reader.value(bin+0x28,count)||count!=1
+        ||!reader.value(bin+0x42,extended)||extended!=1||!reader.value(bin+0x58,vertices)||vertices!=654
+        ||!reader.value(bin,table)||!reader.value(table,id0)||id0||!reader.value(table+1,parent0)||parent0!=255
+        ||!reader.value(table+16,id1)||id1!=1||!reader.value(table+17,parent1)||parent1
+        ||!reader.value(table+4,bind0)||!reader.value(table+20,bind1)||!re4::view_finite(bind0)||!re4::view_finite(bind1)
+        ||!reader.value(bin+0x20,weights)||!reader.value(weights,weight)||weight.links!=1||weight.bone[0]!=1
+        ||!reader.value(bin+0x48,positions)||!reader.region(positions,std::size_t(vertices)*12)
+        ||!reader.value(bin+0x70,indices)||!reader.region(indices,std::size_t(vertices)*2)
+        ||!character_model_bone_read(actor,1,bone,reader))return false;
+    for(unsigned i=0;i<vertices;++i){std::uint16_t value=0;if(!reader.value(indices+i*2,value)||value)return false;}
+    const re4::ViewVec3 bind{bind0.x+bind1.x,bind0.y+bind1.y,bind0.z+bind1.z};re4::CharacterBladeTip tip{};
+    re4::ViewMatrix3x4 world{},hand{},inverse_bind{},inverse_root{},palette{},part{};re4::ViewVec3 value{};
+    if(!re4::character_blade_tip_prepare(reinterpret_cast<const re4::ViewVec3*>(positions),vertices,bind,tip)
+        ||!reader.value(root+0x18,world)||!reader.value(bone+0x18,hand)||!reader.value(bone+0x110,inverse_bind)
+        ||!reader.value(chain+0x74,part)||!re4::character_emitter_detail::inverse(world,inverse_root)
+        ||!character_matrix_product(inverse_root,hand,palette)||!character_matrix_product(palette,inverse_bind,palette)
+        ||!re4::character_blade_tip_world(tip,palette,part,world,value))return false;
+    value={value.x+pose.delta[0].x,value.y+pose.delta[0].y,value.z+pose.delta[0].z};
+    if(!re4::view_finite(value))return false;
+    out=value;return true;
+}
+
+// Type18 CORE43 stores world samples, once at seed and once per update.
+// The samples must follow the rendered mesh tip; a hand-height translation of
+// its authored Leon-local offset cannot follow a differently shaped blade.
+bool character_knife_trail_tip(const re4::ViewMatrix3x4* matrix,const re4::ViewVec3* point,re4::ViewVec3& out){
+    if(!matrix||!point||character_teardown.load(std::memory_order_acquire)
+        ||!character_renderer_ready.load(std::memory_order_acquire)
+        ||character_render_lock.test_and_set(std::memory_order_acquire))return false;
+    bool result=false;CharacterEmitterReader reader;CharacterIdentity identity;
+    const auto address=reinterpret_cast<std::uintptr_t>(point);
+    if(address>=0x4C&&character_identity_read(reinterpret_cast<void*>(modern_move_slot(re4::profile::player_slot)),identity,reader)){
+        const auto record=address-0x4C;std::uintptr_t data=0,pool=0,vptr=0,owner=0,parent=0;
+        unsigned count=0,generation=0,current_generation=0;std::uint8_t active=0,type=0,group=0,variant=0;
+        bool admitted=reader.value(main_base+0x113B140,data)&&data
+            &&reader.value(data+0x10C20,pool)&&pool&&reader.value(data+0x10C30,count)&&count&&count<=65535
+            &&record>=pool&&(record-pool)%0x1F8==0&&(record-pool)/0x1F8<count
+            &&reader.region(record,0x148)&&reader.value(record,vptr)&&vptr==main_base+0xAF19F0
+            &&reader.value(record+0x20,active)&&(active&1)&&reader.value(record+0x21,type)&&type==0x12
+            &&reader.value(record+0xB,group)&&group==0&&reader.value(record+0x18,variant)&&variant==0x2B
+            &&reader.value(record+0x30,owner)&&owner==identity.actor&&reader.value(record+0x38,generation)
+            &&reader.value(owner+0x110,current_generation)&&generation==current_generation
+            &&reader.value(record+0x40,parent)&&reinterpret_cast<std::uintptr_t>(matrix)==parent+0x18;
+        if(admitted)for(auto& bank:character_banks){
+            const auto token=bank.token.load(std::memory_order_acquire);
+            if(bank.phase.load(std::memory_order_acquire)!=CharacterPhase::Active||!token||!bank.prepared
+                ||!re4::character_asset_recipe(bank.appearance)||bank.fault.load(std::memory_order_acquire)
+                ||bank.drawn.load(std::memory_order_acquire)!=token||!(bank.identity==identity))continue;
+            re4::CharacterEmitterPose pose{};std::uintptr_t pointers[26]{};
+            if(!character_emitter_current(bank,pose,pointers,reader)||parent!=pointers[10])continue;
+            CharacterAttachedSource source;bool attached=false;
+            if(character_attached_source(identity,source)&&source.part)
+                for(unsigned slot=0;slot<3;++slot)if(bank.attached_valid[slot]&&bank.visual[slot].valid
+                    &&bank.skinned[slot].load(std::memory_order_acquire)&&source.same_geometry(bank.attached_source[slot]))attached=true;
+            re4::CharacterBladeTip tip{};re4::ViewMatrix3x4 skin=pose.source10,part=source.matrix;
+            bool owned=false;
+            if(bank.appearance==re4::CharacterAppearance::Krauser&&bank.knife_tip_valid&&bank.knife_orientation_valid){
+                re4::ViewMatrix3x4 half{};
+                if(re4::character_knife_half_turn(bank.knife_orientation,pose.donor10,half)){
+                    tip=bank.knife_tip;skin=pose.donor10;
+                    bool independent=false;
+                    if(!attached||!(source.flags&8)||!source.alpha){
+                        std::uintptr_t holder=0,weapon=0,chain=0;unsigned piece=0;re4::ViewMatrix3x4 correction{};
+                        unsigned flags=0;std::uint8_t alpha=0;
+                        if(reader.value(owner+0x938,holder)&&holder&&reader.value(holder+0x38,weapon)&&weapon
+                            &&reader.value(weapon+0x180,chain)
+                            &&(!attached||(reader.value(chain+8,flags)&&!(flags&~9u)&&(flags&9)==9&&reader.value(chain+0xA7,alpha)&&alpha))
+                            &&character_knife_owner(reinterpret_cast<void*>(weapon),reinterpret_cast<void*>(chain),piece,correction)==&bank){part=half;owned=independent=true;}
+                    }
+                    if(attached&&!independent){
+                        re4::ViewMatrix3x4 inverse_root{};re4::ViewVec3 local{};
+                        // The cached delta is world-space. Recover the same
+                        // root-local translation used by owned attached74.
+                        if(re4::character_emitter_detail::inverse(bank.emitter.world[0],inverse_root)){
+                            inverse_root.m[0][3]=inverse_root.m[1][3]=inverse_root.m[2][3]=0;
+                            if(re4::view_transform_point(inverse_root,pose.delta[0],local))
+                                owned=character_matrix_product(character_translation(local),part,part)
+                                    &&character_matrix_product(part,character_translation({-local.x,-local.y,-local.z}),part)
+                                    &&character_matrix_product(part,half,part);
+                        }
+                    }
+                }
+            }else if(attached&&bank.appearance!=re4::CharacterAppearance::Krauser){
+                std::uintptr_t positions=0,weights=0,indices=0;std::uint8_t count8=0;std::uint16_t extended=0;
+                re4::CharacterWeight8 weight{};
+                if(reader.value(source.bin+0x28,count8)&&count8==1&&reader.value(source.bin+0x42,extended)&&extended==1
+                    &&reader.value(source.bin+0x20,weights)&&reader.value(weights,weight)&&weight.links==1&&weight.bone[0]==10
+                    &&reader.value(source.bin+0x48,positions)&&reader.region(positions,character_native_blade_vertices*12)
+                    &&reader.value(source.bin+0x70,indices)&&reader.region(indices,character_native_blade_vertices*2)){
+                    bool exact=true;for(unsigned i=0;i<character_native_blade_vertices;++i){std::uint16_t index=0;if(!reader.value(indices+i*2,index)||index){exact=false;break;}}
+                    if(exact&&re4::character_blade_tip_prepare(reinterpret_cast<const re4::ViewVec3*>(positions),character_native_blade_vertices,bank.map.source_bind[10],tip)){
+                        // World translation after G*M equals local T(delta)*M.
+                        owned=true;
+                    }
+                }
+            }
+            re4::ViewVec3 value{};
+            const bool independent=(!attached||!(source.flags&8)||!source.alpha)&&bank.appearance!=re4::CharacterAppearance::Krauser
+                &&character_knife_independent_tip(bank,pose,reader,value,attached);
+            if(independent||(owned&&re4::character_blade_tip_world(tip,skin,part,bank.emitter.world[0],value))){
+                if(!independent&&bank.appearance!=re4::CharacterAppearance::Krauser)value={value.x+pose.delta[0].x,value.y+pose.delta[0].y,value.z+pose.delta[0].z};
+                if(re4::view_finite(value)&&bank.phase.load(std::memory_order_acquire)==CharacterPhase::Active
+                    &&bank.token.load(std::memory_order_acquire)==token&&!bank.fault.load(std::memory_order_acquire)
+                    &&character_renderer_generation.load(std::memory_order_acquire)==identity.renderer
+                    &&character_renderer_ready.load(std::memory_order_acquire)&&!character_teardown.load(std::memory_order_acquire)){out=value;result=true;}
+            }
+            break;
+        }
+    }
+    character_render_lock.clear(std::memory_order_release);return result;
+}
+
 HOOK_DEFINE_TRAMPOLINE(CharacterEmitterPoint){
     static void Callback(const re4::ViewMatrix3x4* matrix,const re4::ViewVec3* point,re4::ViewVec3* out){
 #if defined(__aarch64__)
@@ -1402,6 +1607,13 @@ HOOK_DEFINE_TRAMPOLINE(CharacterEmitterPoint){
 #else
         const auto caller=character_emitter_caller;
 #endif
+        if(caller-main_base==0x1E0720||caller-main_base==0x1E0C20){
+            re4::ViewVec3 tip{};
+            if(character_knife_trail_tip(matrix,point,tip)){
+                const re4::ViewMatrix3x4 identity{{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};Orig(&identity,&tip,out);
+            }else Orig(matrix,point,out);
+            return;
+        }
         const auto site=re4::character_emitter_site(re4::CharacterEmitterMath::Point,caller-main_base);
         if(site.source==re4::CharacterEmitterSource::None){Orig(matrix,point,out);return;}
         re4::ViewMatrix3x4 corrected{};

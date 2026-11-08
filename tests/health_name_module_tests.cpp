@@ -119,7 +119,7 @@ struct HealthFixture {
         assert(health_original_words==before||health_original_words==before+1);
         return health_original_words==before;
     }
-    void draw(){const auto before=hud_native_calls;HudDraw::Callback(nullptr);assert(hud_native_calls==before+1);}
+    void draw(){const auto before=hud_native_calls;SceneDraw::Callback();HudDraw::Callback(nullptr);assert(hud_native_calls==before+1);}
     void russian_bank(){
         auto* bank=core.data()+0x200;std::size_t cursor=0xA00;
         re4::HealthNameAlphabet alphabet;
@@ -144,6 +144,24 @@ struct HealthFixture {
 }
 int main(){
     using re4::CharacterAppearance;
+    {
+        // Native BLACKFADE is rendered after SceneDraw and before HudDraw.
+        // Replacing the native word must share that order, including partial
+        // fades; a post-fade glyph submission would remain visible on black.
+        for(unsigned fade_alpha:{0u,127u,255u}){
+            HealthFixture h;assert(h.capture());SceneDraw::Callback();
+            assert(h.latin()=="Merchant"&&!health_packets.empty());
+            const unsigned before_fade=health_packets.front().rgba&255;
+            const unsigned faded=before_fade*(255-fade_alpha)/255;
+            if(fade_alpha==255)assert(faded==0);
+            else if(fade_alpha)assert(faded>0&&faded<before_fade);
+            else assert(faded==before_fade);
+            health_packets.clear();const auto original=hud_native_calls;
+            HudDraw::Callback(nullptr);
+            assert(hud_native_calls==original+1&&health_packets.empty());
+            SceneDraw::Callback();assert(health_packets.empty()); // Capture consumed once.
+        }
+    }
     {
         HealthFixture h;assert(!h.capture(false)&&health_original_words==1);
         assert(h.capture());h.draw();assert(h.latin()=="Merchant");

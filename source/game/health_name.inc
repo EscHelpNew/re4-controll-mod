@@ -1,5 +1,7 @@
 #pragma once
 // Invoked by the shared290F00 sprite hook, never installed as another hook.
+// The captured replacement is consumed at SceneDraw's end, before native
+// fullscreen fade passes. Never repaint it from the later HudDraw callback.
 struct HealthNameOwner {
     CharacterIdentity identity{};re4::CharacterAppearance appearance=re4::CharacterAppearance::Leon;
     std::uint64_t token=0;
@@ -163,7 +165,7 @@ void draw_health_name_hud(){
         std::array<std::int8_t,2> metric{};
         if(!modern_move_read(table+value.line.glyphs[i].glyph*2,metric)||metric!=value.metrics[i])return;
     }
-    // Sample C at the actual late draw, after all earlier HUD work. The native
+    // Sample C at actual consumption after native scene layers. The native
     // wrapper changes P/model only; its512x384 Y conversion is applied once.
     auto style=value.style;style.rgba=(style.rgba&~255u)|std::min(style.rgba&255u,unsigned(gauge_alpha));
     re4::HealthNameLine line;re4::WeaponPopupViewport viewport;

@@ -34,6 +34,8 @@
 #include "re4/ammo_counter.hpp"
 #include "re4/character_assets.hpp"
 #include "re4/character_knife.hpp"
+#include "re4/character_blade_tip.hpp"
+#include "re4/character_grip.hpp"
 #include "re4/character_height_view.hpp"
 #include "re4/character_emitter.hpp"
 #include "re4/health_name.hpp"
@@ -876,6 +878,10 @@ HOOK_DEFINE_TRAMPOLINE(SceneDraw) {
         enemy_health_draw_scene(actor,frame,state);
         grenade_spot_draw_scene(actor,frame,state);
         shadow_frame([]{Orig();});
+        // Native gauge sprites have now rendered. Its added name/ammunition
+        // must precede the main loop's fullscreen fades, just like the gauge.
+        draw_case_ammo_hud();
+        draw_health_name_hud();
     }
 };
 HOOK_DEFINE_TRAMPOLINE(FullPad) {
@@ -1276,8 +1282,6 @@ HOOK_DEFINE_TRAMPOLINE(HudDraw) {
         draw_weapon_popup_hud();
         draw_inventory_damage_hud();
         draw_extended_upgrade_hud();
-        draw_case_ammo_hud();
-        draw_health_name_hud();
         draw_enemy_health_hud();
         draw_grenade_spot_hud();
         const auto options=view_settings_snapshot.load(std::memory_order_acquire);

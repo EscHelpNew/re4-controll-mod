@@ -1,6 +1,8 @@
 // Spare rounds in the attache case beside the native lower-right gauge.
 // Native evidence: data/analysis/ammo_counter (reload 299320, CountItem
 // 298310, gauge update 1EA30, sprite update 28FEA0, draw 290CE0).
+// Submitted at the end of SceneDraw, alongside the native gauge and BEFORE
+// fullscreen Fade(0)/Fade(1). A post-HudDraw submission bypasses BLACKFADE.
 struct AmmoCounterNative {
     void* (*sprite)(void*,unsigned,unsigned)=nullptr; // 28C8B0
     void (*classify)(unsigned,void*)=nullptr;         // 2970D0

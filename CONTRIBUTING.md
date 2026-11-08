@@ -15,3 +15,7 @@ device or computer, never in examples or issue attachments.
 Preserve the installed game, other mods and existing overlay loader. An unsupported
 game profile must leave hooks disabled. New hardware claims need actual console
 verification; host fixtures do not prove every game state.
+
+Keep public release descriptions short: Added and Fixed, with a few user-facing
+bullets. Put detailed implementation and validation reports in separate docs.
+Mention known unresolved issues briefly.

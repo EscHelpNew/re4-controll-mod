@@ -74,6 +74,7 @@ struct CounterFixture {
     unsigned draw(bool native_bar=true){
         if(native_bar)ExtendedSquareDraw::Callback(gauge_sprites[3].data());
         gx_vertices=0;gx_colors.clear();const auto before=hud_native_calls;
+        SceneDraw::Callback();
         HudDraw::Callback(nullptr);assert(hud_native_calls==before+1);return gx_vertices;
     }
 };
@@ -81,6 +82,26 @@ struct CounterFixture {
 
 int main(){
     using namespace re4;
+    {
+        // Native order: layer16 gauge -> SceneDraw return -> fullscreen
+        // Fade(0)/Fade(1) -> late HudDraw. Additions must precede that fade,
+        // and must never be painted over it by the later callback.
+        for(unsigned fade_alpha:{0u,127u,255u}){
+            CounterFixture h;ExtendedSquareDraw::Callback(gauge_sprites[3].data());
+            gx_vertices=0;gx_colors.clear();SceneDraw::Callback();
+            assert(gx_vertices==(2+6+6)*4&&!gx_colors.empty());
+            const unsigned before_fade=gx_colors.front()[3];
+            const unsigned faded=before_fade*(255-fade_alpha)/255;
+            if(fade_alpha==255)assert(faded==0);
+            else if(fade_alpha)assert(faded>0&&faded<before_fade);
+            else assert(faded==before_fade);
+            // The external native fade consumes the preceding primitives.
+            // Isolate later output to detect the observed BLACKFADE leak.
+            gx_vertices=0;gx_colors.clear();const auto original=hud_native_calls;
+            HudDraw::Callback(nullptr);
+            assert(hud_native_calls==original+1&&gx_vertices==0&&gx_colors.empty());
+        }
+    }
     {
         CounterFixture h;
         // Old cached root/digit/word records are not evidence of a native draw.
@@ -155,7 +176,9 @@ int main(){
         assert(h.draw()==0);
         assert(gauge_sprites==sprites_before);
         std::uint32_t native_flags=0;std::memcpy(&native_flags,h.state.data()+0x7C,sizeof(native_flags));
-        assert(native_flags==(1u<<16));
+        // The substituted native SceneDraw deliberately sets0x400; preserve
+        // that engine-side change as well as the original visibility bit.
+        assert(native_flags==((1u<<16)|0x400u));
         // The separate frame gate override still cannot bypass this renderer gate.
         h.put(h.state.data(),0x78,std::uint32_t(1u<<20));h.state[0x5092]=4;
         assert(h.draw()==0);
