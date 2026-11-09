@@ -11,6 +11,8 @@ unsigned attach_rc=0,attach_calls=0,write_count=0,fail_write=0,reads=0;
 bool build_supported=true;
 bool appearance_race=false;
 bool capture_race=false,settings_race=false;
+unsigned emitter_race=0,emitter_reads=0;
+constexpr u64 emitter_address=address+8+512,emitter_sequence=emitter_address+24;
 constexpr u64 gfx_pointer_offset=0x1180D40+0x140,gfx_address=0x600000;
 u64 main_base=0,main_size=0,gfx_pointer=0,fail_read_address=0;
 std::array<u8,0x30> cached_bounds{};
@@ -29,6 +31,7 @@ void reset(){
     attach_rc=attach_calls=write_count=fail_write=reads=0;build_supported=true;appearance_race=false;write_sizes.clear();
     main_base=main_size=gfx_pointer=fail_read_address=0;cached_bounds.fill(0);native_reads=0;
     capture_race=settings_race=false;segments.clear();
+    emitter_race=emitter_reads=0;
     re4::SharedControl block{};std::memcpy(block.marker,re4::kSharedMarker,16);
     block.abi=re4::kSharedAbi;block.status=1;block.capabilities=re4::kCapabilityTurning;block.sequence=4;
     block.fps_overrides=7;block.reticle_draws=9;block.modern_move_steps=11;block.modern_pose_steps=13;
@@ -77,6 +80,20 @@ Result test_dispatch(Service*,unsigned command,const void* in,std::size_t,void* 
     auto* target=memory.data()+r.addr-address;
     if(command==65102){
         ++reads;std::memcpy(const_cast<void*>(p.buffers[0].data),target,r.size);
+        if(r.addr>=emitter_address&&r.addr<emitter_address+352){
+            ++emitter_reads;assert(r.size<=352);
+            if(emitter_race==1&&r.addr==emitter_sequence){
+                u32 value=0;std::memcpy(&value,memory.data()+emitter_sequence-address,4);value+=2;
+                std::memcpy(memory.data()+emitter_sequence-address,&value,4);
+            }
+            if(emitter_race==2&&r.addr==emitter_address&&r.size==352){
+                auto* copy=static_cast<re4::EmitterDiagnosticsWire*>(const_cast<void*>(p.buffers[0].data));copy->sequence+=2;
+            }
+            if(emitter_race==3&&r.addr==emitter_address&&r.size==352){
+                u32 value=0;std::memcpy(&value,memory.data()+emitter_sequence-address,4);value+=2;
+                std::memcpy(memory.data()+emitter_sequence-address,&value,4);
+            }
+        }
         if(appearance_race&&r.addr==address+8+offsetof(re4::SharedControl,appearance_generation)){
             auto block=snapshot();block.appearance_generation+=2;std::memcpy(memory.data()+8,&block,sizeof(block));
         }
@@ -95,6 +112,47 @@ Result test_dispatch(Service*,unsigned command,const void* in,std::size_t,void* 
     return 0;
 }
 int main(){
+    {
+        reset();GameLink client;client.initialize();assert(!client.request_money()&&write_count==0);
+        assert(client.connect());auto block=snapshot();block.money_availability=1;
+        std::memcpy(memory.data()+8,&block,sizeof(block));
+        assert(client.refresh_money()&&client.money.availability==re4::MoneyAvailability::Ready&&write_count==0);
+        assert(client.request_money()&&write_count==1&&write_sizes.back()==4&&snapshot().money_request==1);
+        assert(!client.request_money()&&write_count==1);
+        block=snapshot();block.money_ack=1;block.money_result=1;block.money_availability=2;
+        std::memcpy(memory.data()+8,&block,sizeof(block));
+        assert(!client.request_money()&&client.money.availability==re4::MoneyAvailability::Claimed&&write_count==1);
+        block.money_availability=1;block.money_result=99;std::memcpy(memory.data()+8,&block,sizeof(block));
+        assert(!client.refresh_money()&&!client.request_money()&&write_count==1);
+        block.money_result=0;std::memcpy(memory.data()+8,&block,sizeof(block));fail_write=2;
+        assert(!client.request_money()&&snapshot().money_request==1);
+        pid=99;assert(!client.request_money());client.close();
+    }
+    {
+        reset();GameLink worker;worker.initialize();re4::LiveDiagnosticSnapshot live;
+        // Missing/invalid optional memory must never disconnect an ABI23 module.
+        assert(worker.read_diagnostic_snapshot(live)&&live.connected&&!live.emitters_valid&&write_count==0);
+        auto wire=re4::initial_emitter_diagnostics();wire.sequence=2;wire.records[1][0]=17;wire.records[1][19]=0x2DAF40;
+        const auto store=[&]{std::memcpy(memory.data()+emitter_address-address,&wire,sizeof(wire));emitter_reads=0;};
+        store();assert(worker.read_diagnostic_snapshot(live)&&live.emitters_valid&&live.emitters.records[1][0]==17
+            &&live.emitters.records[1][19]==0x2DAF40&&emitter_reads==3&&write_count==0);
+        for(unsigned field=0;field<5;++field){
+            wire=re4::initial_emitter_diagnostics();wire.sequence=2;
+            if(field==0)wire.marker[0]^=1;
+            if(field==1)wire.version=2;
+            if(field==2)wire.bytes=351;
+            if(field==3)wire.channel_count=5;
+            if(field==4)wire.sequence=3;
+            store();assert(worker.read_diagnostic_snapshot(live)&&live.connected&&!live.emitters_valid&&emitter_reads<=3);
+        }
+        wire=re4::initial_emitter_diagnostics();wire.sequence=2;
+        for(unsigned race:{1u,2u,3u}){store();emitter_race=race;
+            assert(worker.read_diagnostic_snapshot(live)&&live.connected&&!live.emitters_valid&&emitter_reads==3);emitter_race=0;}
+        for(u64 failed:{emitter_address,emitter_sequence}){store();fail_read_address=failed;
+            assert(worker.read_diagnostic_snapshot(live)&&live.connected&&!live.emitters_valid);fail_read_address=0;}
+        store();assert(worker.read_diagnostic_snapshot(live)&&live.emitters_valid&&write_count==0);
+        emitter_reads=0;assert(worker.refresh_popup()&&emitter_reads==0&&write_count==0);worker.close();
+    }
     {
         reset();GameLink worker;re4::LiveDiagnosticSnapshot live;
         assert(!worker.read_diagnostic_snapshot(live)&&live.status==re4::LiveDiagnosticStatus::ServiceUnavailable);

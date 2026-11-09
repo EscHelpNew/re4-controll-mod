@@ -338,6 +338,7 @@ HOOK_DEFINE_INLINE(ExtendedSave){
     static void Callback(exl::hook::InlineFloatCtx* context){
         unsigned slot=0;std::uint32_t crc=0;
         if(!context||!extended_upgrade_slot(re4::saved_x(context,19),slot,crc))return;
+        money_on_save(slot,crc);
         if(!extended_upgrade_load_store()||!extended_upgrade_resolve_mask())return;
         extended_upgrade_prune();
         std::uint16_t previous=0;
@@ -358,7 +359,9 @@ HOOK_DEFINE_INLINE(ExtendedLoad){
         extended_upgrade_pending={};
         extended_upgrade_snapshots={};
         extended_upgrade_mask=0;extended_upgrade_mask_known=false;extended_upgrade_loaded_identity={};
+        money_on_load(20,0); // Invalid slot metadata must also invalidate the old campaign.
         if(!extended_upgrade_slot(re4::saved_x(context,19),slot,crc))return;
+        money_on_load(slot,crc);
         extended_upgrade_loaded_identity={slot,crc,true};
         extended_upgrade_resolve_mask();
     }

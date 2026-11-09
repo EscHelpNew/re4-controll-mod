@@ -1,6 +1,7 @@
 #define TESLA_INIT_IMPL
 #include <tesla.hpp>
 #include <sys/stat.h>
+#include <chrono>
 #include "game_link.hpp"
 #include "storage.hpp"
 #include "live_debug.hpp"
@@ -384,11 +385,45 @@ public:
         frame_->set_help(help_.c_str());
     }
 };
+class MoneyBonusGui : public tsl::Gui {
+    DescriptionFrame* frame_=nullptr;
+    tsl::elm::ListItem* confirm_=nullptr;
+    u64 refresh_tick_=0;
+public:
+    tsl::elm::Element* createUI()override{
+        frame_=new DescriptionFrame;frame_->setTitle(re4::money_action_label(settings.language));
+        frame_->setSubtitle(re4::kVersion);
+        auto* list=new tsl::elm::List;
+        auto* cancel=new tsl::elm::ListItem(tr("Cancel","Отмена"));
+        cancel->setClickListener([](u64 keys){if(!(keys&HidNpadButton_A))return false;tsl::goBack();return true;});
+        list->addItem(cancel);
+        confirm_=new tsl::elm::ListItem(re4::money_action_label(settings.language));
+        confirm_->setClickListener([this](u64 keys){
+            if(!(keys&HidNpadButton_A))return false;
+            link.language=settings.language;
+            if(!link.request_money())return false;
+            update();return true;
+        });
+        list->addItem(confirm_);frame_->setContent(list);update();return frame_;
+    }
+    void update()override{
+        const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if(!refresh_tick_||u64(now)-refresh_tick_>=250){link.refresh_money();refresh_tick_=u64(now);}
+        confirm_->setValue(re4::money_status_text(link.money,settings.language));
+        frame_->set_help(link.money.result==re4::MoneyResult::Granted?tr(
+            "Added 200 000 pesetas.\nSave your game to keep the money.\nThis playthrough cannot receive another bonus.",
+            "Добавлено 200 000 песет.\nСохраните игру, чтобы сохранить деньги.\nПовторно получить бонус нельзя."):tr(
+            "Adds 200 000 pesetas and makes the game easier.\nOnce per playthrough, including restarts.\nSave afterwards: unsaved money can be lost.",
+            "Добавит 200 000 песет и облегчит игру.\nОдин раз за прохождение, включая перезапуски.\nСохраните игру: несохранённые деньги теряются."));
+    }
+};
 class GameGui : public tsl::Gui {
     DescriptionFrame* frame_=nullptr;
     tsl::elm::ToggleListItem* health_=nullptr;
     tsl::elm::ListItem* numbers_=nullptr;
     tsl::elm::ListItem* appearance_=nullptr;
+    tsl::elm::ListItem* money_=nullptr;
+    std::chrono::steady_clock::time_point money_refreshed_{};
     std::array<tsl::elm::ListItem*,7> options_{};
     std::string help_;
 public:
@@ -415,6 +450,14 @@ public:
             });
             options_[i]=item;list->addItem(item);
         }
+        money_=new tsl::elm::ListItem(re4::money_action_label(settings.language));
+        money_->setClickListener([](u64 keys){
+            if(!(keys&HidNpadButton_A))return false;
+            link.language=settings.language;
+            if(!link.refresh_money()||link.money.pending()||link.money.availability!=re4::MoneyAvailability::Ready)return false;
+            tsl::changeTo<MoneyBonusGui>();return true;
+        });
+        list->addItem(money_);
         appearance_=new tsl::elm::ListItem(re4::kCharacterAppearanceLabel.get(settings.language));
         appearance_->setClickListener([](u64 keys){
             if(!(keys&HidNpadButton_A))return false;
@@ -429,7 +472,7 @@ public:
         frame_->set_help(getFocusedElement()==numbers_?re4::enemy_health_numbers_help(settings):re4::kEnemyHealthBarsHelp.get(settings.language));
         bool option_focused=false;
         for(auto* option:options_)option_focused=option_focused||getFocusedElement()==option;
-        frame_->set_health_preview_visible(getFocusedElement()!=appearance_ && !option_focused);
+        frame_->set_health_preview_visible(getFocusedElement()!=appearance_ && getFocusedElement()!=money_ && !option_focused);
         frame_->set_grenade_preview(getFocusedElement()==options_[0]);
         const re4::Bilingual labels[]={re4::kGrenadeLandingSpotLabel,re4::kSkipPickupConfirmationLabel,re4::kSkipStartupLogosLabel,re4::kRemoveAimingSwayLabel,re4::kDpadWeaponSwitchingLabel,re4::kExtendedWeaponUpgradeLabel,re4::kCaseAmmoCounterLabel};
         const re4::Bilingual help[]={re4::kGrenadeLandingSpotHelp,re4::kSkipPickupConfirmationHelp,re4::kSkipStartupLogosHelp,re4::kRemoveAimingSwayHelp,re4::kDpadWeaponSwitchingHelp,re4::kExtendedWeaponUpgradeHelp,re4::kCaseAmmoCounterHelp};
@@ -465,6 +508,14 @@ public:
         appearance_->setText(re4::kCharacterAppearanceLabel.get(settings.language));
         appearance_->setValue(re4::character_appearance_name(settings.character_appearance,settings.language));
         if(getFocusedElement()==appearance_)frame_->set_help(re4::kCharacterAppearanceHelp.get(settings.language));
+        money_->setText(re4::money_action_label(settings.language));
+        if(getFocusedElement()==money_){
+            const auto now=std::chrono::steady_clock::now();
+            if(now-money_refreshed_>=std::chrono::milliseconds(250)){link.refresh_money();money_refreshed_=now;}
+            money_->setValue(re4::money_status_text(link.money,settings.language));
+            frame_->set_help(tr("One bonus per playthrough. Confirmation required.\nUnknown older saves cannot unlock a second bonus.",
+                "Один бонус за прохождение, с подтверждением.\nСтарое нераспознанное сохранение не даёт повторный бонус."));
+        }
     }
 };
 class MainGui : public tsl::Gui {

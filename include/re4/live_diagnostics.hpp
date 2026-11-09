@@ -2,6 +2,7 @@
 #include "re4/shared.hpp"
 #include "re4/live_knife.hpp"
 #include "re4/live_renderer.hpp"
+#include "re4/emitter_diagnostics.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +46,8 @@ struct LiveDiagnosticSnapshot {
     std::array<float,16> camera_projection{};
     LiveKnifeObservation knife{};
     LiveHudRendererObservation hud_cached{};
+    bool emitters_valid=false;
+    EmitterDiagnosticsWire emitters{};
 };
 // NUL-terminated JSON on success, exact byte count excludes NUL. Capacity is
 // capped at16384; failures return size0 and an empty string when possible.

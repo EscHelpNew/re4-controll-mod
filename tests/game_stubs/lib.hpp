@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <vector>
+#include <array>
 #include <utility>
 #include <string>
 using u64 = std::uint64_t;
@@ -23,6 +24,10 @@ inline unsigned mount_result=1, mount_failures=0, fs_reads=0, fs_closes=0;
 inline std::vector<std::uint8_t> settings_primary,settings_backup;
 inline std::vector<std::uint8_t> resource_file;
 inline std::vector<std::uint8_t> extended_upgrade_file;
+inline std::array<std::vector<std::uint8_t>,2> money_files;
+inline std::array<bool,2> money_exists{};
+inline Result money_open_result=0,money_read_result=0,money_write_result=0;
+inline unsigned money_writes=0;
 inline unsigned extended_upgrade_writes=0;
 inline bool extended_upgrade_file_exists=false;
 inline Result extended_upgrade_open_read_result=0,extended_upgrade_open_write_result=0;

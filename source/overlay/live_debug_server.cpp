@@ -272,7 +272,11 @@ struct Server {
    const int ready=wait_socket(listener,false);
    if(ready<0){
     const auto failure=socket_failure();if(transient_error(failure.error))continue;
-    listener_error(9,ready,failure);close_socket(listener);listener=invalid_socket;port.store(0);continue;
+    listener_error(9,ready,failure);close_socket(listener);listener=invalid_socket;port.store(0);
+    // A persistent select failure can survive a successful rebind. Bound the
+    // socket/log churn while checking cancellation during the recovery delay.
+    for(unsigned waited=0;waited<100&&!stopping.load(std::memory_order_relaxed);waited+=10)pause_ms(10);
+    continue;
    }
    if(!ready)continue;
    const auto client=accept(listener,nullptr,nullptr);

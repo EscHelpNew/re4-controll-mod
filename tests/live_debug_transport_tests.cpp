@@ -44,6 +44,7 @@ TestSocket accept_call(TestSocket s,sockaddr* address,
 #endif
 ){const auto fd=::accept(s,address,length);accepted=fd;return fd;}
 int select_call(int count,fd_set* reads,fd_set* writes,fd_set* errors,timeval* timeout){
+ if(stage==9&&reads){++hits;set_error();return -1;}
  const auto fd=accepted.load();
  if(fd!=bad_socket&&((reads&&FD_ISSET(fd,reads)&&trigger(3))||(writes&&FD_ISSET(fd,writes)&&trigger(5)))){set_error();return -1;}
  return ::select(count,reads,writes,errors,timeout);
@@ -154,6 +155,46 @@ void first_failure_test(){
  assert(capture.errors==1&&capture.last.stage==1&&capture.last.result==0x4000);
  assert(capture.last.error==EINVAL&&capture.last.bsd_result==0x1234ABCD);
 }
+void persistent_listener_failure_test(){
+ using Clock=std::chrono::steady_clock;
+ Capture capture;fault::accepted=bad_socket;fault::stage=0;fault::hits=0;
+ assert(re4::start_live_debug_server(token,capture.callbacks(),0));wait_listening();
+ const auto port=re4::live_debug_server_port();
+ fault::stage=9;
+ const auto deadline=Clock::now()+std::chrono::seconds(2);
+ while(!capture.errors&&Clock::now()<deadline)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+ assert(capture.errors);
+ std::this_thread::sleep_for(std::chrono::milliseconds(250));
+ const auto failures=capture.errors.load();
+ const auto stop_started=Clock::now();re4::stop_live_debug_server();
+ const auto stop_ms=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-stop_started).count();
+ std::cout<<"persistent listener errors in 250ms="<<failures<<", stop_ms="<<stop_ms<<std::endl;
+ // Persistent platform failures must not continuously recreate sockets/logs.
+ assert(failures>=2&&failures<=4&&capture.last.stage==9);
+ assert(stop_ms<250);
+ // Releasing the fault and restarting must reclaim the same port and serve.
+ fault::stage=0;fault::accepted=bad_socket;
+ assert(re4::start_live_debug_server(token,capture.callbacks(),port));wait_listening();
+ assert(re4::live_debug_server_port()==port);
+ const auto client=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);assert(client!=bad_socket);
+ sockaddr_in address{};address.sin_family=AF_INET;address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);address.sin_port=htons(port);
+ const auto request_started=Clock::now();
+ assert(!connect(client,reinterpret_cast<sockaddr*>(&address),sizeof(address)));
+ const auto request=std::string("AUTH ")+token+"\nSNAPSHOT\n";
+ std::size_t sent=0;
+ while(sent<request.size()){
+  const auto n=::send(client,request.data()+sent,int(request.size()-sent),0);assert(n>0);sent+=std::size_t(n);
+ }
+ std::string reply;bool closed=false;
+ while(Clock::now()-request_started<std::chrono::seconds(1)){
+  fd_set reads;FD_ZERO(&reads);FD_SET(client,&reads);timeval timeout{0,100000};
+  const auto ready=::select(int(client+1),&reads,nullptr,nullptr,&timeout);assert(ready>=0);if(!ready)continue;
+  char bytes[128];const auto n=::recv(client,bytes,sizeof(bytes),0);assert(n>=0);
+  if(!n){closed=true;break;}reply.append(bytes,std::size_t(n));
+ }
+ close_client(client);re4::stop_live_debug_server();
+ assert(closed&&reply=="OK RE4-DIAG 1\nOK JSON 2\n{}"&&capture.snapshots==1);
+}
 }
 int main(){
 #ifdef _WIN32
@@ -162,6 +203,7 @@ int main(){
  check_stage(1);
 #endif
  first_failure_test();
+ persistent_listener_failure_test();
  for(unsigned stage:{2u,3u,4u,5u,6u,7u,8u})check_stage(stage);
 #ifdef _WIN32
  fault::configure_result=0x4000;check_stage(2);fault::configure_result=-1;

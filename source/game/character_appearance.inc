@@ -51,6 +51,46 @@ struct CharacterEmitterCache {
     re4::CharacterEmitterPose pose{};
     bool valid=false,two_handed=false;
 };
+// Bounded, pointer-free observations; the existing opt-in snapshot server reads
+// them only on request. No log files, native calls, waits or heap allocations.
+std::atomic_flag character_emitter_observer_lock=ATOMIC_FLAG_INIT;
+struct CharacterEmitterObservation {
+    std::uint32_t words[20]{};unsigned channel=0;
+    re4::ViewVec3 visual_local{};bool visual_valid=false,publish=true;
+    CharacterEmitterObservation(re4::CharacterEmitterSite site,std::uintptr_t caller,bool publish_record=true):publish(publish_record){
+        using S=re4::CharacterEmitterSource;
+        channel=site.source==S::Laser?0:site.source==S::BodyHand?1:site.source==S::Emitter?3:2;
+        words[2]=std::uint32_t(caller);words[6]=words[9]=words[10]=words[11]=UINT32_MAX;
+        words[18]=unsigned(re4::EmitterDiagnosticResult::Identity);
+    }
+    void owner(re4::EmitterDiagnosticOwner stage){words[5]=std::max(words[5],unsigned(stage));}
+    void result(re4::EmitterDiagnosticResult value){words[18]=unsigned(value);}
+    void take(const CharacterEmitterObservation& candidate){
+        std::memcpy(words,candidate.words,sizeof(words));
+        visual_local=candidate.visual_local;visual_valid=candidate.visual_valid;
+    }
+    void vectors(re4::ViewVec3 fresh,const re4::ViewMatrix3x4& root){
+        if(visual_valid){
+            auto linear=root;for(auto& row:linear.m)row[3]=0;re4::ViewVec3 world{};
+            if(re4::view_transform_point(linear,visual_local,world))std::memcpy(words+12,&world,sizeof(world));
+        }
+        std::memcpy(words+15,&fresh,sizeof(fresh));
+    }
+    ~CharacterEmitterObservation(){
+        if(!publish)return;
+        if(character_emitter_observer_lock.test_and_set(std::memory_order_acquire))return;
+        const auto odd=(emitter_diagnostics.sequence+1u)|1u;
+        emitter_diagnostics.sequence=odd;std::atomic_thread_fence(std::memory_order_release);
+        auto& record=emitter_diagnostics.records[channel];
+        const bool applied=words[18]==unsigned(re4::EmitterDiagnosticResult::Applied);
+        record[0]=record[0]+1;record[1]=record[1]+unsigned(applied);record[2]=words[2];
+        if(!applied){record[3]=words[2];record[4]=words[18];}
+        for(unsigned i=5;i<19;++i)record[i]=words[i];
+        if(applied)record[19]=words[2];
+        std::atomic_thread_fence(std::memory_order_release);emitter_diagnostics.sequence=odd+1;
+        character_emitter_observer_lock.clear(std::memory_order_release);
+    }
+};
 
 // Keep large zeroed storage separate from nonzero bind-table defaults, so it is
 // true BSS rather than tens of MiB of initialized zeros in the module file.
@@ -1350,60 +1390,114 @@ bool character_emitter_current(CharacterBank& bank,re4::CharacterEmitterPose& ou
     out=cache.pose;return true;
 }
 bool character_emitter_owner(const CharacterBinding& binding,std::uintptr_t actor,unsigned handle,
-        unsigned& parent_index,CharacterEmitterReader& reader){
+        unsigned& parent_index,CharacterEmitterReader& reader,CharacterEmitterObservation* observation=nullptr){
     std::uintptr_t root=0,parent=0,archive=0;
-    if(!character_held_parent_read(binding,actor,false,handle,root,parent,parent_index,reader)
-        ||!character_held_archive_read(binding,actor,false,archive,reader))return false;
+    if(observation)observation->owner(re4::EmitterDiagnosticOwner::Parent);
+    if(!character_held_parent_read(binding,actor,false,handle,root,parent,parent_index,reader))return false;
+    if(observation){observation->owner(re4::EmitterDiagnosticOwner::Archive);observation->words[9]=parent_index;}
+    if(!character_held_archive_read(binding,actor,false,archive,reader))return false;
     // Admit a visual displacement only after this exact immutable geometry
     // owner has actually used an owned held draw. A new/unsupported native
     // weapon must retain native emitters until its visual path is confirmed.
+    if(observation)observation->owner(re4::EmitterDiagnosticOwner::Chain);
     std::uintptr_t chain=0;if(!reader.value(actor+0x180,chain))return false;
+    if(observation)observation->owner(re4::EmitterDiagnosticOwner::Frame);
     for(unsigned slot=0;slot<3;++slot){
         const auto& frame=binding.visual[slot];const auto& held=frame.held[handle];
+        if(observation&&held.captured&&held.actor==actor&&held.chain==chain){
+            observation->words[7]|=1u<<slot;
+            if(held.drawn)observation->words[8]|=1u<<slot;
+        }
         if(!frame.valid||!binding.skinned[slot].load(std::memory_order_acquire)
             ||!held.captured||!held.drawn||!held.count||held.count>character_held_piece_limit
             ||held.actor!=actor||held.chain!=chain||held.root!=root||held.parent!=parent||held.archive!=archive)continue;
         bool exact=true;
         for(unsigned i=0;i<held.count;++i){
+            if(observation){observation->owner(re4::EmitterDiagnosticOwner::PartRegion);observation->words[10]=slot;observation->words[11]=i;}
             if(!reader.region(held.source_parts[i],0x1A8)){exact=false;break;}
             const auto* native=reinterpret_cast<const std::uint8_t*>(held.source_parts[i]);
             // Match held Draw's immutable descriptor identity. Only Skin's six
             // weighted output pointers are dynamic; matrix/material/links stay exact.
-            if(held.weighted[i]){
-                if(std::memcmp(held.original[i],native,0xB0)
-                    ||std::memcmp(held.original[i]+0xE0,native+0xE0,0x1A8-0xE0)){exact=false;break;}
-            }else if(std::memcmp(held.original[i],native,0x1A8)){exact=false;break;}
+            const bool changed=held.weighted[i]?(std::memcmp(held.original[i],native,0xB0)
+                ||std::memcmp(held.original[i]+0xE0,native+0xE0,0x1A8-0xE0))
+                :std::memcmp(held.original[i],native,0x1A8)!=0;
+            if(changed){
+                if(observation){
+                    observation->owner(re4::EmitterDiagnosticOwner::Descriptor);
+                    for(unsigned byte=0;byte<0x1A8;++byte){
+                        if(held.weighted[i]&&byte>=0xB0&&byte<0xE0)continue;
+                        if(held.original[i][byte]!=native[byte]){observation->words[6]=byte;break;}
+                    }
+                }
+                exact=false;break;
+            }
         }
-        if(exact)return true;
+        if(exact){
+            if(observation){
+                observation->owner(re4::EmitterDiagnosticOwner::Owned);observation->words[10]=slot;
+                observation->visual_local=frame.shift[parent_index];observation->visual_valid=true;
+            }
+            return true;
+        }
     }
     return false;
 }
-bool character_emitter_record(std::uintptr_t matrix,std::uintptr_t actor,CharacterEmitterReader& reader){
+bool character_emitter_record(std::uintptr_t matrix,std::uintptr_t actor,CharacterEmitterReader& reader,
+        CharacterEmitterObservation* observation=nullptr){
+    using R=re4::EmitterDiagnosticResult;
+    const auto reject=[&](R why){
+        // An auxiliary held handle must not replace a precise failure from
+        // the record's actual owner with its own generic owner mismatch.
+        if(observation&&(why!=R::EffectOwner||observation->words[18]<unsigned(R::EffectPool)))observation->result(why);
+        return false;
+    };
     if(matrix<0x40||!character_native.effect_script)return false;
     const auto record=matrix-0x40;
     std::uintptr_t pool=0;unsigned count=0;
     if(!reader.value(main_base+0x113CC00,count)||!count
         ||!reader.value(main_base+0x113CC10,pool)||!pool||record<pool
-        ||(record-pool)%0x108||(record-pool)/0x108>=count)return false;
+        ||(record-pool)%0x108||(record-pool)/0x108>=count)return reject(R::EffectPool);
     re4::ModernMoveMemory memory;
-    if(!reader.view(record,0x108,memory))return false;
+    if(!reader.view(record,0x108,memory))return reject(R::EffectPool);
     std::uint8_t active=0,type=0,group=0,variant=0;std::uint16_t part=0;
     std::uintptr_t owner=0,script=0;unsigned generation=0,current_generation=0;
-    if(!memory.value(record+0x18,active)||(active&3)!=1||!memory.value(record+0x19,type)||type!=0x10
-        ||!memory.value(record+0x28,owner)||owner!=actor||!memory.value(record+0x30,generation)
-        ||!reader.value(actor+0x110,current_generation)||generation!=current_generation
-        ||!memory.value(record+0x38,part)||part!=0xFE||!memory.value(record+3,group)
-        ||!memory.value(record+0x10,variant)||!memory.value(record+0x20,script)||!script)return false;
+    if(!memory.value(record+0x28,owner)||owner!=actor)return reject(R::EffectOwner);
+    if(!memory.value(record+0x18,active)||(active&3)!=1||!memory.value(record+0x19,type)||type!=0x10)return reject(R::EffectState);
+    if(!memory.value(record+0x30,generation)||!reader.value(actor+0x110,current_generation)
+        ||generation!=current_generation)return reject(R::EffectGeneration);
+    if(!memory.value(record+0x38,part)||part!=0xFE)return reject(R::EffectPart);
+    if(!memory.value(record+3,group)||!memory.value(record+0x10,variant))return reject(R::EffectGroup);
+    if(!memory.value(record+0x20,script)||!script)return reject(R::EffectScript);
     unsigned variants=0;
     switch(group){
         case 0x38:case 0x39:case 0x3B:case 0x3D:case 0x48:variants=2;break;
         case 0x3C:case 0x3E:case 0x3F:case 0x49:case 0x4C:case 0x4E:variants=1;break;
-        default:return false;
+        default:return reject(R::EffectGroup);
     }
-    return variant<variants&&reinterpret_cast<std::uintptr_t>(character_native.effect_script(group,variant,1))==script;
+    if(variant>=variants)return reject(R::EffectGroup);
+    return reinterpret_cast<std::uintptr_t>(character_native.effect_script(group,variant,1))==script
+        ||reject(R::EffectScript);
+}
+bool character_emitter_matrix_read(re4::CharacterEmitterSite site,std::uintptr_t matrix,
+        std::uintptr_t player,std::uintptr_t actor,CharacterEmitterReader& reader,CharacterEmitterObservation* observation=nullptr){
+    using S=re4::CharacterEmitterSource;
+    if(site.source==S::Emitter)return character_emitter_record(matrix,actor,reader,observation);
+    if(site.source==S::BodyHand){
+        std::uintptr_t bone=0;
+        return character_model_bone_read(player,10,bone,reader)&&matrix==bone+0x18;
+    }
+    const unsigned begin=site.source==S::HeldPart?site.part:site.source==S::Laser?0:2;
+    // WEP03/WEP18 stock effects attach to part5; ordinary firearm banks use
+    // parts2..4. Every candidate still needs its current exact held ownership.
+    const unsigned end=site.source==S::HeldPart?begin+1:site.source==S::Laser?2:6;
+    for(unsigned id=begin;id<end;++id){
+        std::uintptr_t bone=0;
+        if(character_model_bone_read(actor,id,bone,reader)&&matrix==bone+0x18)return true;
+    }
+    return false;
 }
 bool character_emitter_input(re4::CharacterEmitterSite site,const re4::ViewMatrix3x4* native,
-        re4::ViewMatrix3x4& out){
+        re4::ViewMatrix3x4& out,std::uintptr_t caller=0){
     using S=re4::CharacterEmitterSource;
     if(site.source==S::None||!native||character_teardown.load(std::memory_order_acquire)
         ||!character_renderer_ready.load(std::memory_order_acquire))return false;
@@ -1411,44 +1505,65 @@ bool character_emitter_input(re4::CharacterEmitterSite site,const re4::ViewMatri
     for(const auto& bank:character_banks)
         if(bank.phase.load(std::memory_order_acquire)==CharacterPhase::Active
             &&bank.token.load(std::memory_order_acquire))possible=true;
-    if(!possible||character_render_lock.test_and_set(std::memory_order_acquire))return false;
+    if(!possible)return false;
+    CharacterEmitterObservation observation(site,caller);
+    if(character_render_lock.test_and_set(std::memory_order_acquire)){
+        observation.result(re4::EmitterDiagnosticResult::LockBusy);return false;
+    }
     bool result=false;
     CharacterEmitterReader reader;CharacterIdentity identity;
+    // Most calls from particle helpers belong to scenery or other actors.
+    // Reject their source before inspecting immutable held descriptors or
+    // deriving a donor pose. A match only admits the existing full checks.
+    const auto player=modern_move_slot(re4::profile::player_slot);
+    const auto matrix=reinterpret_cast<std::uintptr_t>(native);
+    std::uintptr_t early_handler=0;bool candidate=false;
+    observation.result(re4::EmitterDiagnosticResult::Matrix);
+    if(player&&reader.value(player+0x938,early_handler)&&early_handler){
+        for(unsigned handle=0;handle<2&&!candidate;++handle){
+            std::uintptr_t actor=0;
+            if(reader.value(early_handler+0x38+handle*8,actor)&&actor)
+                candidate=character_emitter_matrix_read(site,matrix,player,actor,reader,&observation);
+        }
+    }
+    if(!candidate){character_render_lock.clear(std::memory_order_release);return false;}
+    observation.result(re4::EmitterDiagnosticResult::Identity);
     if(character_identity_read(reinterpret_cast<void*>(modern_move_slot(re4::profile::player_slot)),identity,reader)){
         for(auto& bank:character_banks){
             const auto token=bank.token.load(std::memory_order_acquire);
             if(bank.phase.load(std::memory_order_acquire)!=CharacterPhase::Active||!token||!bank.prepared
                 ||!re4::character_asset_recipe(bank.appearance)||bank.fault.load(std::memory_order_acquire)
                 ||bank.drawn.load(std::memory_order_acquire)!=token||!(bank.identity==identity))continue;
-            const auto matrix=reinterpret_cast<std::uintptr_t>(native);
+            observation.result(re4::EmitterDiagnosticResult::Owner);
             bool matched=false,ambiguous=false;unsigned selected_parent=0;
             std::uintptr_t handler=0;
             if(!reader.value(identity.actor+0x938,handler)||!handler)continue;
             for(unsigned handle=0;handle<2;++handle){
                 std::uintptr_t actor=0;unsigned parent=0;
-                if(!reader.value(handler+0x38+handle*8,actor)||!actor
-                    ||!character_emitter_owner(bank,actor,handle,parent,reader))continue;
-                bool match=false;
-                if(site.source==S::Emitter)match=character_emitter_record(matrix,actor,reader);
-                else if(site.source==S::BodyHand){
-                    std::uintptr_t bone=0;match=character_model_bone_read(identity.actor,10,bone,reader)&&matrix==bone+0x18;
-                    parent=0; // These native producers explicitly consume BODY10.
-                }else if(site.source==S::HeldPart){
-                    std::uintptr_t bone=0;
-                    match=character_model_bone_read(actor,site.part,bone,reader)&&matrix==bone+0x18;
-                }else {
-                    const unsigned begin=site.source==S::Laser?0:2,end=site.source==S::Laser?2:5;
-                    for(unsigned id=begin;id<end;++id){
-                        std::uintptr_t bone=0;
-                        if(character_model_bone_read(actor,id,bone,reader)&&matrix==bone+0x18){match=true;break;}
-                    }
+                if(!reader.value(handler+0x38+handle*8,actor)||!actor)continue;
+                CharacterEmitterObservation candidate(site,caller,false);
+                candidate.result(re4::EmitterDiagnosticResult::Matrix);
+                if(!character_emitter_matrix_read(site,matrix,identity.actor,actor,reader,&candidate)){
+                    if(!matched&&candidate.words[5]>=observation.words[5])observation.take(candidate);
+                    continue;
                 }
-                if(match){
-                    if(matched&&selected_parent!=parent){ambiguous=true;break;}
+                candidate.result(re4::EmitterDiagnosticResult::Owner);
+                if(!character_emitter_owner(bank,actor,handle,parent,reader,&candidate)){
+                    if(!matched&&candidate.words[5]>=observation.words[5])observation.take(candidate);
+                    continue;
+                }
+                if(site.source==S::BodyHand)parent=0; // These producers explicitly consume BODY10.
+                if(matched&&selected_parent!=parent){ambiguous=true;break;}
+                if(!matched){
+                    const auto slot=candidate.words[10];
+                    candidate.words[9]=parent;
+                    if(slot<3)candidate.visual_local=bank.visual[slot].shift[parent];
+                    observation.take(candidate);
                     selected_parent=parent;matched=true;
                 }
             }
             if(!matched||ambiguous)continue;
+            observation.result(re4::EmitterDiagnosticResult::Pose);
             re4::CharacterEmitterPose pose{};std::uintptr_t pointers[26]{};
             re4::ViewMatrix3x4 source{},value{};
             if(character_emitter_current(bank,pose,pointers,reader)&&reader.value(matrix,source)
@@ -1457,6 +1572,8 @@ bool character_emitter_input(re4::CharacterEmitterSite site,const re4::ViewMatri
                 &&bank.token.load(std::memory_order_acquire)==token&&!bank.fault.load(std::memory_order_acquire)
                 &&character_renderer_generation.load(std::memory_order_acquire)==identity.renderer
                 &&character_renderer_ready.load(std::memory_order_acquire)&&!character_teardown.load(std::memory_order_acquire)){
+                observation.vectors(pose.delta[selected_parent],bank.emitter.world[0]);
+                observation.result(re4::EmitterDiagnosticResult::Applied);
                 out=value;result=true;
             }
             break;
@@ -1617,7 +1734,7 @@ HOOK_DEFINE_TRAMPOLINE(CharacterEmitterPoint){
         const auto site=re4::character_emitter_site(re4::CharacterEmitterMath::Point,caller-main_base);
         if(site.source==re4::CharacterEmitterSource::None){Orig(matrix,point,out);return;}
         re4::ViewMatrix3x4 corrected{};
-        if(character_emitter_input(site,matrix,corrected))Orig(&corrected,point,out);
+        if(character_emitter_input(site,matrix,corrected,caller-main_base))Orig(&corrected,point,out);
         else Orig(matrix,point,out);
     }
 };
@@ -1631,7 +1748,7 @@ HOOK_DEFINE_TRAMPOLINE(CharacterEmitterProduct){
         const auto site=re4::character_emitter_site(re4::CharacterEmitterMath::Product,caller-main_base);
         if(site.source==re4::CharacterEmitterSource::None){Orig(a,b,out);return;}
         re4::ViewMatrix3x4 corrected{};
-        if(character_emitter_input(site,site.operand?b:a,corrected))Orig(site.operand?a:&corrected,site.operand?&corrected:b,out);
+        if(character_emitter_input(site,site.operand?b:a,corrected,caller-main_base))Orig(site.operand?a:&corrected,site.operand?&corrected:b,out);
         else Orig(a,b,out);
     }
 };
@@ -1645,7 +1762,7 @@ HOOK_DEFINE_TRAMPOLINE(CharacterEmitterCopy){
         const auto site=re4::character_emitter_site(re4::CharacterEmitterMath::Copy,caller-main_base);
         if(site.source==re4::CharacterEmitterSource::None){Orig(matrix,out);return;}
         re4::ViewMatrix3x4 corrected{};
-        if(character_emitter_input(site,matrix,corrected))Orig(&corrected,out);
+        if(character_emitter_input(site,matrix,corrected,caller-main_base))Orig(&corrected,out);
         else Orig(matrix,out);
     }
 };
@@ -2028,8 +2145,8 @@ HOOK_DEFINE_TRAMPOLINE(CharacterRendererInitialize) {
     }
 };
 void character_appearance_install(){
-    character_native.effect_script=reinterpret_cast<decltype(character_native.effect_script)>(main_base+0x8D470);
     character_appearance_reset();
+    character_native.effect_script=reinterpret_cast<decltype(character_native.effect_script)>(main_base+0x8D470);
     character_native.initialize=reinterpret_cast<decltype(character_native.initialize)>(main_base+0x2B66C0);
     character_native.attach=reinterpret_cast<decltype(character_native.attach)>(main_base+0x2B6740);
     character_native.output=reinterpret_cast<decltype(character_native.output)>(main_base+0x281D20);

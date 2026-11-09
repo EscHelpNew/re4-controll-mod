@@ -56,9 +56,9 @@ class TestRunnerTests(unittest.TestCase):
     def test_catalog_retains_every_committed_native_spec(self):
         expected = {p.stem for p in (ROOT / 'tests').glob('*_tests.cpp')} | {'installer_preview'}
         self.assertEqual({c.name for c in NATIVE_CASES}, expected)
-        self.assertEqual(len(NATIVE_CASES), 109)
-        self.assertEqual(sum(c.standard == 'c++17' for c in NATIVE_CASES), 38)
-        self.assertEqual(sum(c.standard == 'c++20' for c in NATIVE_CASES), 71)
+        self.assertEqual(len(NATIVE_CASES), 112)
+        self.assertEqual(sum(c.standard == 'c++17' for c in NATIVE_CASES), 39)
+        self.assertEqual(sum(c.standard == 'c++20' for c in NATIVE_CASES), 73)
         for case in NATIVE_CASES:
             self.assertEqual(case.sources[0], 'tests/' + case.name + '.cpp')
 

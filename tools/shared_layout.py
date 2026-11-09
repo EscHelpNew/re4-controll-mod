@@ -15,6 +15,8 @@ def stage_shared_layout(stage: Path) -> None:
     ASSERT(__re4_control_end__ > __re4_control_start__ &&
            __re4_control_end__ - __re4_control_start__ <= 0x1000,
            "RE4 IPC block must occupy the first writable page");
+    . = ALIGN(16);
+    KEEP(*(.data.re4emitter))
     *(.data .data.*)
   } :data'''
     linker.write_text(text.replace(original, replacement, 1), encoding='utf-8')

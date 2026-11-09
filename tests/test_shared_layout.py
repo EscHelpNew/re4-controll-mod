@@ -27,7 +27,9 @@ class SharedLayoutTests(unittest.TestCase):
 extern "C" {
 unsigned char large_state[0x34B48]={1};
 __attribute__((used,section(".data.re4control")))
-unsigned char control[488]="RE4CTL_SHARED23";
+unsigned char control[504]="RE4CTL_SHARED24";
+__attribute__((used,section(".data.re4emitter"),aligned(16)))
+unsigned char emitter[352]="RE4CTL_EMIT1";
 }
 ''')
             for command in ([str(compiler), '-c', '-fno-common', '-fno-ident', str(stage / 'layout.cpp'), '-o', str(stage / 'layout.o')],
@@ -36,12 +38,14 @@ unsigned char control[488]="RE4CTL_SHARED23";
                 result = subprocess.run(command, capture_output=True, text=True, timeout=20)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             output = (stage / 'data.bin').read_bytes()
-            self.assertEqual(output.find(b'RE4CTL_SHARED23'), 0)
-            self.assertIn(1, output[488:520])
+            self.assertEqual(output.find(b'RE4CTL_SHARED24'), 0)
+            # Both ELF and COFF align the504-byte control block to512 bytes.
+            self.assertEqual(output.find(b'RE4CTL_EMIT1'), 512)
+            self.assertIn(1, output[864:896])
             self.assertEqual(vendor.read_bytes(), original)
             source = (stage / 'layout.cpp').read_text()
             for invalid in (source.replace('.data.re4control', '.data.missing'),
-                            source.replace('control[488]', 'control[8192]')):
+                            source.replace('control[504]', 'control[8192]')):
                 with self.subTest(source=invalid):
                     (stage / 'layout.cpp').write_text(invalid)
                     compiled = subprocess.run([str(compiler), '-c', '-fno-ident', str(stage / 'layout.cpp'),

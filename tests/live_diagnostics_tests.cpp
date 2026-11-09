@@ -74,6 +74,7 @@ int main(){
     snapshot.player_valid=snapshot.camera_valid=true;snapshot.camera_projection[3]=std::numeric_limits<float>::infinity();
     assert(format_live_diagnostics(snapshot,out.data(),live_diagnostic_json_limit,size));valid_json(out.data());
     const std::string text(out.data());
+    assert(text.find("\"emitters\":null")!=std::string::npos);
     assert(text.find("\"positions_sample_readable\":false")!=std::string::npos);
     assert(text.find("\"knife\":{\"valid\":false")!=std::string::npos);
     assert(text.find("\"hud_cached\":{\"valid\":false,\"ordered_with_popup\":false")!=std::string::npos);
@@ -151,6 +152,26 @@ int main(){
     assert(native.find("\"source_shape_metadata_only\":true")!=std::string::npos);
     assert(native.find("\"positions_sample_finite\":true")!=std::string::npos);
     assert(native.find("\"samples_only\":true")!=std::string::npos);
+    snapshot.emitters_valid=true;snapshot.emitters=initial_emitter_diagnostics();snapshot.emitters.sequence=8;
+    for(auto& record:snapshot.emitters.records){
+        for(auto& word:record)word=0xFFFFFFFF;
+        const float visual[]{-12.5f,0.25f,19.f},fresh[]{1.f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()};
+        std::memcpy(record+12,visual,sizeof(visual));std::memcpy(record+15,fresh,sizeof(fresh));
+    }
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    const std::string emitter(out.data());assert(size<live_diagnostic_json_limit);
+    assert(emitter.find("\"emitters\":{\"version\":1,\"sequence\":8")!=std::string::npos);
+    for(const char* channel:{"laser","body_hand","held","emitter"})
+        assert(emitter.find(std::string("\"")+channel+"\":{\"attempts\":4294967295")!=std::string::npos);
+    assert(emitter.find("\"visual_delta\":[-12.5,0.25,19]")!=std::string::npos);
+    assert(emitter.find("\"fresh_delta\":[1,null,null]")!=std::string::npos);
+    snapshot.emitters.sequence=9;
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    assert(std::string(out.data()).find("\"emitters\":null")!=std::string::npos);
+    snapshot.emitters.sequence=8;snapshot.emitters.bytes=999;
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));
+    assert(std::string(out.data()).find("\"emitters\":null")!=std::string::npos);
+    snapshot.emitters=initial_emitter_diagnostics();
     hud.context_stable=false;
     assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
     assert(std::string(out.data()).find("\"logical_viewport\":null")!=std::string::npos);

@@ -7,6 +7,8 @@
 #include "re4/native_weapon_popup.hpp"
 #include "re4/settings.hpp"
 #include "re4/shared.hpp"
+#include "re4/money_bonus.hpp"
+#include "re4/money_bonus_store.hpp"
 #include "re4/turn.hpp"
 #include "re4/hook_context.hpp"
 #include "re4/response.hpp"
@@ -38,6 +40,7 @@
 #include "re4/character_grip.hpp"
 #include "re4/character_height_view.hpp"
 #include "re4/character_emitter.hpp"
+#include "re4/emitter_diagnostics.hpp"
 #include "re4/health_name.hpp"
 #include "re4/character_loading.hpp"
 #include "re4/character_textures.hpp"
@@ -85,6 +88,8 @@ struct SensorBackend {
 
 __attribute__((used, section(".data.re4control")))
 volatile re4::SharedControl control = re4::initial_shared_control();
+__attribute__((used, section(".data.re4emitter"), aligned(16)))
+volatile re4::EmitterDiagnosticsWire emitter_diagnostics = re4::initial_emitter_diagnostics();
 __attribute__((used)) re6::ProducerRing<1024> telemetry_ring;
 struct TelemetryInput {NpadState pad{};std::uint64_t tick=0;std::uint32_t id=0,style=0;};
 static_assert(sizeof(TelemetryInput)==56);
@@ -262,6 +267,9 @@ void weapon_popup_trace(unsigned producer,unsigned draw=0,bool commit=false,bool
 void draw_weapon_popup_hud();
 void draw_inventory_damage_hud();
 void draw_extended_upgrade_hud();
+void money_poll();
+void money_on_load(unsigned slot,std::uint32_t crc);
+void money_on_save(unsigned slot,std::uint32_t crc);
 void draw_case_ammo_hud();
 bool health_name_sprite(void* sprite);
 void draw_health_name_hud();
@@ -898,6 +906,7 @@ HOOK_DEFINE_TRAMPOLINE(PadNormalize) {
         const int result = Orig(state);
         view_frame.fetch_add(1,std::memory_order_acq_rel);
         poll_settings(); read_initial_settings();publish_view_settings();
+        money_poll();
         poll_sensors();
         publish_graphics_diagnostics();
         control.frames = control.frames + 1;
@@ -1309,6 +1318,7 @@ HOOK_DEFINE_TRAMPOLINE(HudDraw) {
 #include "weapon_popup.inc"
 #include "scoped_aim.inc"
 #include "extended_upgrade.inc"
+#include "money_bonus.inc"
 #include "ammo_counter.inc"
 #include "health_name.inc"
 HOOK_DEFINE_TRAMPOLINE(RootDisplacement) {
@@ -1490,6 +1500,7 @@ extern "C" void exl_main(void*, void*) {
     InventoryDamageName::InstallAtOffset(0x4CFFCC);
     StartupLogos::InstallAtOffset(0x4E3960);
     extended_upgrade_install();
+    money_install();
     ammo_counter_install();
     modern_move_install();
     character_appearance_install();

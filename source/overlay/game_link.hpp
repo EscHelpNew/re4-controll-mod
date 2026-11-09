@@ -3,6 +3,7 @@
 #include "re4/settings.hpp"
 #include "re4/shared.hpp"
 #include "re4/live_diagnostics.hpp"
+#include "re4/money_bonus.hpp"
 #include <array>
 #include <string>
 
@@ -19,6 +20,7 @@ public:
     std::string details;
     std::string message = "Not connected";
     re4::CharacterAppearanceSnapshot appearance;
+    re4::MoneySnapshot money;
     std::uint32_t popup_diagnostic=0;
     bool popup_bounds_valid=false;
     std::array<float,4> popup_viewport{};
@@ -32,6 +34,8 @@ public:
     bool apply(const re4::Settings& settings);
     bool refresh_appearance();
     bool refresh_popup();
+    bool refresh_money();
+    bool request_money();
     // Use a separate worker-owned instance. False still fills an error/status
     // snapshot which may be formatted and returned to a diagnostic client.
     bool read_diagnostic_snapshot(re4::LiveDiagnosticSnapshot&);

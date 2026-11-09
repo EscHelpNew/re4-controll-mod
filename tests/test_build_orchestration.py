@@ -26,7 +26,7 @@ def load_build():
 def module_image(valid=True, data_size=512):
     header = bytearray(256); header[:4] = b'NSO0'; body = bytearray()
     for i, content in enumerate((b'CODE' * 16, b'RODATA' * 8,
-                                 (b'RE4CTL_SHARED23\0' if valid else b'WRONG_CONTROL_ID') + bytes(max(0, data_size - 16)))):
+                                 (b'RE4CTL_SHARED24\0' if valid else b'WRONG_CONTROL_ID') + bytes(max(0, data_size - 16)))):
         struct.pack_into('<III', header, 16 + i * 16, 256 + len(body), i * 4096, len(content))
         body.extend(content)
     return header + body
@@ -117,6 +117,7 @@ class BuildContracts(unittest.TestCase):
         self.vendor(); vendor = self.root / 'third_party/exlaunch'
         original = {p.relative_to(vendor): p.read_bytes() for p in vendor.rglob('*') if p.is_file()}
         self.invoke(self.build.module); stage = self.out / 'game-sdk'
+        self.assertEqual((stage/'source/program/money_bonus.inc').read_bytes(),(ROOT/'source/game/money_bonus.inc').read_bytes())
         package = self.out / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
         self.assertEqual((package / 'subsdk9').read_bytes(), module_image())
         self.assertEqual((package / 'main.npdm').read_bytes(), b'OWN_NPDM')

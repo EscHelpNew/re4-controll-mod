@@ -176,6 +176,25 @@ void hud_cached_json(Json& j,const LiveHudRendererObservation& h){
     hud_values_json(j,"projection",h.projection,valid);hud_values_json(j,"correction",h.correction,valid);
     hud_values_json(j,"combined",h.combined,valid);j.end();
 }
+void emitters_json(Json& j,const LiveDiagnosticSnapshot& snapshot){
+    const auto& wire=snapshot.emitters;
+    if(!snapshot.emitters_valid||!emitter_diagnostics_header_valid(wire)||(wire.sequence&1)){
+        j.null("emitters");return;
+    }
+    j.key("emitters");j.object();j.u("version",wire.version);j.u("sequence",wire.sequence);
+    constexpr const char* channels[]{"laser","body_hand","held","emitter"};
+    constexpr const char* fields[]{"attempts","applied","last_lr","failure_lr","failure_code","owner_stage",
+        "mismatch_offset","captured_mask","drawn_mask","parent","slot","part"};
+    for(unsigned channel=0;channel<kEmitterDiagnosticsChannels;++channel){
+        const auto* record=wire.records[channel];j.key(channels[channel]);j.object();
+        for(unsigned field=0;field<12;++field)j.u(fields[field],record[field]);
+        float visual[3]{},fresh[3]{};
+        std::memcpy(visual,record+12,sizeof(visual));std::memcpy(fresh,record+15,sizeof(fresh));
+        j.floats("visual_delta",visual,3);j.floats("fresh_delta",fresh,3);
+        j.u("last_result",record[18]);j.u("applied_lr",record[19]);j.end();
+    }
+    j.end();
+}
 }
 bool format_live_diagnostics(const LiveDiagnosticSnapshot& snapshot,char* output,std::size_t capacity,std::size_t& size){
     size=0;if(!output||!capacity)return false;output[0]=0;
@@ -189,6 +208,7 @@ bool format_live_diagnostics(const LiveDiagnosticSnapshot& snapshot,char* output
 #define F(name) j.f(#name,c.name)
 #define I(name) j.i(#name,c.name)
     U(abi);U(status);U(capabilities);U(frames);U(sequence);U(applied_sequence);j.end();
+    emitters_json(j,snapshot);
     j.key("controls");j.object();F(raw_lx);F(raw_ly);F(raw_rx);F(raw_ry);F(applied_turn_gain);
     U(direction_calls);U(speed_calls);U(pad_samples);U(last_pad_id);F(maximum_raw_lx);F(last_turn_factor);F(original_yaw_delta);F(corrected_yaw_delta);
     U(movement_calls);U(camera_calls);U(aim_calls);F(movement_factor);U(aim_source);I(applied_aim_x);I(applied_aim_y);F(aim_full_scale);

@@ -82,7 +82,7 @@ void GameLink::initialize_shared(const GameLink& owner) {
         message = tr("Debug service unavailable","Сервис отладки недоступен");
 }
 void GameLink::close() {
-    appearance={};address_=process_=0;
+    appearance={};money={};address_=process_=0;
     popup_diagnostic=0;popup_bounds_valid=false;popup_viewport={};popup_scissor={};
     if (!borrowed_ && serviceIsActive(&service_)) serviceClose(&service_);
     service_ = {};borrowed_ = false;
@@ -90,7 +90,7 @@ void GameLink::close() {
     info_ready_ = false;
 }
 bool GameLink::connect() {
-    appearance={};
+    appearance={};money={};
     popup_diagnostic=0;popup_bounds_valid=false;popup_viewport={};popup_scissor={};
     address_ = process_ = 0;
     details = "RE4 process unavailable";
@@ -236,6 +236,29 @@ bool GameLink::refresh_appearance(){
     appearance.status=static_cast<re4::CharacterAppearanceStatus>(block.appearance_status);
     appearance.error=block.appearance_error;appearance.generation=after;appearance.valid=true;return true;
 }
+bool GameLink::refresh_money(){
+    money={};if(!address_)return false;
+    Metadata metadata{};
+    if(R_FAILED(serviceDispatchOut(&service_,65002,metadata))||!supported(metadata)||metadata.pid!=process_){
+        address_=process_=0;return false;
+    }
+    u32 before=0,after=0;re4::SharedControl block{};
+    const auto ack=address_+offsetof(re4::SharedControl,money_ack);
+    if(R_FAILED(read_memory(&service_,ack,&before,4))
+        ||R_FAILED(read_memory(&service_,address_,&block,sizeof(block)))
+        ||R_FAILED(read_memory(&service_,ack,&after,4))||before!=after||block.money_ack!=after
+        ||std::memcmp(block.marker,re4::kSharedMarker,16)||block.abi!=re4::kSharedAbi||block.status!=1
+        ||block.money_result>unsigned(re4::MoneyResult::Capacity)
+        ||block.money_availability>unsigned(re4::MoneyAvailability::Capacity))return false;
+    money={block.money_request,block.money_ack,static_cast<re4::MoneyResult>(block.money_result),
+        static_cast<re4::MoneyAvailability>(block.money_availability)};return true;
+}
+bool GameLink::request_money(){
+    if(!refresh_money()||money.pending()||money.availability!=re4::MoneyAvailability::Ready)return false;
+    const u32 request=money.request+1;
+    if(R_FAILED(write_memory(&service_,address_+offsetof(re4::SharedControl,money_request),&request,sizeof(request))))return false;
+    money.request=request;return true;
+}
 bool GameLink::refresh_popup(){
     popup_diagnostic=0;
     popup_bounds_valid=false;popup_viewport={};popup_scissor={};
@@ -286,6 +309,19 @@ bool GameLink::read_diagnostic_snapshot(re4::LiveDiagnosticSnapshot& out){
             &&before[i]==after&&captured[i]==after;
     }
     out.status=S::Connected;out.connected=true;out.shared=block;
+    // Optional diagnostic sidecar: old modules and torn observations remain
+    // valid core snapshots. This path is never used by ordinary UI refreshes.
+    if(address_<=std::numeric_limits<u64>::max()-re4::kEmitterDiagnosticsOffset-re4::kEmitterDiagnosticsBytes){
+        const auto sidecar=address_+re4::kEmitterDiagnosticsOffset;
+        const auto sequence=sidecar+offsetof(re4::EmitterDiagnosticsWire,sequence);
+        u32 first=0,last=0;re4::EmitterDiagnosticsWire emitter{};
+        if(R_SUCCEEDED(read_memory(&service_,sequence,&first,sizeof(first)))&&!(first&1)
+            &&R_SUCCEEDED(read_memory(&service_,sidecar,&emitter,sizeof(emitter)))
+            &&R_SUCCEEDED(read_memory(&service_,sequence,&last,sizeof(last)))
+            &&first==last&&emitter.sequence==last&&re4::emitter_diagnostics_header_valid(emitter)){
+            out.emitters=emitter;out.emitters_valid=true;
+        }
+    }
     out.settings_valid=stable[0]&&re4::decode_settings(block.settings,sizeof(block.settings),out.settings);
     out.appearance_valid=stable[1]&&block.appearance_applied<8&&block.appearance_status<=3;
     out.popup_capture_stable=stable[2];

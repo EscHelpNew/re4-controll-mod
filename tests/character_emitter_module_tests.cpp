@@ -4,7 +4,7 @@
 namespace {
 std::uintptr_t emitter_script=0;
 struct EmitterFixture:HeldFixture {
-    alignas(32) std::uint8_t bones[5][0x1F0]{},effects[3][0x108]{};
+    alignas(32) std::uint8_t bones[7][0x1F0]{},effects[3][0x108]{};
     EmitterFixture(unsigned handle=0,unsigned parent=10,bool linked=false):HeldFixture(handle,parent){
         re4::CharacterBindBone source[26]{},donor[26]{};
         for(unsigned i=0;i<26;++i){source[i].id=donor[i].id=std::uint8_t(i);source[i].parent=donor[i].parent=re4::character_core_parents[i];}
@@ -19,9 +19,9 @@ struct EmitterFixture:HeldFixture {
             auto inverse=identity_matrix;inverse.m[1][3]=-1000;
             character_store(bone,0x110,inverse);
         }
-        for(unsigned i=0;i<5;++i){
+        for(unsigned i=0;i<7;++i){
             character_store(bones[i],0x18,identity_matrix);
-            if(i<4)character_store(bones[i],0x108,static_cast<void*>(bones[i+1]));
+            if(i<6)character_store(bones[i],0x108,static_cast<void*>(bones[i+1]));
         }
         character_store(bones[0],0x78,static_cast<void*>(player_bones[physical(parent)]));
         character_store(bones[1],0x18,base);weapon[0x11A]=5;
@@ -51,6 +51,20 @@ bool emitter_near(re4::ViewVec3 a,re4::ViewVec3 b){return std::fabs(a.x-b.x)<.00
 }
 #ifndef RE4_EMITTER_FIXTURE_ONLY
 int main(){
+    {
+        EmitterFixture y;
+        // Stock WEP03/WEP18 effects use muzzle part5; ordinary variants use
+        // parts2..4. Seven native cBones with a real Red9 class reproduce the
+        // extra attachment without using any game mesh vertices.
+        character_store(y.weapon,0,main_base+0xB05488);
+        character_store(y.f.image.data(),0xB05488+0x28,main_base+0x2E8590);
+        character_store(y.f.image.data(),0xB05488+0x98,main_base+0x2E8D80);
+        y.weapon[0x11A]=7;
+        assert(emitter_near(y.point(0x1F4A48,y.world(5)),{1,-298,3}));
+        assert(emitter_near(y.point(0x1F4A48,y.world(6)),{1,2,3}));
+        y.weapon[0x11A]=5;
+        assert(emitter_near(y.point(0x1F4A48,y.world(5)),{1,2,3}));
+    }
     {
         EmitterFixture y;game_test::memory_queries=0;
         assert(emitter_near(y.point(0x4EC134),{1,2,3}));

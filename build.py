@@ -113,7 +113,7 @@ def module():
     profile = ROOT / 'profiles/010099A00BC1E000/npdm.json'
     (stage / 'config.json').write_text(profile.read_text(encoding='utf-8'), encoding='utf-8')
     shutil.copy2(ROOT / 'source/game/module.cpp', stage / 'source/program/main.cpp')
-    for name in ('modern_move.inc','character_appearance.inc','character_pack_budget.inc','aim_raise.inc','scoped_aim.inc','enemy_health.inc','grenade_spot.inc','pickup_confirmation.inc','startup_logos.inc','dpad_weapons.inc','weapon_popup.inc','weapon_popup_native_text.inc','inventory_damage.inc','inventory_damage_native_text.inc','extended_upgrade.inc','ammo_counter.inc','health_name.inc'):
+    for name in ('modern_move.inc','character_appearance.inc','character_pack_budget.inc','aim_raise.inc','scoped_aim.inc','enemy_health.inc','grenade_spot.inc','pickup_confirmation.inc','startup_logos.inc','dpad_weapons.inc','weapon_popup.inc','weapon_popup_native_text.inc','inventory_damage.inc','inventory_damage_native_text.inc','extended_upgrade.inc','money_bonus.inc','ammo_counter.inc','health_name.inc'):
         shutil.copy2(ROOT / 'source/game' / name, stage / 'source/program' / name)
     core = stage / 'source/re4-core'
     core.mkdir(exist_ok=True)
@@ -163,7 +163,7 @@ def module():
     from tools.inspect_nso import load_nso
     image = load_nso(package / 'subsdk9')
     data = image.segments[2]
-    if data.size < 488 or image.memory[data.memory_offset:data.memory_offset+16] != b'RE4CTL_SHARED23\0':
+    if data.size < 504 or image.memory[data.memory_offset:data.memory_offset+16] != b'RE4CTL_SHARED24\0':
         raise RuntimeError('RE4 IPC block is outside the first writable data page')
     print('RE4 IPC discovery: shared block at writable data offset0 PASS')
     result = subprocess.run([sdk_tool('npdmtool'), str(profile), str(package / 'main.npdm')],

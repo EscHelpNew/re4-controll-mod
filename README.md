@@ -9,7 +9,7 @@ and updates from GitHub Releases. English is the default language.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current release is **[0.27.3](docs/releases/v0.27.3.md)** (2026-11-08),
+The current release is **[0.27.6](docs/releases/v0.27.6.md)** (2026-11-09),
 including all changes since 0.20.0.
 
 - Cosmetic character selection in **Game**, also available in the overlay:
@@ -18,9 +18,13 @@ including all changes since 0.20.0.
   knives and horizontal right-stick rotation in the attache case.
 - Current-position laser, muzzle flashes and ejected shells for cosmetic bodies.
   Character names and spare ammunition follow the native health gauge.
-- Version 0.27.3 aligns knife trails with the blade tip, fits two-handed aiming
-  grips without stretching limbs, corrects native shot/TMP shell origins and
-  places added health-HUD text beneath native fullscreen fades.
+- Separate **Game → Receive 200 000 pesetas** action, with a warning and
+  confirmation. One bonus per tracked main-story playthrough, including
+  restarts; independent of extended weapon upgrades. Save after receiving it.
+  [Save-history limits and recovery details](docs/money-bonus.md).
+- Corrected muzzle-effect initialization and attachment points for held weapons,
+  including stock-equipped guns. Foreign particles skip unnecessary pose checks;
+  diagnostic listener failures use a bounded recovery delay.
 - Optional D-pad weapon/grenade cycling, native-font weapon names with animated
   mist, current attack values in the case, additional weapon upgrades and an
   ammunition counter.
@@ -40,11 +44,11 @@ shoulder camera and stable character framing remain available through the
 **RE6** controls profile or the corresponding movement and **Unified sticks**
 options. Native reload timing is preserved; scopes stay stationary.
 
-All 110 automated cases passed: 109 native programs and 175 Python tests.
-Executable-line coverage is **91.30% C++ / 96.18% Python**, including unexecuted
-target-only code in the denominator. Module, overlay and installer builds passed;
-the delivered application restarted on Switch with its exact verified image hash.
-See the [release notes](docs/releases/v0.27.3.md) and
+All **113** automated cases passed: **112** native programs and **175** Python tests.
+Executable-line coverage is **91.60% C++ / 96.18% Python**,
+including unexecuted target-only code. Paired ARM module, overlay and installer
+builds passed. The one-time money action still needs a console check.
+See the [release notes](docs/releases/v0.27.6.md) and
 [testing instructions](docs/testing.md).
 
 ## Features

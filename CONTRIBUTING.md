@@ -8,6 +8,12 @@ Keep changes in the root checkout. Add tests for changed behavior and run
 `python build.py --test`. Game changes also require a module/overlay/NRO build.
 Use actual callback/SDK-adapter fixtures when changing hooks or installation.
 
+Bump `include/re4/version.hpp` for every changed build before console delivery
+or publication, including diagnostic builds. Never deliver different contents
+under a version number that was already delivered; internal build suffixes do
+not replace a version bump. Keep the app, overlay, module and version assertions
+in sync. Retrying delivery of the exact same bytes does not need another bump.
+
 Public files must pass `python tools/audit_public.py --history`. Keep `project.json`,
 `data/`, `build/` and credentials out of Git. Runtime secrets belong on the local
 device or computer, never in examples or issue attachments.

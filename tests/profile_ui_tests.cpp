@@ -37,6 +37,8 @@ bool GameLink::connect(){return true;}
 bool GameLink::apply(const re4::Settings& s){++sends;return re4::valid_settings(s);}
 bool GameLink::refresh_appearance(){appearance={};return false;}
 bool GameLink::refresh_popup(){popup_diagnostic=0;return false;}
+bool GameLink::refresh_money(){money={};return false;}
+bool GameLink::request_money(){return false;}
 int main(){
     using namespace re4;
     // Saving through the actual Game toggle survives a fresh overlay lifecycle.

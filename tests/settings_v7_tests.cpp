@@ -59,8 +59,8 @@ int main() {
     using namespace re4;
     Settings defaults;
     assert(defaults.character_appearance==CharacterAppearance::Leon);
-    assert(std::strcmp(kVersion,"0.27.3")==0);
-    assert(kSharedAbi==23 && std::strcmp(kSharedMarker,"RE4CTL_SHARED23")==0 && sizeof(SharedControl)==488);
+    assert(std::strcmp(kVersion,"0.27.6")==0);
+    assert(kSharedAbi==24 && std::strcmp(kSharedMarker,"RE4CTL_SHARED24")==0 && sizeof(SharedControl)==504);
     assert(!defaults.grenade_landing_spot && !defaults.skip_pickup_confirmation && !defaults.skip_startup_logos && !defaults.disable_aim_sway && !defaults.dpad_weapon_switching);
     assert(kSettingsBytes==128 && offsetof(SharedControl,settings)==32 && offsetof(SharedControl,frames)==160);
     assert(!defaults.re6_response && !defaults.move_while_reloading);

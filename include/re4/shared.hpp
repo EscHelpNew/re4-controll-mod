@@ -6,8 +6,8 @@
 #include <atomic>
 
 namespace re4 {
-constexpr char kSharedMarker[16] = "RE4CTL_SHARED23";
-constexpr unsigned kSharedAbi = 23;
+constexpr char kSharedMarker[16] = "RE4CTL_SHARED24";
+constexpr unsigned kSharedAbi = 24;
 // Wire layout is shared by the module and overlay, with no runtime pointers.
 // The overlay publishes an odd sequence, payload, then the next even sequence.
 // The module validates both sequence reads and the payload checksum.
@@ -87,6 +87,10 @@ struct alignas(8) SharedControl {
     std::uint64_t popup_tick;
     std::uint64_t popup_event;
     char module_version[16];
+    std::uint32_t money_request;
+    std::uint32_t money_ack;
+    std::uint32_t money_result;
+    std::uint32_t money_availability;
 };
 static_assert(offsetof(SharedControl, settings) == 32);
 static_assert(offsetof(SharedControl, frames) == 160);
@@ -99,7 +103,9 @@ static_assert(offsetof(SharedControl,popup_scissor)==440);
 static_assert(offsetof(SharedControl,popup_tick)==456);
 static_assert(offsetof(SharedControl,popup_event)==464);
 static_assert(offsetof(SharedControl,module_version)==472);
-static_assert(sizeof(SharedControl) == 488);
+static_assert(offsetof(SharedControl,money_request)==488);
+static_assert(offsetof(SharedControl,money_ack)==492);
+static_assert(sizeof(SharedControl) == 504);
 // Native64E084..B0 represents disabled scissor by this exact integer rect.
 // Keep it distinct from ordinary bounded rectangles and from framebuffer size.
 constexpr bool native_scissor_disabled(const std::int32_t* rect){

@@ -18,6 +18,8 @@ bool storage_available=true,have_saved=false,saved_gyro=true,last_sent_gyro=fals
 bool saved_enemy=false,last_sent_enemy=false,saved_numbers=false,last_sent_numbers=false;
 re4::CharacterAppearance saved_appearance=re4::CharacterAppearance::Leon,sent_appearance=re4::CharacterAppearance::Leon;
 re4::CharacterAppearanceSnapshot game_appearance;
+unsigned money_requests=0;
+bool money_connected=true;
 tsl::elm::List* list(tsl::elm::OverlayFrame* f){return static_cast<tsl::elm::List*>(f->content());}
 tsl::elm::ListItem* find(tsl::elm::OverlayFrame* f,const std::string& label){
     for(auto* e:list(f)->children)if(auto* row=dynamic_cast<tsl::elm::ListItem*>(e))if(row->label==label)return row;
@@ -115,8 +117,32 @@ void GameLink::initialize(){}void GameLink::close(){}bool GameLink::connect(){re
 bool GameLink::apply(const re4::Settings& s){++sends;sent_appearance=s.character_appearance;last_sent_gyro=s.gyro_enabled;last_sent_enemy=s.enemy_health_bars;last_sent_numbers=s.enemy_health_numbers;sent_game={s.grenade_landing_spot,s.skip_pickup_confirmation,s.skip_startup_logos,s.disable_aim_sway,s.dpad_weapon_switching,s.extended_weapon_upgrade,s.case_ammo_counter};return re4::valid_settings(s);}
 bool GameLink::refresh_appearance(){appearance=game_appearance;return appearance.valid;}
 bool GameLink::refresh_popup(){popup_diagnostic=0;return false;}
+bool GameLink::refresh_money(){return money_connected;}
+bool GameLink::request_money(){if(!money_connected||money.availability!=re4::MoneyAvailability::Ready||money.pending())return false;++money_requests;++money.request;return true;}
 int main(){
     using namespace re4;
+    {
+        settings={};note.clear();link.money={0,0,MoneyResult::None,MoneyAvailability::Ready};
+        GameGui page;auto* frame=static_cast<tsl::elm::OverlayFrame*>(page.createUI());
+        auto* action=find(frame,"Receive 200 000 pesetas");assert(action);
+        const auto old_saves=saves,old_sends=sends;
+        assert(!action->click(HidNpadButton_Left));
+        assert(action->click(HidNpadButton_A)&&money_requests==0);
+        auto* warning=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+        tsl::gfx::Renderer render;warning->layout(0,0,448,720);warning->draw(&render);
+        assert(!render.text.empty());
+        bool mentions_easier=false;for(const auto& text:render.text)mentions_easier|=text.value.find("easier")!=std::string::npos;
+        assert(mentions_easier);
+        assert(find(warning,"Cancel")->click(HidNpadButton_A)&&tsl::navigation.empty()&&money_requests==0);
+        assert(action->click(HidNpadButton_A));warning=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
+        auto* confirm=find(warning,"Receive 200 000 pesetas");assert(confirm->click(HidNpadButton_A)&&money_requests==1);
+        assert(!confirm->click(HidNpadButton_A)&&money_requests==1);
+        link.money.ack=link.money.request;link.money.result=MoneyResult::Granted;link.money.availability=MoneyAvailability::Claimed;
+        tsl::navigation.back()->update();assert(!confirm->click(HidNpadButton_A));
+        tsl::goBack();assert(!action->click(HidNpadButton_A)&&money_requests==1);
+        assert(saves==old_saves&&sends==old_sends&&!settings.extended_weapon_upgrade);
+        money_connected=false;assert(!action->click(HidNpadButton_A));money_connected=true;delete frame;
+    }
     launch_mode_lifecycle();
     graphics_illustrations();settings={};
     {
@@ -141,7 +167,7 @@ int main(){
         auto* page=tsl::navigation.back().get();
         auto* content=static_cast<tsl::elm::OverlayFrame*>(page->root);content->layout(0,0,448,720);
         assert(content->title==(lang==Language::English?"Game":"Игра"));
-        assert(list(content)->children.size()==10 && !find(content,"Language") && !find(content,"Язык"));
+        assert(list(content)->children.size()==11 && !find(content,"Language") && !find(content,"Язык"));
         auto* health=dynamic_cast<tsl::elm::ToggleListItem*>(list(content)->children[0]);assert(health);
         auto* numbers=find(content,lang==Language::English?"Health numbers":"Числа здоровья");assert(numbers);
         assert(list(content)->children[1]==numbers && !settings.enemy_health_numbers);
