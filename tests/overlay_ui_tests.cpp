@@ -131,8 +131,9 @@ int main(){
         auto* warning=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
         tsl::gfx::Renderer render;warning->layout(0,0,448,720);warning->draw(&render);
         assert(!render.text.empty());
-        bool mentions_easier=false;for(const auto& text:render.text)mentions_easier|=text.value.find("easier")!=std::string::npos;
-        assert(mentions_easier);
+        bool mentions_easier=false,mentions_receipt=false;
+        for(const auto& text:render.text){mentions_easier|=text.value.find("easier")!=std::string::npos;mentions_receipt|=text.value.find("receipt")!=std::string::npos;}
+        assert(mentions_easier&&mentions_receipt);
         assert(find(warning,"Cancel")->click(HidNpadButton_A)&&tsl::navigation.empty()&&money_requests==0);
         assert(action->click(HidNpadButton_A));warning=static_cast<tsl::elm::OverlayFrame*>(tsl::navigation.back()->root);
         auto* confirm=find(warning,"Receive 200 000 pesetas");assert(confirm->click(HidNpadButton_A)&&money_requests==1);

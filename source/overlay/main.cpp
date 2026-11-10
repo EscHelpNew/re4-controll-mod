@@ -411,10 +411,10 @@ public:
         if(!refresh_tick_||u64(now)-refresh_tick_>=250){link.refresh_money();refresh_tick_=u64(now);}
         confirm_->setValue(re4::money_status_text(link.money,settings.language));
         frame_->set_help(link.money.result==re4::MoneyResult::Granted?tr(
-            "Added 200 000 pesetas.\nSave your game to keep the money.\nThis playthrough cannot receive another bonus.",
+            "Added 200 000 pesetas.\nSave your game to keep the money.\nThe receipt blocks another bonus.",
             "Добавлено 200 000 песет.\nСохраните игру, чтобы сохранить деньги.\nПовторно получить бонус нельзя."):tr(
-            "Adds 200 000 pesetas and makes the game easier.\nOnce per playthrough, including restarts.\nSave afterwards: unsaved money can be lost.",
-            "Добавит 200 000 песет и облегчит игру.\nОдин раз за прохождение, включая перезапуски.\nСохраните игру: несохранённые деньги теряются."));
+            "Adds 200 000 pesetas and makes the game easier.\nOne-time bonus; the receipt is saved on SD.\nSave afterwards: unsaved money can be lost.",
+            "Добавит 200 000 песет и облегчит игру.\nРазовый бонус; отметка сохраняется на SD.\nСохраните игру: несохранённые деньги теряются."));
     }
 };
 class GameGui : public tsl::Gui {
@@ -513,8 +513,8 @@ public:
             const auto now=std::chrono::steady_clock::now();
             if(now-money_refreshed_>=std::chrono::milliseconds(250)){link.refresh_money();money_refreshed_=now;}
             money_->setValue(re4::money_status_text(link.money,settings.language));
-            frame_->set_help(tr("One bonus per playthrough. Confirmation required.\nUnknown older saves cannot unlock a second bonus.",
-                "Один бонус за прохождение, с подтверждением.\nСтарое нераспознанное сохранение не даёт повторный бонус."));
+            frame_->set_help(tr("Confirmation required. Receipt saved in a separate SD file.\nLoading another save does not reset it.",
+                "С подтверждением. Отметка — в отдельном файле на SD.\nЗагрузка другого сохранения её не сбрасывает."));
         }
     }
 };

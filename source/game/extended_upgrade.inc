@@ -327,6 +327,7 @@ HOOK_DEFINE_TRAMPOLINE(ExtendedSnapshotTake){
 HOOK_DEFINE_TRAMPOLINE(ExtendedSnapshotRestore){
     static std::uint64_t Callback(void* buffer,std::uint64_t a,std::uint64_t b,std::uint64_t c){
         const auto result=Orig(buffer,a,b,c);
+        money_invalidate_request();
         if(!extended_upgrade_mask_known)return result;
         const auto key=reinterpret_cast<std::uintptr_t>(buffer);
         for(const auto& s:extended_upgrade_snapshots)if(s.buffer==key){extended_upgrade_mask=s.mask;break;}
@@ -338,7 +339,6 @@ HOOK_DEFINE_INLINE(ExtendedSave){
     static void Callback(exl::hook::InlineFloatCtx* context){
         unsigned slot=0;std::uint32_t crc=0;
         if(!context||!extended_upgrade_slot(re4::saved_x(context,19),slot,crc))return;
-        money_on_save(slot,crc);
         if(!extended_upgrade_load_store()||!extended_upgrade_resolve_mask())return;
         extended_upgrade_prune();
         std::uint16_t previous=0;
@@ -359,9 +359,8 @@ HOOK_DEFINE_INLINE(ExtendedLoad){
         extended_upgrade_pending={};
         extended_upgrade_snapshots={};
         extended_upgrade_mask=0;extended_upgrade_mask_known=false;extended_upgrade_loaded_identity={};
-        money_on_load(20,0); // Invalid slot metadata must also invalidate the old campaign.
+        money_invalidate_request();
         if(!extended_upgrade_slot(re4::saved_x(context,19),slot,crc))return;
-        money_on_load(slot,crc);
         extended_upgrade_loaded_identity={slot,crc,true};
         extended_upgrade_resolve_mask();
     }

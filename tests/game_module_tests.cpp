@@ -45,7 +45,6 @@ std::uint64_t test_ExtendedSnapshotTake(void*,std::uint64_t,std::uint64_t,std::u
 std::uint64_t test_ExtendedSnapshotRestore(void*,std::uint64_t,std::uint64_t,std::uint64_t);
 void test_ExtendedSave(exl::hook::InlineFloatCtx*);
 void test_ExtendedLoad(exl::hook::InlineFloatCtx*);
-void test_MoneyCampaignStart(exl::hook::InlineFloatCtx*);
 void test_RootDisplacement(void*,void*,unsigned,re4::ViewVec3*,re4::ViewVec3*);
 int test_AimSensitivity(void*, int);
 void test_AimSway(void*, unsigned, float*, float*);
@@ -228,7 +227,6 @@ void test_ExtendedCommit(exl::hook::InlineFloatCtx*){}
 void test_ExtendedDamage(exl::hook::InlineFloatCtx*){}
 void test_ExtendedSave(exl::hook::InlineFloatCtx*){}
 void test_ExtendedLoad(exl::hook::InlineFloatCtx*){}
-void test_MoneyCampaignStart(exl::hook::InlineFloatCtx*){}
 std::vector<re4::SensorState> sensor_batch;
 std::uint8_t sampler_seen[20]{};
 std::uint32_t shadow_flags_seen=0;
@@ -1917,7 +1915,7 @@ int main(){
             f.image[offset]^=1;
         }
         exl_main(nullptr,nullptr);
-        assert(control.status==1 && game_test::installed==65 && game_test::initialized==1);
+        assert(control.status==1 && game_test::installed==64 && game_test::initialized==1);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }

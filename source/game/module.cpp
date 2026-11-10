@@ -268,8 +268,7 @@ void draw_weapon_popup_hud();
 void draw_inventory_damage_hud();
 void draw_extended_upgrade_hud();
 void money_poll();
-void money_on_load(unsigned slot,std::uint32_t crc);
-void money_on_save(unsigned slot,std::uint32_t crc);
+void money_invalidate_request();
 void draw_case_ammo_hud();
 bool health_name_sprite(void* sprite);
 void draw_health_name_hud();
@@ -1500,7 +1499,7 @@ extern "C" void exl_main(void*, void*) {
     InventoryDamageName::InstallAtOffset(0x4CFFCC);
     StartupLogos::InstallAtOffset(0x4E3960);
     extended_upgrade_install();
-    money_install();
+    money_reset();
     ammo_counter_install();
     modern_move_install();
     character_appearance_install();

@@ -1,35 +1,31 @@
-# One-time peseta bonus / Разовый бонус песет
+# Разовый бонус песет / One-time peseta bonus
 
-**Game → Receive 200 000 pesetas** / **Игра → Получить 200 000 песет**
-opens a warning with Cancel and Receive buttons. It is independent of extended
-weapon upgrades. Exactly 200,000 is added to the loaded main-story wallet;
-insufficient space under the game's 99,999,999 limit refuses the action.
+С версии **0.27.7** кнопка **«Игра → Получить 200 000 песет»** не зависит от
+слота, CRC или этапа прохождения. Загрузите основную историю, выберите кнопку
+и подтвердите предупреждение. Расширенная прокачка оружия на выдачу не влияет.
 
-The claim is recorded on SD before money is added. Save your game afterwards:
-closing or reloading before a normal save can lose the unsaved money, while
-the consumed claim remains. This action does not autosave the game.
+Отметка хранится отдельно на SD:
+`config/re4-controls/money-bonus.bin`. Пока файл существует, повторная выдача
+заблокирована. Загрузка другого сохранения, перезапуск и новая игра эту отметку
+не сбрасывают. Файл создаётся при подтверждённой выдаче; обычное сохранение игры
+не создаёт и не переписывает его.
 
-The first existing save is enrolled automatically. Subsequent saves made in
-that tracked playthrough, including different slots, retain its identity.
-Fresh main-story games and explicit cleared-save New Game Plus launches start
-new identities; checkpoints, death, ordinary Continue and overlay reopening do
-not reset the claim. Separate Ways and other modes cannot claim it.
+После получения сохраните игру: сами деньги сохраняются обычным игровым
+сохранением. Закрытие или загрузка игры до сохранения может потерять деньги,
+а отметка получения останется. При ошибке записи деньги не добавляются.
 
-RE4 has no native campaign identifier. An older or imported save not previously
-observed by this mod is therefore unavailable after initial enrollment, rather
-than treated as another free claim. Keep the two `money-bonus-*.bin` files under
-`config/re4-controls` when transferring the SD installation. Missing both files
-removes the mod's claim history. Corrupt journals block grants. History is
-bounded to 256 campaigns and 4096 save identities; a full history blocks new
-entries without deleting old claims.
+Успешное получение в старой 0.27.6 переносится в новый файл. Старые журналы без
+отметки получения и неизвестные им сохранения не мешают выдаче в середине игры.
+Ошибки чтения SD показываются как ошибка хранения, а не как разрешение получить
+бонус повторно. Повреждённая старая история не используется для регистрации слотов.
 
-Бонус выдаётся отдельно от расширенной прокачки, после предупреждения и
-подтверждения. После получения сохраните игру: несохранённые деньги могут
-потеряться, а запрет повторной выдачи останется. Перезапуск игры и переход в
-другой отслеженный слот не сбрасывают запрет. Новая основная игра и запуск
-New Game Plus из пройденного сохранения начинают новое прохождение.
+Starting with **0.27.7**, **Game → Receive 200 000 pesetas** uses one separate SD
+receipt instead of native save identities. Any loaded main-story save can receive
+exactly 200,000 after confirmation if `config/re4-controls/money-bonus.bin` is
+absent. Any existing receipt blocks another grant, including after a restart,
+loading another save or New Game. The native wallet limit remains 99,999,999.
 
-Старые или перенесённые сохранения без известной модификации истории могут
-показывать «Недоступно»: игра не позволяет надёжно отличить другое прохождение
-от старой копии того же самого. Сохраняйте оба файла `money-bonus-*.bin` при
-переносе SD-карты. При ошибке записи деньги не начисляются.
+Save the game after receiving money; the action does not autosave. A valid positive
+0.27.6 receipt is migrated, while its unclaimed slot history no longer blocks old
+or mid-game saves. Storage I/O errors never authorize another grant. Keep the
+receipt file when transferring the SD installation.
