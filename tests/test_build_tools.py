@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import unittest
 
+from PIL import ImageFont
+
 from tools import check_hook_abi, re6_module
 from tools.arm_assembler import assembler_command
 
@@ -86,7 +88,9 @@ class BuildScriptTests(unittest.TestCase):
             with redirect_stdout(StringIO()):
                 execute_script('generate_serif_glyphs.py', root)
                 first = output.read_bytes()
-                execute_script('generate_serif_glyphs.py', root)
+                # Hosted Pillow builds may omit RAQM; retain the shipped metrics.
+                with patch.object(ImageFont.core, 'HAVE_RAQM', False):
+                    execute_script('generate_serif_glyphs.py', root)
             self.assertEqual(first, output.read_bytes())
             self.assertEqual(first, (ROOT / 'include/re4/serif_glyphs.inc').read_bytes())
             glyph_section = first.decode().split('serif_glyphs[]={', 1)[1]

@@ -291,10 +291,10 @@ class AuditAndCredentialBoundaryTests(unittest.TestCase):
 
     def test_github_auth_sources_and_404_never_escape_repository_boundary(self):
         credential = 'FAKE_GITHUB_CREDENTIAL_FOR_HOST_TEST'
-        with patch.dict(os.environ, {'GH_TOKEN': credential}, clear=True): client = github_release.GitHub()
+        with patch.dict(os.environ, {'GH_TOKEN': credential, 'GITHUB_TOKEN': ''}): client = github_release.GitHub()
         self.assertEqual(client._token, credential)
         completed = subprocess.CompletedProcess([], 0, 'username=fixture\npassword=' + credential + '\n', '')
-        with patch.dict(os.environ, {}, clear=True), patch.object(github_release.subprocess, 'run', return_value=completed):
+        with patch.dict(os.environ, {'GH_TOKEN': '', 'GITHUB_TOKEN': ''}), patch.object(github_release.subprocess, 'run', return_value=completed):
             client = github_release.GitHub()
         class Missing:
             def open(self, request, timeout): raise urllib.error.HTTPError(request.full_url, 404, '', {}, None)
@@ -302,5 +302,5 @@ class AuditAndCredentialBoundaryTests(unittest.TestCase):
         self.assertIsNone(client.request('GET', '/releases/tags/v0.0.1'))
         with self.assertRaisesRegex(RuntimeError, 'HTTP 404'): client.request('POST', '/releases', blob=b'own')
         with self.assertRaises(ValueError): client.request('GET', 'https://api.github.com/repos/foreign/repo')
-        with patch.dict(os.environ, {}, clear=True), patch.object(github_release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')):
+        with patch.dict(os.environ, {'GH_TOKEN': '', 'GITHUB_TOKEN': ''}), patch.object(github_release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')):
             with self.assertRaisesRegex(RuntimeError, 'authentication'): github_release.GitHub()
