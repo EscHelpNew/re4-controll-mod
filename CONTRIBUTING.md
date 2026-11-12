@@ -7,6 +7,9 @@ keys, tokens, game binaries or private crash reports.
 Keep changes in the root checkout. Add tests for changed behavior and run
 `python build.py --test`. Game changes also require a module/overlay/NRO build.
 Use actual callback/SDK-adapter fixtures when changing hooks or installation.
+Host ABI tests assemble real ARM64 objects with devkitA64 GCC when installed,
+or Clang on `PATH` targeting `aarch64-none-elf`. They require one of these
+assemblers; the full Switch SDK is only needed for game builds.
 
 Bump `include/re4/version.hpp` for every changed build before console delivery
 or publication, including diagnostic builds. Never deliver different contents

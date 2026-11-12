@@ -6,7 +6,7 @@ from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
 from elftools.elf.elffile import ELFFile
 
 
-def check(path: Path) -> None:
+def check(path: Path, nzcv: bool = False) -> None:
     with path.open('rb') as stream:
         elf = ELFFile(stream)
         section = elf.get_section_by_name('.text.exl_inline_float_hook_impl')
@@ -40,6 +40,29 @@ def check(path: Path) -> None:
     # would overwrite it with Q31, so verify this remains the GP LR slot.
     if context + 0x200 + 30 * 8 != -0x10:
         raise ValueError('Pre-saved link register would be corrupted')
+    if nzcv:
+        instructions = list(Cs(CS_ARCH_ARM64, CS_MODE_ARM).disasm_lite(code, 0))
+        stack = 0
+        events = {}
+        for index, (_, _, mnemonic, operands) in enumerate(instructions):
+            operands = operands.lower()
+            if mnemonic in ('sub', 'add') and (match := re.fullmatch(r'sp, sp, #(0x[0-9a-f]+|\d+)', operands)):
+                stack += (-1 if mnemonic == 'sub' else 1) * int(match[1], 0)
+            elif mnemonic == 'mrs' and operands == 'x16, nzcv':
+                events['mrs'] = (index, stack)
+            elif mnemonic in ('str', 'ldr') and (match := re.fullmatch(r'x16, \[sp, #(0x[0-9a-f]+|\d+)\]', operands)):
+                events[mnemonic] = (index, stack + int(match[1], 0))
+            elif mnemonic == 'blr':
+                events['call'] = (index, stack)
+            elif mnemonic == 'msr' and operands == 'nzcv, x16':
+                events['msr'] = (index, stack)
+        keys = ('mrs', 'str', 'call', 'ldr', 'msr')
+        if any(key not in events for key in keys):
+            raise ValueError('RE5 dispatcher missing NZCV preservation')
+        if [events[key][0] for key in keys] != sorted(events[key][0] for key in keys):
+            raise ValueError('RE5 dispatcher NZCV save/restore order is invalid')
+        if events['str'][1] != -8 or events['ldr'][1] != -8:
+            raise ValueError('RE5 dispatcher NZCV save/restore stack slot changed')
     print('Compiled hook ABI: FP +0x000, GP +0x200, pre-saved LR intact PASS')
 
 
@@ -47,4 +70,6 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('object', type=Path)
-    check(parser.parse_args().object)
+    parser.add_argument('--nzcv', action='store_true')
+    args = parser.parse_args()
+    check(args.object, args.nzcv)

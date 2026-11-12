@@ -30,6 +30,36 @@ jobs:
       - name: Install development dependencies
         run: python -m pip install -r requirements-dev.txt
       - name: Host tests and actual UI rendering
+        id: host-tests
         run: python build.py --test
+      - name: Show failed host test logs
+        if: ${{ failure() && steps.host-tests.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          $latest = 'build/tests/latest.json'
+          if (!(Test-Path -LiteralPath $latest)) {
+            Write-Output 'Host runner did not write results; see the preceding step.'
+            exit 0
+          }
+          $run = Get-Content -LiteralPath $latest -Raw | ConvertFrom-Json
+          $results = Get-Content -LiteralPath $run.results -Raw | ConvertFrom-Json
+          foreach ($preparation in $results.preparations | Where-Object status -ne 'passed') {
+            Write-Output "Preparation failed: $($preparation.name): $($preparation.error)"
+          }
+          foreach ($case in $results.cases | Where-Object status -ne 'passed') {
+            Write-Output "::group::Failed test: $($case.name) [$($case.status)]"
+            if ($case.error) { Write-Output $case.error }
+            foreach ($step in $case.steps | Where-Object returncode -ne 0) {
+              foreach ($stream in 'stdout', 'stderr') {
+                $log = $step.$stream
+                if ($log -and (Test-Path -LiteralPath $log)) {
+                  Write-Output "${stream}: $log (last 200 lines)"
+                  Get-Content -LiteralPath $log -Tail 200
+                }
+              }
+            }
+            Write-Output '::endgroup::'
+          }
       - name: Audit source and full Git history
+        if: ${{ always() }}
         run: python tools/audit_public.py --history

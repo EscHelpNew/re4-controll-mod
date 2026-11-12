@@ -12,6 +12,7 @@ import subprocess
 import unittest
 
 from tools import check_hook_abi, re6_module
+from tools.arm_assembler import assembler_command
 
 ROOT = Path(__file__).resolve().parents[1]
 SDK = Path(os.environ.get('NXDK_MSYS_ROOT', 'C:/msys64')) / 'opt/devkitpro'
@@ -95,7 +96,7 @@ class BuildScriptTests(unittest.TestCase):
 
 class HookAbiTests(unittest.TestCase):
     def test_actual_assembled_dispatcher_and_register_corruptions(self):
-        compiler = SDK / 'devkitA64/bin/aarch64-none-elf-gcc.exe'
+        compiler = assembler_command(SDK)
         original = (ROOT / 'third_party/exlaunch/source/lib/hook/nx64/inline_asm.s').read_text()
         variants = [('', original),
                     ('context base', original.replace('CTX_STACK_FLOAT_SIZE, 0x200', 'CTX_STACK_FLOAT_SIZE, 0x210')),
@@ -107,7 +108,7 @@ class HookAbiTests(unittest.TestCase):
             for error, assembly in variants:
                 with self.subTest(error=error):
                     source.write_text(assembly)
-                    result = subprocess.run([str(compiler), '-c', str(source), '-o', str(obj)],
+                    result = subprocess.run([*compiler, '-c', str(source), '-o', str(obj)],
                                             capture_output=True, text=True, timeout=30)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     if error:
@@ -115,6 +116,27 @@ class HookAbiTests(unittest.TestCase):
                     else:
                         with redirect_stdout(StringIO()) as printed: check_hook_abi.check(obj)
                         self.assertIn('pre-saved LR intact PASS', printed.getvalue())
+
+    def test_re5_nzcv_order_and_effective_stack_slot(self):
+        compiler = assembler_command(SDK)
+        original = (ROOT / 'third_party/exlaunch/source/lib/hook/nx64/inline_asm.s').read_text()
+        staged = original.replace('    stp x28, x29, [sp, #0xE0]',
+            '    stp x28, x29, [sp, #0xE0]\n    mrs x16, nzcv\n    str x16, [sp, #0xF8]')
+        staged = staged.replace('.macro armRecoverRegisters',
+            '.macro armRecoverRegisters\n    ldr x16, [sp, #0xF8]\n    msr nzcv, x16')
+        variants = [('', staged), ('missing NZCV', original),
+            ('stack slot', staged.replace('ldr x16, [sp, #0xF8]', 'ldr x16, [sp, #0xF0]')),
+            ('order', staged.replace('    msr nzcv, x16', '').replace('    blr x20', '    msr nzcv, x16\n    blr x20'))]
+        with TemporaryDirectory() as temporary:
+            source, obj = Path(temporary) / 'dispatcher.s', Path(temporary) / 'dispatcher.o'
+            for error, assembly in variants:
+                source.write_text(assembly)
+                result = subprocess.run([*compiler, '-c', str(source), '-o', str(obj)], capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                if error:
+                    with self.assertRaisesRegex(ValueError, error): check_hook_abi.check(obj, nzcv=True)
+                else:
+                    with redirect_stdout(StringIO()): check_hook_abi.check(obj, nzcv=True)
 
 
 class Re6BuildStagingTests(unittest.TestCase):
