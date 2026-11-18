@@ -37,7 +37,11 @@ compiler baseline; instrumented objects are never packaged into the mod.
 The own HOME payload is already built in `assets/home-launcher.bin`. Packaging can
 reconstruct the own forwarder NSP from it without keys. Regeneration is optional:
 use `tools/build_forwarder.py --keys <local-path>` and then `tools/launcher_bundle.py`
-locally, followed by a new NRO build. Keys are inputs to these tools and must never
+locally, followed by a new NRO build. Build the current-version NRO first: the
+forwarder reuses its embedded NACP version to avoid nton 3.0.1 corrupting the
+metadata with its explicit version override. Bundle generation rejects an
+incorrect NACP length, foreign identity or unexpected system save allocation.
+Keys are inputs to these tools and must never
 be copied into source, RomFS, examples or release directories.
 
 ## Checks and release

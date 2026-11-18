@@ -19,6 +19,22 @@ class ClientTest(unittest.TestCase):
         report=mod.crash('127.0.0.1',TOKEN,port)
         self.assertIn(b'Process: GAME',report);self.assertNotIn(TOKEN.encode(),report)
         t.join(3);self.assertEqual(errors,[])
+    def test_downloads_five_bounded_own_reports(self):
+        data=b'own-report-stage rc=00000000\n' * 12000
+        def handle(c,f):
+            self.assertEqual(f.readline(),b'CRASH\n')
+            c.sendall(f'OK REPORT {len(data)}\n'.encode()+data)
+        port,t,errors=self.peer(handle)
+        report=mod.crash('127.0.0.1',TOKEN,port)
+        t.join(3);self.assertEqual(errors,[])
+        self.assertEqual(report,data)
+    def test_refuses_report_larger_than_one_mebibyte(self):
+        def handle(c,f):
+            self.assertEqual(f.readline(),b'CRASH\n')
+            c.sendall(b'OK REPORT 1048577\n')
+        port,t,errors=self.peer(handle)
+        with self.assertRaises(mod.ReloadError):mod.crash('127.0.0.1',TOKEN,port)
+        t.join(3);self.assertEqual(errors,[])
     def peer(self,handle):
         server=socket.socket();server.bind(('127.0.0.1',0));server.listen(1);server.settimeout(3)
         errors=[]

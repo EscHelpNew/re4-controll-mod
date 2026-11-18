@@ -1,0 +1,1 @@
+Remove only the baked red laser line and dot from the supplied RE5 gameplay frame, preserving the characters, environment, HUD, full composition, colors and lighting. No new marker or text. Static background for application-rendered gyro dot. Minimal inpainting edit; opaque bitmap.

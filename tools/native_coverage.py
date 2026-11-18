@@ -213,13 +213,13 @@ def target_command(root, sdk, source, directory, support=None):
     root, sdk, directory = Path(root), Path(sdk), Path(directory)
     support = Path(support) if support else directory.parent.parent / 'target-support'
     compiler = sdk / 'devkitA64/bin/aarch64-none-elf-g++.exe'
-    includes = [root / 'include', root / 'source/overlay', root / 'source/re6_overlay',
+    includes = [root / 'include', root / 'source/overlay', root / 'source/re6_overlay', root / 'source/re5_controls',
                 support / 'config', support.parent / 'shared/build/graphics', root / 'third_party/switch-debug-kit/receiver',
                 root / 'third_party/libtesla/include', sdk / 'libnx/include',
                 sdk / 'portlibs/switch/include/SDL2', sdk / 'portlibs/switch/include']
     defines = ['-D__SWITCH__']
     rtti = []
-    if source in ('source/game/module.cpp', 'source/re6/module.cpp'):
+    if source in ('source/game/module.cpp', 'source/re6/module.cpp', 'source/re5/module.cpp'):
         stage = support / 'exlaunch/source'
         if not (stage / 'lib.hpp').is_file():
             raise NativeCoverageError('Real module SDK staging headers missing: ' + str(stage))
@@ -227,7 +227,7 @@ def target_command(root, sdk, source, directory, support=None):
         includes.extend(sorted(p for p in stage.iterdir() if p.is_dir()))
         defines.append('-U__RTLD_6XX__' if source.startswith('source/game/') else '-D__RTLD_6XX__')
         defines.extend(['-DEXL_LOAD_KIND=Module', '-DEXL_LOAD_KIND_ENUM=2', '-DEXL_PROGRAM_ID=' +
-                        ('0x010099A00BC1E000' if source.startswith('source/game/') else '0x01002A000CD48000')])
+                        ('0x010099A00BC1E000' if source.startswith('source/game/') else '0x010018100CD46000' if source.startswith('source/re5/') else '0x01002A000CD48000')])
         rtti = ['-fno-rtti', '-fno-asynchronous-unwind-tables', '-fno-unwind-tables']
     return [str(compiler), '-std=gnu++23', '-fno-exceptions', *rtti,
             '-march=armv8-a+crc+crypto', '-mtune=cortex-a57', '-ffixed-x18', '-mtp=soft', '-fPIE',

@@ -71,7 +71,7 @@ class GraphicsAssetTests(unittest.TestCase):
 
     def test_official_asset_identity_and_documented_hashes(self):
         manifest = tool.load_sources(ROOT)
-        self.assertEqual(set(manifest), {'re4', 're6'})
+        self.assertEqual(set(manifest), {'re4', 're5', 're6'})
         for game, entry in manifest.items():
             source = ROOT / 'assets/graphics' / (game + '-source.jpg')
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
@@ -97,7 +97,7 @@ class GraphicsAssetTests(unittest.TestCase):
             self.assertIn('kImageWidth = 320', header)
             self.assertIn('kImageHeight = 180', header)
             self.assertIn('#include <cstdint>', header)
-            for game in ('re4', 're6'):
+            for game in ('re4', 're5', 're6'):
                 body = re.search(rf'{game}_pixels\[320 \* 180\] = \{{(.*?)\}};', header, re.S).group(1)
                 self.assertEqual(len(re.findall(r'0x[0-9a-f]{4}', body)), 320 * 180)
             self.assertNotIn(str(root), header)

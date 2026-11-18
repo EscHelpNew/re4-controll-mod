@@ -453,34 +453,7 @@ bool character_menu_identity(void* actor,CharacterIdentity& out){
     if(!character_read(value.asset+0x10,offset)||!offset||value.bin!=value.asset+offset)return false;
     out=value;return true;
 }
-struct CharacterMenuRotation {
-    CharacterIdentity owner{};
-    std::uint64_t tick=0,frame=0;
-} character_menu_rotation;
-void character_menu_rotate(void* actor){
-    std::uintptr_t preview=0;
-    if(!main_base||!actor||!character_read(main_base+0x1272140,preview)
-        ||preview!=reinterpret_cast<std::uintptr_t>(actor))return;
-    CharacterIdentity identity;
-    if(!character_menu_identity(actor,identity)){character_menu_rotation={};return;}
-    const auto now=svcGetSystemTick(),frame=view_frame.load(std::memory_order_acquire);
-    auto& rotation=character_menu_rotation;
-    if(!(rotation.owner==identity)||!rotation.tick){rotation={identity,now,frame};return;}
-    if(frame==rotation.frame)return;
-    const auto previous=rotation.tick;rotation.tick=now;rotation.frame=frame;
-    if(now<=previous||now-previous>re6::kTickHz/10)return;
-    re6::Record input{};
-    if(!telemetry_read_input(now,input))return;
-    const float axis=re4::shape_axis(input.sticks[2]/32767.f,settings.right_deadzone,1,settings.stick_curve);
-    float yaw=0;
-    if(!axis||!std::isfinite(axis)||!character_read(identity.actor+0xB4,yaw)
-        ||!std::isfinite(yaw)||std::fabs(yaw)>1e6f)return;
-    // Native4BCC60 updates this exact preview through2B7C60. Its2B8700
-    // evaluation rebuilds the actor matrix from B0/B4/B8 before skin/draw.
-    // Keep the angle on release; native initialization resets a new preview.
-    yaw=std::remainder(yaw+axis*2.09439510239f*float(now-previous)/float(re6::kTickHz),6.28318530718f);
-    character_store(actor,0xB4,yaw);
-}
+#include "case_rotation.inc"
 HOOK_DEFINE_TRAMPOLINE(CharacterMenuDestroy) {
     static void Callback(void* menu){character_menu_invalidate();Orig(menu);}
 };

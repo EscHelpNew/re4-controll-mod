@@ -12,13 +12,20 @@ namespace {void test_ExtendedSquareDraw(void*);}
 namespace {
 std::array<std::array<std::uint8_t,0x170>,0xA0> square_sprites{};
 std::vector<std::array<std::uint8_t,0x170>> square_draws;
+unsigned square_lookup_fault=0;
 void test_ExtendedSquareDraw(void* sprite){
     std::array<std::uint8_t,0x170> bytes{};
     if(sprite)std::memcpy(bytes.data(),sprite,bytes.size());
     square_draws.push_back(bytes);
 }
 void* square_sprite(void*,unsigned id,unsigned group){
-    return group==0x1C&&id<square_sprites.size()?square_sprites[id].data():nullptr;
+    if(group!=0x1C||id>=square_sprites.size())return nullptr;
+    if(square_lookup_fault==1&&id==0x65)return nullptr;
+    if(square_lookup_fault==2&&id==0x66)return square_sprites[0x65].data();
+    if(square_lookup_fault==3&&id==0x65)return reinterpret_cast<void*>(main_base+0x124D630);
+    if((square_lookup_fault==4&&id==0x65)||(square_lookup_fault==5&&id==0x69)
+        ||(square_lookup_fault==6&&id==0x6A))return square_sprites[0x75].data();
+    return square_sprites[id].data();
 }
 struct UpgradeFixture {
     Fixture f;
@@ -122,19 +129,20 @@ void square_visibility_test(){
 struct SquareFixture : UpgradeFixture {
     alignas(16) std::array<std::uint8_t,0x170> parent{};
     SquareFixture(){
-        square_sprites={};square_draws.clear();extended_upgrade_native.sprite=square_sprite;
+        square_sprites={};square_draws.clear();square_lookup_fault=0;extended_upgrade_native.sprite=square_sprite;
         game_test::memory_maps.push_back({address(square_sprites.data()),sizeof(square_sprites),3});
         game_test::memory_maps.push_back({address(parent.data()),parent.size(),3});
         put(f.image.data(),0xB26C90,address(square_sprites.data()));
-        const std::uint8_t red[4]={201,31,23,255},gray[4]={91,92,93,255};
-        std::memcpy(square_sprites[2].data()+0xFC,red,sizeof(red));
+        // A native filled template need not be red: purchased extras must be.
+        const std::uint8_t filled[4]={37,181,97,255},gray[4]={91,92,93,255};
+        std::memcpy(square_sprites[2].data()+0xFC,filled,sizeof(filled));
         std::memcpy(square_sprites[3].data()+0xFC,gray,sizeof(gray));
         const float tint[4]={128,255,64,160};std::memcpy(parent.data()+0x104,tint,sizeof(tint));
         for(unsigned i=0;i<6;++i){
-            auto& s=square_sprites[0x65+i];s[0]=9;s[0x88]=7;s[0x8A]=11;s[0x9E]=0;
+            auto& s=square_sprites[0x65+i];s[0]=9;s[0x88]=7;s[0x8A]=11;s[0x9E]=0;s[0xFF]=123;
             const float matrix[3][4]={{.8f,.1f,0,100.f+20.f*float(i)},{.2f,.9f,0,-50},{0,0,1,3}};
             const float corners[4][3]={{-8,6,0},{8,6,0},{8,-6,0},{-8,-6,0}};
-            const float rgba[4]={100,31,5,77};
+            const float rgba[4]={70,110,45,77};
             std::memcpy(s.data()+8,matrix,sizeof(matrix));
             std::memcpy(s.data()+0xBC,corners,sizeof(corners));
             std::memcpy(s.data()+0x104,rgba,sizeof(rgba));
@@ -166,6 +174,8 @@ void native_square_tests(){
         assert(h.get<float>(copy.data(),8)==.8f&&h.get<float>(copy.data(),0xC)==.1f);
         assert(square_sprites==unchanged); // Never overwrite any native row.
         h.buy();h.select(h.record(0),0x23);h.draw();h.color(100,31,5,77);
+        assert(square_sprites==unchanged); // Bought red is private to the extra copy.
+        assert(square_draws[1][0xFF]==123); // Local alpha also remains native.
         h.put(square_sprites[0x6A].data(),0x110,0.f);h.draw();h.color(100,31,5,0);
         h.put(square_sprites[0x6A].data(),0x110,19.f);h.draw();h.color(100,31,5,19);
         // Other native rows and option-off cannot produce the extra.
@@ -210,6 +220,74 @@ void native_square_tests(){
         if(fault==7)square_sprites[0x6A][0x9E]=1; // Unproved specialized renderer path.
         h.draw();assert(square_draws.size()==1);
     }
+}
+void whole_firepower_bar_tests(){
+    SquareFixture h;h.select(h.record(0),0x23);
+    auto native=[&](unsigned id){h.draw(id);assert(square_draws.size()==1&&square_draws[0]==square_sprites[id]);};
+    auto red=[&](unsigned id,bool extra){
+        h.draw(id);assert(square_draws.size()==(extra?2u:1u));
+        const float alpha=h.get<float>(square_sprites[id].data(),0x110);
+        for(const auto& copy:square_draws){
+            assert(h.get<float>(copy.data(),0x104)==100.f&&h.get<float>(copy.data(),0x108)==31.f
+                &&h.get<float>(copy.data(),0x10C)==5.f&&h.get<float>(copy.data(),0x110)==alpha);
+            assert(copy[0xFC]==201&&copy[0xFD]==31&&copy[0xFE]==23&&copy[0xFF]==123);
+        }
+        auto expected=square_sprites[id];
+        const std::uint8_t rgb[3]={201,31,23};std::memcpy(expected.data()+0xFC,rgb,sizeof(rgb));
+        const float effective[3]={100,31,5};std::memcpy(expected.data()+0x104,effective,sizeof(effective));
+        assert(square_draws[0]==expected); // Preserve all native geometry/style bytes.
+    };
+    // Filled template2 is deliberately green. Before buying, the native row
+    // keeps its original packets; the last draw also emits the empty extra.
+    for(unsigned id=0x65;id<0x6A;++id)native(id);
+    h.draw();assert(square_draws[0]==square_sprites[0x6A]);h.color(45,92,23,77);
+    h.buy();h.select(h.record(0),0x23);const auto unchanged=square_sprites;
+    for(unsigned id=0x65;id<=0x6A;++id)red(id,id==0x6A);
+    assert(square_sprites==unchanged); // No row or template is modified.
+    for(float alpha:{0.f,19.f}){h.put(square_sprites[0x66].data(),0x110,alpha);red(0x66,false);}
+    h.put(square_sprites[0x66].data(),0x110,77.f);
+    // The other stat rows, hidden native slots, disabled mode and stale record
+    // never inherit the selected purchased Firepower row's colour.
+    native(0x75);native(0x85);native(0x95);
+    square_sprites[0x66][0]=1;native(0x66);square_sprites[0x66][0]=9;
+    settings.extended_weapon_upgrade=false;native(0x65);settings.extended_weapon_upgrade=true;
+    h.state[0x79]=0x10;native(0x65);h.state[0x79]=0;
+    h.record(0)[4]=0;native(0x65);h.record(0)[4]=1;
+    h.select(nullptr,0x23);native(0x65);
+    h.select(h.record(0),0x18);native(0x65);
+    // A lower-level duplicate, or a reduced level on the selected record,
+    // must retain native colour despite ownership for another maximal copy.
+    h.put(h.record(3),0,std::uint16_t(0x23));h.record(3)[4]=1;
+    h.select(h.record(3),0x23);native(0x65);
+    h.put(h.record(0),6,std::uint32_t(4));h.select(h.record(0),0x23);native(0x65);
+    // Killer7 has only three visible native slots; no other row sprite belongs
+    // to that selection, and the fourth is the generated extra after67.
+    h.put(h.record(0),0,std::uint16_t(0x2A));h.put(h.record(0),6,std::uint32_t(2));
+    extended_upgrade_mask=std::uint16_t(1u<<12);h.select(h.record(0),0x2A);
+    for(unsigned id=0x65;id<=0x67;++id)red(id,id==0x67);
+    native(0x68);
+    // Incomplete, aliased or dummy native lookups invalidate the entire capture.
+    for(unsigned fault=1;fault<=3;++fault){
+        square_lookup_fault=fault;h.select(h.record(0),0x2A);native(0x65);native(0x67);
+        assert(extended_upgrade_square.entry<0);
+    }
+    square_lookup_fault=0;
+}
+void stale_square_manager_tests(){
+    for(bool owned:{false,true})for(unsigned fault=0;fault<5;++fault){
+        SquareFixture h;if(owned)h.buy();h.select(h.record(0),0x23);
+        const auto unchanged=square_sprites;
+        if(fault==0)h.put(h.f.image.data(),0xB26C90,std::uintptr_t(0));
+        if(fault==1)h.put(h.f.image.data(),0xB26C90,h.address(h.parent.data()));
+        if(fault>=2)square_lookup_fault=fault+2; // Same manager, reassigned65/69/6A.
+        // Missing/replaced manager, reassigned source, and reassigned last-pair
+        // invalidate captured layout before either row tint or the extra draw.
+        for(unsigned id:{0x65u,0x69u,0x6Au,0x75u}){
+            h.draw(id);assert(square_draws.size()==1&&square_draws[0]==square_sprites[id]);
+        }
+        assert(square_sprites==unchanged);
+    }
+    square_lookup_fault=0;
 }
 void persistence_fault_tests(){
     for(unsigned fault=0;fault<5;++fault){
@@ -282,6 +360,8 @@ void persistence_fault_tests(){
 int main(){
     square_visibility_test();
     native_square_tests();
+    whole_firepower_bar_tests();
+    stale_square_manager_tests();
     persistence_fault_tests();
     {
         UpgradeFixture h;

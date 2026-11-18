@@ -3,6 +3,8 @@
 #undef main
 #include "re4/installer_ui.hpp"
 #include <cassert>
+namespace re5 {bool save_settings_file(const char*,const Settings& settings){return valid_settings(settings);}
+bool load_settings_file(const char*,Settings&){return false;}}
 namespace re6 {bool save_settings_file(const char*,const Settings& settings){return valid_settings(settings);}}
 #include <map>
 #include <cstdlib>

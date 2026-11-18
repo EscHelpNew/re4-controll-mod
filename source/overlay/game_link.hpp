@@ -12,6 +12,10 @@ class GameLink {
     u64 process_ = 0, address_ = 0;
     bool info_ready_ = false;
     bool borrowed_ = false; // Session owned by another GameLink; never closed here.
+    bool connect_observing(re4::ModuleObservation*);
+    std::array<u64,4> observation_identity_{}; // Private address/PID/main bounds, never serialized.
+    // Internal one-shot probe, used only by explicitly requested diagnostics.
+    bool read_health_report(re4::HealthReport&);
     const char* tr(const char* english,const char* russian) const {
         return language==re4::Language::Russian?russian:english;
     }

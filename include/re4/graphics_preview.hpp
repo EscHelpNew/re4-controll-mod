@@ -8,7 +8,7 @@ enum class Topic {Overview,Filtering,AntiAliasing,Distance,Shadows};
 struct Rect{unsigned x=0,y=0,width=0,height=0;};
 struct Image{const std::uint16_t* pixels=nullptr;std::size_t count=0;unsigned width=0,height=0;};
 inline Topic topic_for(re4::GameTarget game,unsigned row){
- if(game==re4::GameTarget::RE4){constexpr Topic topics[]={Topic::Filtering,Topic::AntiAliasing,Topic::Distance,Topic::Shadows};
+ if(game==re4::GameTarget::RE4||game==re4::GameTarget::RE5){constexpr Topic topics[]={Topic::Filtering,Topic::AntiAliasing,Topic::Distance,Topic::Shadows};
   if(row<4)return topics[row];
  }else if(game==re4::GameTarget::RE6&&row<2)return row?Topic::AntiAliasing:Topic::Filtering;
  return Topic::Overview;
@@ -19,6 +19,13 @@ inline Rect focus(re4::GameTarget game,Topic topic){
   case Topic::AntiAliasing:return {241,77,72,44};
   case Topic::Distance:return {174,0,76,46};
   case Topic::Shadows:return {193,151,40,26};
+  default:return {};
+ }
+ if(game==re4::GameTarget::RE5)switch(topic){
+  case Topic::Filtering:return {187,139,40,37};
+  case Topic::AntiAliasing:return {66,19,45,62};
+  case Topic::Distance:return {107,0,78,57};
+  case Topic::Shadows:return {177,142,49,28};
   default:return {};
  }
  if(game==re4::GameTarget::RE6)switch(topic){

@@ -1,4 +1,4 @@
-"""Build the guarded RE6 observer in its own disposable SDK6 staging tree."""
+"""Build guarded RE6 graphics in its own disposable SDK6 staging tree."""
 from pathlib import Path
 import copy
 import json
@@ -100,7 +100,7 @@ def build(root, sdk, run):
     if hook.count('if(i > HookMax)') != 1:
         raise ValueError('Unexpected exlaunch trampoline allocator revision')
     hook_source.write_text(hook.replace('if(i > HookMax)', 'if(i >= HookMax)'), encoding='utf-8')
-    # Five hooks fit the default4096-byte pool (20 slots). No RE4 modules or
+    # Two graphics hooks fit the default4096-byte pool (20 slots). No RE4 modules or
     # RE4 hook-count/pool substitutions are staged into this build.
     temporary = root / 'build/re6-tmp'
     temporary.mkdir(exist_ok=True)
@@ -132,5 +132,5 @@ def build(root, sdk, run):
                             capture_output=True, text=True, check=True)
     if 'Failed' in result.stdout + result.stderr:
         raise RuntimeError('RE6 NPDM generation rejected fields: ' + result.stdout + result.stderr)
-    print('Built guarded RE6 observer and graphics:', package)
+    print('Built guarded RE6 graphics:', package)
     return package

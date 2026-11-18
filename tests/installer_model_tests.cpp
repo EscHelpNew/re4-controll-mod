@@ -13,6 +13,71 @@
 int main(){
     using namespace re4;
     InstallerModel m;
+    // The shared updater is opt-in for every game and never starts on navigation.
+    for(auto target:{GameTarget::RE4,GameTarget::RE5,GameTarget::RE6}){
+        InstallerModel local;local.game=target;
+        assert(local.local_update.state==LocalUpdateState::Off);
+        assert(local.local_update.address.empty() && local.local_update.received==0);
+        local.selected=target==GameTarget::RE6?3:7;
+        assert(local.item_label(local.selected)=="Updates");
+        assert(local.handle(UiEvent::Confirm)==InstallerAction::None);
+        assert(local.page==InstallerPage::Updates && local.item_count()==3);
+        local.selected=2;assert(local.item_label(2)=="Local update");
+        local.update.stage=UpdateStage::Checking;local.update.version="99.0";
+        assert(local.handle(UiEvent::Confirm)==InstallerAction::None);
+        assert(local.page==InstallerPage::LocalUpdate && local.item_count()==1);
+        assert(local.local_update.state==LocalUpdateState::Off && local.item_value(0)=="Off");
+        assert(std::strstr(local.selected_help(),"Reports"));
+        assert(local.handle(UiEvent::Confirm)==InstallerAction::StartLocalUpdate);
+        assert(local.local_update.state==LocalUpdateState::Off); // Only the worker owns readiness.
+        for(auto state:{LocalUpdateState::Starting,LocalUpdateState::Listening,LocalUpdateState::Receiving,LocalUpdateState::Stored}){
+            local.local_update_result({state,"192.168.1.2:28771","Stored on SD",123,456});
+            assert(local.item_label(0)=="Stop local update");
+            assert(local.handle(UiEvent::Confirm)==InstallerAction::StopLocalUpdate);
+            assert(local.page==InstallerPage::LocalUpdate && local.local_update.state==state);
+        }
+        local.local_update_result({LocalUpdateState::Listening,"192.168.1.2:28771","",0,0});
+        assert(local.handle(UiEvent::Back)==InstallerAction::StopLocalUpdate);
+        assert(local.page==InstallerPage::LocalUpdate);
+        local.local_update_result({LocalUpdateState::Stopping,"","",0,0});
+        assert(local.handle(UiEvent::Confirm)==InstallerAction::None);
+        assert(local.handle(UiEvent::NextGame)==InstallerAction::None && local.game==target);
+        assert(local.page==InstallerPage::LocalUpdate && local.item_value(0)=="Stopping...");
+        local.local_update_result({});
+        assert(local.page==InstallerPage::Updates && local.selected==2);
+        assert(local.update.stage==UpdateStage::Checking && local.update.version=="99.0");
+        assert(local.handle(UiEvent::Confirm)==InstallerAction::None);
+        for(auto language:{Language::English,Language::Russian}){
+            local.settings.language=language;
+            assert(local.item_label(0)==(language==Language::English?"Start local update":"Включить локальное обновление"));
+            assert(local.item_value(0)==(language==Language::English?"Off":"Выкл."));
+            assert(std::string(local.page_title())==(language==Language::English?"LOCAL UPDATE":"ЛОКАЛЬНОЕ ОБНОВЛЕНИЕ"));
+            local.local_update_result({LocalUpdateState::Failed,"","Bind failed",0,0});
+            assert(local.item_value(0)==(language==Language::English?"Failed":"Ошибка"));
+            assert(local.handle(UiEvent::Confirm)==InstallerAction::StartLocalUpdate);
+            constexpr LocalUpdateState states[]={LocalUpdateState::Starting,LocalUpdateState::Listening,LocalUpdateState::Receiving,LocalUpdateState::Stopping,LocalUpdateState::Stored};
+            const char* english[]={"Starting...","Listening","Receiving...","Stopping...","Stored on SD card"};
+            const char* russian[]={"Запуск...","Ожидание подключения","Приём...","Остановка...","Сохранено на SD-карте"};
+            for(unsigned i=0;i<5;++i){
+                local.local_update_result({states[i],"192.168.1.2:28771","",123,456});
+                assert(local.item_value(0)==(language==Language::English?english[i]:russian[i]));
+                assert(std::string(local.status_text())==local.item_value(0));
+            }
+            local.local_update_result({});
+        }
+        local.recovery_mode=true;
+        assert(local.handle(UiEvent::Confirm)==InstallerAction::StartLocalUpdate);
+        local.local_update_result({LocalUpdateState::Listening,"192.168.1.2:28771","",0,0});
+        assert(local.handle(UiEvent::Exit)==InstallerAction::StopLocalUpdate);
+        assert(local.page==InstallerPage::LocalUpdate);
+        local.local_update_result({LocalUpdateState::Stopping,"","",0,0});
+        assert(local.handle(UiEvent::Back)==InstallerAction::None);
+        assert(local.page==InstallerPage::LocalUpdate);
+        local.local_update_result({});
+        assert(local.page==InstallerPage::Updates && local.selected==2);
+        assert(local.handle(UiEvent::Exit)==InstallerAction::Exit);
+        InstallerModel next_launch;assert(next_launch.local_update.state==LocalUpdateState::Off);
+    }
     // Game is independent of Controls/Graphics and saves each toggle immediately.
     {
         namespace fs=std::filesystem;
@@ -110,7 +175,7 @@ int main(){
             assert(game.handle(UiEvent::Confirm)==InstallerAction::Exit);
         }
         game.selected=6;game.handle(UiEvent::Confirm);game.handle(UiEvent::NextGame);
-        assert(game.game==GameTarget::RE6 && game.page==InstallerPage::Home && game.item_count()==5);
+        assert(game.game==GameTarget::RE5 && game.page==InstallerPage::Home && game.item_count()==10);
         game.handle(UiEvent::PreviousGame);assert(game.selected==6 && game.item_count()==10);
         for(const auto* suffix:{"",".previous",".incoming"})fs::remove(path+suffix);
     }
@@ -206,12 +271,10 @@ int main(){
         for(const auto* suffix:{"",".previous",".incoming",".controls-custom",".controls-custom.previous",".graphics-custom",".graphics-custom.previous"})
             fs::remove(path+suffix);
     }
-    // L/R game selection must leave nested settings without installing.
+    // Both directions wrap between visible games and retain each game's state.
     {
         InstallerModel navigation;
-        assert(navigation.game==GameTarget::RE4);
-        navigation.page=InstallerPage::ControlGroup;
-        navigation.selected=2;
+        navigation.page=InstallerPage::ControlGroup;navigation.selected=2;
         navigation.home_selected=3;navigation.controls_selected=4;
         navigation.settings.turn_gain=0.4f;navigation.settings.gyro_bias_x=1.25f;
         navigation.settings.button_map[0]=255;navigation.settings.free_camera=true;
@@ -219,37 +282,11 @@ int main(){
         const auto saved_settings=navigation.settings;
         navigation.status=InstallerStatus::Installed;navigation.detail="RE4 install detail";
         assert(navigation.handle(UiEvent::NextGame)==InstallerAction::None);
-        assert(navigation.game==GameTarget::RE6);
-        assert(navigation.page==InstallerPage::Home && navigation.item_count()==5);
+        assert(navigation.game==GameTarget::RE5 && navigation.page==InstallerPage::Home && navigation.item_count()==10);
         assert(navigation.status==InstallerStatus::Ready && navigation.detail.empty());
-        const char* labels[]={"Install RE6 module","Install RE6 overlay","Graphics","Language","Exit"};
-        for(unsigned row=0;row<5;++row){
-            navigation.selected=row;
-            assert(navigation.item_label(row)==labels[row]);
-            assert(std::strlen(navigation.selected_help())>20);
-        }
-        assert(navigation.item_label(5).empty() && navigation.item_value(5).empty());
-        assert(navigation.selected_control()==ControlId::Count);
-        navigation.selected=0;
-        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::InstallGame);
-        navigation.selected=1;
-        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::InstallOverlay);
-        navigation.selected=3;
-        for(auto event:{UiEvent::QuickInstall,UiEvent::QuickOverlay,UiEvent::QuickDisable,UiEvent::Calibrate,UiEvent::ResetPreview})
-            assert(navigation.handle(event)==InstallerAction::None);
-        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::SaveSettings);
-        assert(navigation.settings.language==Language::Russian && navigation.item_label(3)=="Язык");
-        assert(navigation.item_label(0)=="Установить модуль RE6" && navigation.item_label(1)=="Установить оверлей RE6");
-        assert(navigation.item_label(2)=="Графика" && navigation.item_label(4)=="Выход" && navigation.item_value(3)=="Русский");
-        assert(navigation.handle(UiEvent::Right)==InstallerAction::SaveSettings && navigation.settings.language==Language::English);
-        assert(navigation.handle(UiEvent::Left)==InstallerAction::SaveSettings && navigation.settings.language==Language::Russian);
-        navigation.selected=0;navigation.handle(UiEvent::Up);assert(navigation.selected==4);
-        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::Exit);
-        navigation.handle(UiEvent::Down);assert(navigation.selected==0);
-        assert(navigation.handle(UiEvent::Back)==InstallerAction::Exit);
-        assert(navigation.handle(UiEvent::Exit)==InstallerAction::Exit);
-        navigation.selected=2;navigation.status=InstallerStatus::Failed;navigation.detail="Missing RE6 module";
-        assert(navigation.handle(UiEvent::PreviousGame)==InstallerAction::None);
+        navigation.settings.gyro_speed=1.5f;navigation.settings.language=Language::Russian;
+        navigation.selected=4;navigation.status=InstallerStatus::Failed;navigation.detail="RE5 install detail";
+        assert(navigation.handle(UiEvent::NextGame)==InstallerAction::None);
         assert(navigation.game==GameTarget::RE4 && navigation.page==InstallerPage::Home && navigation.selected==3);
         assert(navigation.home_selected==3 && navigation.controls_selected==4);
         assert(navigation.settings.language==Language::Russian);
@@ -258,15 +295,47 @@ int main(){
         assert(navigation.settings.gyro_bias_x==1.25f);
         assert(navigation.status==InstallerStatus::Installed && navigation.detail=="RE4 install detail");
         assert(navigation.handle(UiEvent::PreviousGame)==InstallerAction::None);
-        assert(navigation.game==GameTarget::RE6 && navigation.selected==2 && navigation.item_count()==5);
-        assert(navigation.status==InstallerStatus::Failed && navigation.detail=="Missing RE6 module");
+        assert(navigation.game==GameTarget::RE5 && navigation.selected==4 && navigation.settings.gyro_speed==1.5f);
+        assert(navigation.status==InstallerStatus::Failed && navigation.detail=="RE5 install detail");
+        assert(navigation.handle(UiEvent::PreviousGame)==InstallerAction::None);
+        assert(navigation.game==GameTarget::RE4 && navigation.selected==3);
+    }
+    // Retained RE6 backend actions stay isolated from the visible game selector.
+    {
+        InstallerModel navigation;navigation.game=GameTarget::RE6;
+        assert(navigation.page==InstallerPage::Home && navigation.item_count()==6);
+        const char* labels[]={"Install RE6 module","Install RE6 overlay","Graphics","Updates","Language","Exit"};
+        for(unsigned row=0;row<6;++row){
+            navigation.selected=row;
+            assert(navigation.item_label(row)==labels[row]);
+            assert(std::strlen(navigation.selected_help())>20);
+        }
+        assert(navigation.item_label(6).empty() && navigation.item_value(6).empty());
+        assert(navigation.selected_control()==ControlId::Count);
+        navigation.selected=0;
+        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::InstallGame);
+        navigation.selected=1;
+        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::InstallOverlay);
+        navigation.selected=4;
+        for(auto event:{UiEvent::QuickInstall,UiEvent::QuickOverlay,UiEvent::QuickDisable,UiEvent::Calibrate,UiEvent::ResetPreview})
+            assert(navigation.handle(event)==InstallerAction::None);
+        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::SaveSettings);
+        assert(navigation.settings.language==Language::Russian && navigation.item_label(4)=="Язык");
+        assert(navigation.item_label(0)=="Установить модуль RE6" && navigation.item_label(1)=="Установить оверлей RE6");
+        assert(navigation.item_label(2)=="Графика" && navigation.item_label(5)=="Выход" && navigation.item_value(4)=="Русский");
+        assert(navigation.handle(UiEvent::Right)==InstallerAction::SaveSettings && navigation.settings.language==Language::English);
+        assert(navigation.handle(UiEvent::Left)==InstallerAction::SaveSettings && navigation.settings.language==Language::Russian);
+        navigation.selected=0;navigation.handle(UiEvent::Up);assert(navigation.selected==5);
+        assert(navigation.handle(UiEvent::Confirm)==InstallerAction::Exit);
+        navigation.handle(UiEvent::Down);assert(navigation.selected==0);
+        assert(navigation.handle(UiEvent::Back)==InstallerAction::Exit);
+        assert(navigation.handle(UiEvent::Exit)==InstallerAction::Exit);
         navigation.installation_result("Installed RE4 Controls. Restart RE4.");
         assert(navigation.status==InstallerStatus::Failed);
         navigation.installation_result("Installed RE6 module. Restart RE6.");
         assert(navigation.status==InstallerStatus::Installed && std::strstr(navigation.status_text(),"RE4")==nullptr);
         navigation.installation_result("Installed RE6 overlay.");assert(navigation.status==InstallerStatus::OverlayInstalled);
         assert(!navigation.allow_installation(true,true) && std::strstr(navigation.status_text(),"Resident Evil 6"));
-        // Even stale page state must never expose RE4 control mutations under RE6.
         navigation.page=InstallerPage::Diagnostics;navigation.diagnostic.sensors=1;
         assert(navigation.handle(UiEvent::Calibrate)==InstallerAction::None);
         assert(navigation.page==InstallerPage::Home && !navigation.settings.gyro_enabled);
@@ -281,7 +350,7 @@ int main(){
         graphics.settings.button_map[0]=255;
         const auto re4_before=graphics.settings;
         graphics.re6_settings.language=re6::Language::Russian;
-        assert(graphics.handle(UiEvent::NextGame)==InstallerAction::None);
+        graphics.game=GameTarget::RE6;
         graphics.selected=2;
         assert(graphics.handle(UiEvent::Left)==InstallerAction::None);
         assert(graphics.handle(UiEvent::Right)==InstallerAction::None);
@@ -336,11 +405,6 @@ int main(){
         graphics.selected=0;graphics.handle(UiEvent::Up);assert(graphics.selected==2);
         graphics.handle(UiEvent::Down);assert(graphics.selected==0);
         assert(graphics.handle(UiEvent::Back)==InstallerAction::None && graphics.page==InstallerPage::Home && graphics.selected==2);
-        graphics.handle(UiEvent::Confirm);graphics.selected=1;
-        assert(graphics.handle(UiEvent::PreviousGame)==InstallerAction::None && graphics.game==GameTarget::RE4);
-        assert(graphics.page==InstallerPage::Home && graphics.selected==0);
-        assert(graphics.handle(UiEvent::NextGame)==InstallerAction::None && graphics.game==GameTarget::RE6);
-        assert(graphics.page==InstallerPage::Home && graphics.selected==2);
         assert(graphics.re6_settings.anti_aliasing==re6::AntiAliasing::Native);
         assert(same_profile(graphics.settings,re4_before,ProfileDomain::Controls));
         assert(same_profile(graphics.settings,re4_before,ProfileDomain::Graphics));
@@ -350,7 +414,7 @@ int main(){
         assert(std::strlen(graphics.selected_help())>20);
         assert(graphics.handle(UiEvent::Confirm)==InstallerAction::None); // Invalid rows cannot mutate a valid row.
         for(auto stale:{InstallerPage::Controls,InstallerPage::ControlGroup,InstallerPage::Diagnostics,
-            InstallerPage::Mapping,InstallerPage::MappingTargets,InstallerPage::Updates,InstallerPage::Game,InstallerPage::CharacterAppearance}){
+            InstallerPage::Mapping,InstallerPage::MappingTargets,InstallerPage::Game,InstallerPage::CharacterAppearance}){
             graphics.page=stale;graphics.selected=0;
             assert(graphics.item_count()==0 && graphics.item_label(0).empty() && graphics.item_value(0).empty());
             assert(std::strlen(graphics.selected_help())==0);
@@ -576,7 +640,7 @@ int main(){
     assert(!m.allow_installation(true,true) && m.status==InstallerStatus::GameRunning);
     assert(m.allow_installation(true,false));
     m.page=InstallerPage::Home;m.selected=7;
-    m.handle(UiEvent::Confirm);assert(m.page==InstallerPage::Updates && m.item_count()==2);
+    m.handle(UiEvent::Confirm);assert(m.page==InstallerPage::Updates && m.item_count()==3);
     assert(m.handle(UiEvent::QuickInstall)==InstallerAction::None);
     assert(m.handle(UiEvent::Confirm)==InstallerAction::CheckUpdates);
     m.update.stage=UpdateStage::Checking;

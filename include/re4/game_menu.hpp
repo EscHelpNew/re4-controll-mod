@@ -76,8 +76,8 @@ inline constexpr Bilingual kEnemyHealthBarsHelp{
     "Полоска здоровья врага под прицелом.\nПоказывается только текущая цель."};
 inline constexpr Bilingual kEnemyHealthNumbersLabel{"Health numbers","Числа здоровья"};
 inline constexpr Bilingual kEnemyHealthNumbersHelp{
-    "Show current HP above the bar in\nweapon firepower units, with one decimal.",
-    "Текущее здоровье над полоской в\nединицах мощности оружия.\nОдин знак после точки."};
+    "Show HP in weapon firepower units using a\nnormal body shot at power 1.0. One decimal.\nUpgrades increase damage, not enemy HP.",
+    "Здоровье в единицах мощности оружия:\nобычное попадание в тело при силе 1.0.\nПрокачка усиливает урон, а не здоровье врага."};
 inline constexpr Bilingual kEnemyHealthNumbersUnavailableHelp{
     "Enable enemy health bars first.",
     "Сначала включите полоски здоровья врагов."};

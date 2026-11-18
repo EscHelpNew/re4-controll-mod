@@ -8,6 +8,22 @@ import tempfile
 
 OWN=0x0100E4C04E540000
 
+
+def validate_control_nacp(data):
+    # Reject before publishing any bundle; encrypted-content hashes alone do
+    # not prove that the packed application metadata is structurally valid.
+    if len(data)!=0x4000:raise ValueError('Own HOME NACP must be exactly 0x4000 bytes')
+    if data[:13]!=b'RE4 Controls\0' or data[0x200:0x20d]!=b're4-controls\0':
+        raise ValueError('Foreign HOME application identity')
+    for offset,expected in ((0x3038,OWN),(0x3070,OWN+0x1000),(0x3078,OWN),(0x30b0,OWN)):
+        if struct.unpack_from('<Q',data,offset)[0]!=expected:
+            raise ValueError('Invalid own HOME NACP application ID')
+    # The forwarder stores its configuration on SD, never in system saves.
+    for offset in (0x3080,0x3088,0x3090,0x3098,0x30a0,0x3148,0x3150,
+                   0x3158,0x3160,0x3168,0x3170,0x3178,0x3180):
+        if struct.unpack_from('<Q',data,offset)[0]:
+            raise ValueError('Unexpected own HOME storage allocation')
+
 def encode_bundle(title,version,database,contents):
     if title!=OWN or not 0<=version<=0xffffffff or len(contents)!=3:
         raise ValueError('Only the RE4 Controls launcher is supported')
@@ -76,6 +92,10 @@ def generate(nsp,keys,hactool,destination):
             kind={'Meta':0,'Program':1,'Control':3}.get(field('Content Type'))
             if kind is None or kind in files:raise ValueError('Unexpected content type')
             files[kind]=data
+            if kind==3:
+                control=target/'control.nacp'
+                if not control.is_file():raise ValueError('Missing own HOME NACP')
+                validate_control_nacp(control.read_bytes())
             if kind==0:
                 cnmts=list(target.glob('*.cnmt'))
                 if len(cnmts)!=1:raise ValueError('Missing own CNMT')

@@ -14,11 +14,13 @@ using Result = unsigned;
 #define EXL_ABORT(...) std::abort()
 constexpr unsigned InfoType_ProgramId=1, CUR_PROCESS_HANDLE=0;
 constexpr unsigned CUR_THREAD_HANDLE=0xffff8000;
-inline Result svcGetThreadId(u64* out,unsigned){*out=1;return 0;}
+namespace game_test { inline thread_local u64 thread_id=1; }
+inline Result svcGetThreadId(u64* out,unsigned){*out=game_test::thread_id;return 0;}
 struct MemoryInfo {std::uintptr_t addr=0;std::size_t size=0;unsigned perm=0;};
 namespace game_test {
 inline u64 program=0x010099A00BC1E000, tick=1;
 inline unsigned installed=0, initialized=0, mounts=0, fs_opens=0;
+inline std::vector<std::size_t> installed_offsets;
 inline unsigned memory_queries=0;
 inline unsigned mount_result=1, mount_failures=0, fs_reads=0, fs_closes=0;
 inline std::vector<std::uint8_t> settings_primary,settings_backup;
@@ -73,7 +75,7 @@ template<auto Function> struct TestHook {
     template<class... Args> static decltype(auto) Orig(Args&&... args){
         return Function(std::forward<Args>(args)...);
     }
-    static void InstallAtOffset(std::size_t) { ++game_test::installed; }
+    static void InstallAtOffset(std::size_t offset) { ++game_test::installed; game_test::installed_offsets.push_back(offset); }
     template<class T> static void InstallAtFuncPtr(T) { ++game_test::installed; }
 };
 #define HOOK_DEFINE_TRAMPOLINE(Name) struct Name : TestHook<&test_##Name>

@@ -1,0 +1,12 @@
+{
+  "game": "Resident Evil 5 (Nintendo Switch port)",
+  "source_file": "re5-source.jpg",
+  "source_sha256": "6f75124b936d5daef8607c3fe332cec042c610f056117baf5c5fd36df9843105",
+  "sha256": "926742669527d5bb37de37b838ab03b56b64bf115ce3175e8689f13eb029a0c4",
+  "width": 1672,
+  "height": 941,
+  "copyright": "CAPCOM CO., LTD. All rights reserved.",
+  "edit_tool": "OpenAI ImageGen",
+  "edit_date": "2026-11-11",
+  "description": "AI-edited derivative of the official Nintendo gallery frame: baked red laser and dot removed. Resampled; other details may differ. Static scene; application draws its own moving marker."
+}

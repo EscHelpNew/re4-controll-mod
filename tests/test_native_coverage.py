@@ -49,7 +49,7 @@ class NativeCoverageTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_', header)
         for absent in ('data', 'build/config', 'build/game-sdk', 'build/re6-game-sdk', 'build/graphics'):
             self.assertFalse((self.root / absent).exists())
-        for source in ('source/game/module.cpp', 'source/re6/module.cpp', 'source/diagnostic/main.cpp'):
+        for source in ('source/game/module.cpp', 'source/re6/module.cpp', 'source/re5/module.cpp', 'source/diagnostic/main.cpp'):
             command = nc.target_command(self.root, self.root / 'sdk', source, self.run_dir / 'target/job', support=support)
             self.assertIn('-I' + str(support / 'config'), command)
             self.assertIn('-I' + str(self.run_dir / 'shared/build/graphics'), command)
@@ -197,12 +197,12 @@ class NativeCoverageTests(unittest.TestCase):
         self.assertEqual(nc.statistics(instantiated)['covered_lines'], 1)
 
     def test_target_commands_compile_only_original_sources_with_target_sdk(self):
-        for name in ('source/game/module.cpp', 'source/re6/module.cpp', 'source/diagnostic/main.cpp'):
+        for name in ('source/game/module.cpp', 'source/re6/module.cpp', 'source/re5/module.cpp', 'source/diagnostic/main.cpp'):
             self.write(name)
         self.public_support()
         support = nc.stage_target_support(self.root, self.run_dir)
         sdk = self.root / 'sdk'
-        for source in ('source/game/module.cpp', 'source/re6/module.cpp', 'source/diagnostic/main.cpp'):
+        for source in ('source/game/module.cpp', 'source/re6/module.cpp', 'source/re5/module.cpp', 'source/diagnostic/main.cpp'):
             cmd = nc.target_command(self.root, sdk, source, self.run_dir / 'target/job')
             self.assertIn('-c', cmd); self.assertNotIn('-lnx', cmd)
             self.assertIn(str(self.root / source), cmd)
@@ -213,6 +213,10 @@ class NativeCoverageTests(unittest.TestCase):
         self.assertIn('-D__RTLD_6XX__', cmd)
         self.assertIn('-DEXL_LOAD_KIND_ENUM=2', cmd)
         self.assertIn('-I' + str(support / 'exlaunch/source/lib'), cmd)
+        re5 = nc.target_command(self.root, sdk, 'source/re5/module.cpp', self.run_dir / 'target/re5')
+        self.assertIn('-DEXL_PROGRAM_ID=0x010018100CD46000', re5)
+        self.assertIn('-D__RTLD_6XX__', re5)
+        self.assertIn('-I' + str(self.root / 'source/re5_controls'), re5)
         overlay = nc.target_command(self.root, sdk, 'source/overlay/main.cpp', self.run_dir / 'target/overlay')
         self.assertNotIn('-fno-rtti', overlay)
         (support / 'exlaunch/source/lib.hpp').unlink()

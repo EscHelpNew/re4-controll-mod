@@ -8,6 +8,14 @@ from unittest.mock import patch
 from tools.launcher_bundle import encode_bundle,generate,export_nsp
 
 OWN=0x0100E4C04E540000
+
+def own_control():
+    data=bytearray(0x4000)
+    data[:13]=b'RE4 Controls\0';data[0x200:0x20d]=b're4-controls\0'
+    data[0x3060:0x3070]=b'0.28.11'.ljust(16,b'\0')
+    for offset in (0x3038,0x3078,0x30b0):struct.pack_into('<Q',data,offset,OWN)
+    struct.pack_into('<Q',data,0x3070,OWN+0x1000)
+    return bytes(data)
 class LauncherBundleTests(unittest.TestCase):
     def test_own_three_contents_and_database(self):
         contents=[(kind,bytes([kind+1])*100) for kind in (0,1,3)]
@@ -39,7 +47,7 @@ class LauncherBundleTests(unittest.TestCase):
             entries+=struct.pack('<QQII',offset,len(files[kind]),len(strings),0)
             strings+=name.encode()+b'\0';offset+=len(files[kind])
         nsp=struct.pack('<4sIII',b'PFS0',3,len(strings),0)+entries+strings+b''.join(files.values())
-        for case in ('good','extract failure','foreign nca','foreign cnmt','missing cnmt','bad digest','bad bounds'):
+        for case in ('good','extract failure','foreign nca','foreign cnmt','missing cnmt','bad digest','bad bounds','shifted control','missing control','foreign control','save allocation'):
             with self.subTest(case=case),TemporaryDirectory() as temp:
                 root=Path(temp);source=root/'own.nsp';output=root/'home.bin';output.write_bytes(b'previous')
                 raw=bytearray(nsp)
@@ -54,6 +62,12 @@ class LauncherBundleTests(unittest.TestCase):
                         if case=='foreign cnmt':struct.pack_into('<Q',data,0,0x010099A00BC1E000)
                         if case=='bad digest':data[48]^=1
                         (target/'own.cnmt').write_bytes(data)
+                    if kind==3 and case!='missing control':
+                        control=bytearray(own_control())
+                        if case=='shifted control':control[0x3060:0x306f]=b'0.17.2'.ljust(16,b'\0')
+                        if case=='foreign control':struct.pack_into('<Q',control,0x3078,OWN+1)
+                        if case=='save allocation':struct.pack_into('<Q',control,0x3080,1)
+                        (target/'control.nacp').write_bytes(control)
                     title=0x010099A00BC1E000 if case=='foreign nca' else OWN
                     return SimpleNamespace(returncode=int(case=='extract failure'),stdout=f'Title ID: {title:016x}\nContent Type: '+{0:'Meta',1:'Program',3:'Control'}[kind])
                 with patch('tools.launcher_bundle.subprocess.run',side_effect=extract):

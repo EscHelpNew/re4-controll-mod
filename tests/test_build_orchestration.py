@@ -70,7 +70,7 @@ class BuildContracts(unittest.TestCase):
         return printed.getvalue()
 
     def assets(self):
-        for name in ('assets/graphics', 'assets/icon-re.png', 'assets/icon-original.png', 'assets/icon-re6.png',
+        for name in ('assets/graphics', 'assets/icon-re.png', 'assets/icon-original.png', 'assets/icon-re6.png', 'assets/icon-re5.png',
                      'assets/home-launcher.bin', 'assets/fonts/liberation-serif/LICENSE'):
             self.copy(name)
 
@@ -125,7 +125,8 @@ class BuildContracts(unittest.TestCase):
         self.assertIn('#ifdef __RTLD_6XX__\n        if (address == 0', loader)
         self.assertIn('JitSize = 0x4000', (stage / 'source/program/setting.hpp').read_text())
         self.assertIn('KEEP(*(.data.re4control))', (stage / 'misc/link.ld').read_text())
-        for name in ('health_name.inc', 'ammo_counter.inc', 'character_appearance.inc'):
+        for name in ('health_name.inc', 'ammo_counter.inc', 'character_appearance.inc', 'case_rotation.inc', 'enemy_health_reference.inc', 'enemy_health_target.inc'):
+            self.assertTrue((stage / 'source/program' / name).is_file(), 'Missing staged hook: '+name)
             self.assertEqual((stage / 'source/program' / name).read_bytes(), (ROOT / 'source/game' / name).read_bytes())
         objects = stage / 'build'; objects.mkdir(); stale = objects / 'old.o'; stale.write_bytes(b'stale')
         keep = objects / 'keep.bin'; keep.write_bytes(b'keep')
@@ -152,19 +153,23 @@ class BuildContracts(unittest.TestCase):
 
     def test_overlay_outputs_are_separate_native_source_sets_with_release_metadata(self):
         self.assets()
-        for function in (self.build.overlay, self.build.telemetry_overlay, self.build.re6_graphics_overlay):
-            self.invoke(function)
+        stale=self.out/'experimental/switch/.overlays/re6-telemetry.ovl'
+        stale.parent.mkdir(parents=True);stale.write_bytes(b'old recorder')
+        self.invoke(self.build.control_overlays)
+        self.assertFalse(stale.exists())
         outputs = self.out / 'experimental/switch/.overlays'
-        self.assertEqual({p.name for p in outputs.iterdir()}, {'re4-controls.ovl', 're6-telemetry.ovl', 're6-controls.ovl'})
+        self.assertEqual({p.name for p in outputs.iterdir()}, {'re4-controls.ovl', 're6-controls.ovl','re5-controls.ovl'})
         compile_commands = [args for args, _ in self.calls if '-specs=' + str(self.build.SDK / 'libnx/switch.specs') in args]
         self.assertEqual(len(compile_commands), 3)
-        re4, telemetry, re6 = compile_commands
+        re4, re6, re5 = compile_commands
         self.assertIn('source/launch_mode.cpp', re4)
         self.assertIn('source/overlay/live_debug.cpp', re4)
-        self.assertIn('source/re6_overlay/worker.cpp', telemetry)
-        self.assertNotIn('source/overlay/live_debug.cpp', telemetry)
+        self.assertFalse(any('source/re6_overlay/' in arg for command in compile_commands for arg in command))
         self.assertIn('source/re6/settings_file.cpp', re6)
         self.assertNotIn('source/overlay/game_link.cpp', re6)
+        self.assertIn('source/re5_controls/main.cpp',re5)
+        self.assertIn('source/re5/settings_file.cpp',re5)
+        self.assertNotIn('source/re6/settings.cpp',re5)
         for command in compile_commands:
             self.assertIn('-fPIE', command); self.assertIn('-ffixed-x18', command)
         metadata = [args for args, _ in self.calls if Path(args[0]).name == 'nacptool.exe']
@@ -181,7 +186,10 @@ class BuildContracts(unittest.TestCase):
                      'experimental/atmosphere/contents/01002A000CD48000/exefs/subsdk9',
                      'experimental/atmosphere/contents/01002A000CD48000/exefs/main.npdm',
                      'experimental/switch/.overlays/re4-controls.ovl', 'experimental/switch/.overlays/re6-telemetry.ovl',
-                     'experimental/switch/.overlays/re6-controls.ovl')
+                     'experimental/switch/.overlays/re6-controls.ovl',
+                     'experimental/atmosphere/contents/010018100CD46000/exefs/subsdk9',
+                     'experimental/atmosphere/contents/010018100CD46000/exefs/main.npdm',
+                     'experimental/switch/.overlays/re5-controls.ovl')
         for name in artifacts:
             path = self.out / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'OWN_MODULE')
         printed = self.invoke(self.build.diagnostic)
@@ -190,14 +198,16 @@ class BuildContracts(unittest.TestCase):
         self.assertEqual(manifest, {'file': 're4-controls.nro', 'bytes': 28,
             'sha256': hashlib.sha256(b'OWN_EXECUTABLE_FROM_COMPILER').hexdigest(), 'title_id': '0000000000000000'})
         payload = self.out / 'diagnostic-romfs'
-        self.assertEqual({p.name for p in payload.iterdir()}, {'app-logo.bmp', 'app-logo-re6.bmp', 'home-launcher.bin',
+        self.assertEqual({p.name for p in payload.iterdir()}, {'app-logo.bmp', 'app-logo-re6.bmp', 'app-logo-re5.bmp', 'home-launcher.bin',
             'subsdk9', 'main.npdm', 're4-controls.ovl', 'liberation-serif-OFL.txt',
-            're6-subsdk9', 're6-main.npdm', 're6-telemetry.ovl', 're6-controls.ovl'})
+            're6-subsdk9', 're6-main.npdm', 're6-controls.ovl',
+            're5-subsdk9','re5-main.npdm','re5-controls.ovl'})
         token = (self.root / 'data/token.txt').read_bytes()
         self.assertFalse(any(token in p.read_bytes() for p in payload.iterdir()))
         self.assertIn('NXDK_TITLE_ID 0x0000000000000000ULL', (self.out / 'config/reload_project.h').read_text())
         sources = {arg for args, _ in self.calls for arg in args if arg.endswith('.cpp')}
         self.assertTrue({'source/launch_mode.cpp', 'source/update.cpp', 'source/diagnostic/home_launcher.cpp',
-                         'source/re6/log_server.cpp', 'source/diagnostic/main.cpp'}.issubset(sources))
+                         'source/diagnostic/main.cpp'}.issubset(sources))
+        self.assertNotIn('source/re6/log_server.cpp',sources)
         c_sources = {Path(arg).name for args, _ in self.calls for arg in args if arg.endswith('.c')}
         self.assertEqual(c_sources, {'reload_core.c', 'reload_bridge.c', 'remote_reload.c', 'reload_launch.c', 'reload_reports.c', 'reload_main.c'})

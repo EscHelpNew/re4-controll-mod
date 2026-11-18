@@ -14,6 +14,8 @@ public:
         return memory_.value(address,value);
     }
 };
+#include "enemy_health_reference.inc"
+#include "enemy_health_target.inc"
 bool enemy_health_scene_allowed(void* actor){
     if(!actor||actor!=*reinterpret_cast<void**>(main_base+re4::profile::player_slot))return false;
     const auto* bytes=static_cast<const std::uint8_t*>(actor);
@@ -29,20 +31,24 @@ bool enemy_health_aim_allowed(void* actor){
     const auto* bytes=static_cast<const std::uint8_t*>(actor);
     return bytes[0x115]!=6||bytes[0x116]==1||bytes[0x116]==2;
 }
-bool enemy_health_snapshot(void* weapon,re4::ViewVec3& anchor,std::uint32_t& health,std::uint64_t& target_key){
+bool enemy_health_snapshot(void* weapon,re4::ViewVec3& anchor,std::uint32_t& health,std::uint64_t& target_key,
+        std::uint32_t* reference_unit=nullptr,re4::HealthCaptureSample* observation=nullptr){
+    if(reference_unit)*reference_unit=0;
     EnemyHealthReader reader;
     std::uintptr_t target=0,pool=0,part=0;unsigned count=0,stride=0,flags=0;
     const auto manager=main_base+0xAE6EF8;
     if(!reader.field(reinterpret_cast<std::uintptr_t>(weapon),0x418,target)
         ||!reader.field(manager,8,pool)||!reader.field(manager,0x10,count)||!reader.field(manager,0x14,stride)
         ||!re4::enemy_health_pool_member(pool,count,stride,target))return false;
+    const auto owner=enemy_health_resolve_owner(reader,target,pool,count,stride);if(!owner)return false;
     std::uint8_t type=0,parts=0;std::int16_t current=0,maximum=0;re4::ViewVec3 root;
     if(!reader.field(target,8,flags)||!reader.field(target,0x118,type)
-        ||!reader.field(target,0x3C2,current)||!reader.field(target,0x3C4,maximum)
+        ||!reader.field(owner,0x3C2,current)||!reader.field(owner,0x3C4,maximum)
         ||!re4::enemy_health_target(flags,type,current,maximum)
         ||!reader.field(target,0xA4,root)||!re4::view_finite(root)
         ||!reader.field(target,0x11A,parts)||!parts||!reader.field(target,0x108,part))return false;
-    const auto head=part;
+    std::uintptr_t head=0;
+    if(!reader.field(owner,0x108,head))return false;
     std::array<std::uintptr_t,255> visited{};
     float top=root.y;bool visible_part=false;
     for(unsigned i=0;i<parts;++i){
@@ -60,38 +66,59 @@ bool enemy_health_snapshot(void* weapon,re4::ViewVec3& anchor,std::uint32_t& hea
     health=std::uint32_t(std::uint16_t(current))|(std::uint32_t(std::uint16_t(maximum))<<16);
     // Opaque identity distinguishes reused slots with a different native model.
     // Only this scalar, never an enemy/bone pointer, reaches the render thread.
-    auto key=std::uint64_t(target)^(std::uint64_t(head)+0x9E3779B97F4A7C15ull);
+    auto key=std::uint64_t(owner)^(std::uint64_t(head)+0x9E3779B97F4A7C15ull);
     key=(key^(key>>30))*0xBF58476D1CE4E5B9ull;
     key=(key^(key>>27))*0x94D049BB133111EBull;
     target_key=(key^(key>>31))|1;
+    if(reference_unit)*reference_unit=enemy_health_body_reference(reader,owner,observation);
     return true;
+}
+void finish_enemy_health_capture(void* actor,void* weapon,re4::ViewVec3 anchor,std::uint32_t health,std::uint64_t key,unsigned unit,
+        std::uint64_t before,std::uint64_t after,re4::HealthCaptureSample& observation){
+    using F=re4::HealthCaptureField;
+    const auto frame=view_frame.load(std::memory_order_acquire);
+    const auto control_frame=control.frames;
+    const unsigned published=before==after&&before?unit:0;
+    if(before==after)publish_aim_point(enemy_health_point,actor,weapon,anchor,frame,nullptr,nullptr,health,key,published,before);
+    observation.set(F::ViewFrameLo,std::uint32_t(frame));observation.set(F::ViewFrameHi,std::uint32_t(frame>>32));
+    observation.set(F::ControlFrameLo,std::uint32_t(control_frame));observation.set(F::ControlFrameHi,std::uint32_t(control_frame>>32));
+    observation.set(F::TargetKeyLo,std::uint32_t(key));observation.set(F::TargetKeyHi,std::uint32_t(key>>32));
+    observation.set(F::Health,health);observation.set(F::WeaponBefore,std::uint32_t(before));observation.set(F::WeaponAfter,std::uint32_t(after));
+    observation.set(F::ComputedUnit,unit);observation.set(F::PublishedUnit,published);observation.set(F::Outcome,before==after?1u:2u);
+    re4::publish_health_capture(health_capture,health_capture_writer,observation);
 }
 void capture_enemy_health(void* actor,void* weapon){
     enemy_health_point.frame.store(0,std::memory_order_release);
     if(!(view_settings_snapshot.load(std::memory_order_acquire)&64)||!enemy_health_aim_allowed(actor)
         ||weapon!=player_weapon(actor))return;
-    re4::ViewVec3 anchor;std::uint32_t health=0;std::uint64_t key=0;
-    if(enemy_health_snapshot(weapon,anchor,health,key))publish_aim_point(enemy_health_point,actor,weapon,anchor,
-        view_frame.load(std::memory_order_acquire),nullptr,nullptr,health,key);
+    re4::ViewVec3 anchor;std::uint32_t health=0,unit=0;std::uint64_t key=0;
+    const auto stamp=enemy_health_current_weapon_stamp();re4::HealthCaptureSample observation;
+    if(enemy_health_snapshot(weapon,anchor,health,key,&unit,&observation))
+        finish_enemy_health_capture(actor,weapon,anchor,health,key,unit,stamp,enemy_health_current_weapon_stamp(),observation);
 }
 void enemy_health_submit(void* actor,std::uint64_t frame){
     pending_enemy_health.frame.store(0,std::memory_order_release);
-    re4::ViewVec3 anchor;std::uint32_t health=0;std::uint64_t key=0;
+    re4::ViewVec3 anchor;std::uint32_t health=0,unit=0;std::uint64_t key=0,stamp=0;
     if((view_settings_snapshot.load(std::memory_order_acquire)&64)&&enemy_health_aim_allowed(actor)
-        &&read_aim_point(enemy_health_point,actor,frame,anchor,nullptr,nullptr,&health,&key))
-        publish_aim_point(pending_enemy_health,actor,player_weapon(actor),anchor,frame,nullptr,nullptr,health,key);
+        &&read_aim_point(enemy_health_point,actor,frame,anchor,nullptr,nullptr,&health,&key,true,&unit,&stamp)){
+        if(stamp!=enemy_health_current_weapon_stamp()){unit=0;stamp=0;}
+        publish_aim_point(pending_enemy_health,actor,player_weapon(actor),anchor,frame,nullptr,nullptr,health,key,unit,stamp);
+    }
 }
 void enemy_health_draw_scene(void* actor,std::uint64_t frame,const std::uint8_t* state){
     displayed_enemy_health.frame.store(0,std::memory_order_release);
     enemy_health_camera.frame.store(0,std::memory_order_release);
-    re4::ViewVec3 anchor;std::uint32_t health=0;std::uint64_t key=0;
+    re4::ViewVec3 anchor;std::uint32_t health=0,unit=0;std::uint64_t key=0,stamp=0;
     if(state&&(view_settings_snapshot.load(std::memory_order_acquire)&64)&&enemy_health_scene_allowed(actor)){
         re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;
         std::memcpy(&view,state+0xD8,sizeof(view));std::memcpy(&projection,state+0x10C,sizeof(projection));
-        publish_aim_point(enemy_health_camera,actor,nullptr,{},frame,&view,&projection);
+        const auto current_stamp=enemy_health_current_weapon_stamp();
+        publish_aim_point(enemy_health_camera,actor,player_weapon(actor),{},frame,&view,&projection,0,0,0,current_stamp);
         if(frame>1&&enemy_health_aim_allowed(actor)
-            &&read_aim_point(pending_enemy_health,actor,frame-1,anchor,nullptr,nullptr,&health,&key))
-            publish_aim_point(displayed_enemy_health,actor,player_weapon(actor),anchor,frame,&view,&projection,health,key);
+            &&read_aim_point(pending_enemy_health,actor,frame-1,anchor,nullptr,nullptr,&health,&key,true,&unit,&stamp)){
+            if(stamp!=current_stamp){unit=0;stamp=0;}
+            publish_aim_point(displayed_enemy_health,actor,player_weapon(actor),anchor,frame,&view,&projection,health,key,unit,stamp);
+        }
     }
     pending_enemy_health.frame.store(0,std::memory_order_release);
 }
@@ -112,22 +139,25 @@ void draw_enemy_health_hud(){
     if((enemy_health_fade_actor&&(enemy_health_fade_actor!=owner||enemy_health_fade_character!=character))
         ||(enemy_health_fade_tick&&(now<enemy_health_fade_tick
             ||(frame!=enemy_health_fade_frame&&now-enemy_health_fade_tick>1'920'000))))reset();
-    re4::ViewVec3 anchor;re4::ViewHudPoint point;std::uint32_t health=0;std::uint64_t key=0;
+    re4::ViewVec3 anchor;re4::ViewHudPoint point;std::uint32_t health=0,unit=0;
+    std::uint64_t key=0,stamp=0;
     re4::ViewMatrix3x4 view;re4::ViewMatrix4x4 projection;
     if(!read_aim_point(enemy_health_camera,actor,frame,anchor,&view,&projection,nullptr,nullptr,false)){reset();return;}
     enemy_health_fade_actor=owner;enemy_health_fade_character=character;
     enemy_health_fade_tick=now;enemy_health_fade_frame=frame;
     re4::EnemyHealthFadeTarget visible{};
-    const bool selected=read_aim_point(displayed_enemy_health,actor,frame,anchor,nullptr,nullptr,&health,&key)
+    const bool selected=read_aim_point(displayed_enemy_health,actor,frame,anchor,nullptr,nullptr,&health,&key,true,&unit,&stamp)
         &&key&&re4::enemy_health_values(int(health&0xFFFF),int(health>>16))
         &&re4::project_view_point(view,projection,anchor,point)&&re4::enemy_health_in_view(point);
-    if(selected)visible={key,anchor,int(health&0xFFFF),int(health>>16)};
+    if(selected)visible={key,anchor,int(health&0xFFFF),int(health>>16),unit,stamp};
     enemy_health_fade.update(now,selected?&visible:nullptr);
     const auto backend=native_hud_backend();
     for(const auto& entry:enemy_health_fade.entries()){
         if(!entry.active||!re4::project_view_point(view,projection,entry.target.anchor,point))continue;
         if(re4::draw_enemy_health(backend,point,entry.target.current,entry.target.maximum,entry.opacity)
             &&(settings_word&128))
-            re4::draw_enemy_health_number(backend,point,entry.target.current,re4::kEnemyHealthPowerUnit,settings_word&256,entry.opacity);
+            re4::draw_enemy_health_number(backend,point,entry.target.current,
+                entry.target.reference_unit?entry.target.reference_unit:re4::kEnemyHealthPowerUnit,
+                settings_word&256,entry.opacity);
     }
 }

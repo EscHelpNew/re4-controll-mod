@@ -30,6 +30,8 @@ __attribute__((used,section(".data.re4control")))
 unsigned char control[504]="RE4CTL_SHARED24";
 __attribute__((used,section(".data.re4emitter"),aligned(16)))
 unsigned char emitter[352]="RE4CTL_EMIT1";
+__attribute__((used,section(".data.re4health"),aligned(16)))
+unsigned char health[160]="RE4CTL_HP1";
 }
 ''')
             for command in ([str(compiler), '-c', '-fno-common', '-fno-ident', str(stage / 'layout.cpp'), '-o', str(stage / 'layout.o')],
@@ -41,7 +43,8 @@ unsigned char emitter[352]="RE4CTL_EMIT1";
             self.assertEqual(output.find(b'RE4CTL_SHARED24'), 0)
             # Both ELF and COFF align the504-byte control block to512 bytes.
             self.assertEqual(output.find(b'RE4CTL_EMIT1'), 512)
-            self.assertIn(1, output[864:896])
+            self.assertEqual(output.find(b'RE4CTL_HP1'),864)
+            self.assertIn(1, output[1024:1056])
             self.assertEqual(vendor.read_bytes(), original)
             source = (stage / 'layout.cpp').read_text()
             for invalid in (source.replace('.data.re4control', '.data.missing'),
@@ -56,6 +59,18 @@ unsigned char emitter[352]="RE4CTL_EMIT1";
                                             capture_output=True, text=True, timeout=20)
                     self.assertNotEqual(linked.returncode, 0)
                     self.assertIn('RE4 IPC block must occupy the first writable page', linked.stderr)
+
+            for invalid in (source.replace('.data.re4health', '.data.missing'),
+                            source.replace('health[160]', 'health[176]')):
+                with self.subTest(source=invalid):
+                    (stage / 'layout.cpp').write_text(invalid)
+                    compiled=subprocess.run([str(compiler),'-c','-fno-ident',str(stage/'layout.cpp'),
+                                             '-o',str(stage/'layout.o')],capture_output=True,text=True,timeout=20)
+                    self.assertEqual(compiled.returncode,0,compiled.stdout+compiled.stderr)
+                    linked=subprocess.run([str(compiler.with_name('ld.exe')),'-r','-T',str(stage/'layout.ld'),
+                                           str(stage/'layout.o'),'-o',str(stage/'linked.o')],capture_output=True,text=True,timeout=20)
+                    self.assertNotEqual(linked.returncode,0)
+                    self.assertIn('RE4 retained HP capture layout changed',linked.stderr)
 
     def test_unknown_linker_revision_is_rejected_before_writing(self):
         with tempfile.TemporaryDirectory() as directory:

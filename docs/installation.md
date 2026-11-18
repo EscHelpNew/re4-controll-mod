@@ -1,18 +1,22 @@
 # Installation and updates
 
-The separate read-only RE6 observer/recording overlay supports update v131072.
-See the [measurement procedure](measurement-ru.md); it preserves native RE6
-controls. Hardware capture is still an experimental validation step.
-
-RE4 Controls supports the original Switch port of Resident Evil4,
-Title ID `010099A00BC1E000`, main Build ID
+RE Controls 0.28.27 selects **RE4 / RE5** with **L/R**. RE4 supports the original
+Switch port, Title ID `010099A00BC1E000`, main Build ID
 `82C2A04A21D3E0B850F273D4149C900300000000000000000000000000000000`.
-It requires Atmosphere with `dmnt:cht` and a Tesla-compatible overlay loader.
-The executable profile is checked before hooks are enabled.
+RE5 supports Title ID `010018100CD46000`, the exact v196608 and installed
+v65536/v131072 mains listed in the [RE5 guide](re5-controls.md).
+Atmosphere with `dmnt:cht` and a Tesla-compatible loader are required. The exact
+executable profile is checked before hooks are enabled.
+
+RE6 is no longer a selectable installer page. Its separate legacy graphics
+module/overlay remains in the SD ZIP for supported v131072, preserving native
+controls. Use the manual files in [RE6 Graphics](re6-graphics.md), also supplied
+as `README-re6-graphics.md` in the ZIP. No RE6 installation action is exposed in
+the current two-game selector.
 
 ## Install the standalone NRO
 
-Release **0.17.2** includes independent RE4 **Default / Custom / Quality**
+RE4 offers independent **Default / Custom / Quality**
 graphics presets. Default restores native graphics; Quality selects AF16x,
 handheld 900p-to-720p SSAA, object distance 1.75x and native shadows. Docked
 rendering remains native. Custom preserves your last manual graphics choices.
@@ -24,11 +28,11 @@ with **Install / update mod**.
 
 1. Copy `re4-controls.nro` from the release to
    `sdmc:/switch/re4-controls/re4-controls.nro`.
-2. Close RE4 and launch hbmenu in **application mode**: hold R while starting an
-   installed title, then select RE4 Controls. Do not use Album while RE4 is suspended.
+2. Close the target game and launch hbmenu in **application mode**: hold R while starting an
+   installed title, then select RE Controls. Keep the target game fully closed.
 3. The app prepares its own `bridge.nro`/`game.nro` files and HOME shortcut.
    It updates only its own application, `0100E4C04E540000`.
-4. Select **Install / update mod**. The game must be closed.
+4. Select **RE4** or **RE5** with **L/R**, then **Install / update mod**. The game must be closed.
 
 No console keys or GitHub token are required. Existing Uberhand/Tesla files,
 game saves and RomFS translations are preserved. A foreign `subsdk9` or
@@ -36,12 +40,15 @@ game saves and RomFS translations are preserved. A foreign `subsdk9` or
 
 ## Install the SD ZIP manually
 
-Extract the following directories from `re4-controls-sd.zip` to the SD root:
+Copy the selected game's three files and the shared app images from `re4-controls-sd.zip` to the SD root:
 
 ```text
 atmosphere/contents/010099A00BC1E000/exefs/subsdk9
 atmosphere/contents/010099A00BC1E000/exefs/main.npdm
 switch/.overlays/re4-controls.ovl
+atmosphere/contents/010018100CD46000/exefs/subsdk9
+atmosphere/contents/010018100CD46000/exefs/main.npdm
+switch/.overlays/re5-controls.ovl
 switch/re4-controls/bridge.nro
 switch/re4-controls/game.nro
 ```
@@ -52,8 +59,11 @@ checking compatibility. The standalone installer performs ownership checks for y
 
 ## In-game controls
 
-Start RE4 again. Open your overlay loader using its configured shortcut and select
-**RE4 Controls → Connect to game**. Connecting sends your saved settings to the mod.
+Start the selected game again. Open your overlay loader using its configured
+shortcut and select **RE4 Controls → Connect to game** or
+**RE5 Controls → Connect to RE5**. Connecting sends saved settings to the mod.
+RE5 has a separate local-player selector; see the [RE5 guide](re5-controls.md).
+The detailed sensitivity and preview instructions below describe RE4.
 On the development console, the existing loader shortcut is **L + R + D-pad Up**;
 other loader installations may use a different combination.
 
@@ -91,15 +101,17 @@ public GitHub release manifest, size, SHA-256, NRO structure, application identi
 and embedded version before replacing both app images. Previous images are kept,
 and failed publication attempts restore the old files when possible.
 
-Reopen RE4 Controls after installation. With RE4 closed, choose **Install / update
-mod** to install the new bundled game module and overlay. For RE6, close RE6 and
-choose **Install RE6 module** on its page. Updating the app alone does not update
-installed modules or overlays. A private repository or missing release returns
-an unavailable message; users should never enter a token.
+Reopen RE Controls after installation. With the target game closed, select RE4
+or RE5 and choose **Install / update mod** to install its bundled module/overlay.
+For legacy RE6 Graphics, update its three manual SD ZIP files with RE6 closed;
+there is no RE6 installer tab. Updating the app alone does not update installed
+modules/overlays. Reselect a replaced overlay from the loader list to unload its
+old copy. A private repository or missing release returns an unavailable message;
+users should never enter a token.
 
 ## Manual update, including the same version
 
-1. Close RE4 Controls and both RE4 and RE6 completely before replacing files.
+1. Close RE Controls and all affected games completely before replacing files.
    Close suspended games through **HOME → X → Close**.
 2. Download `re4-controls.nro` and `re4-controls-sd.zip` from the **same release**.
    Copy the downloaded NRO and the two NROs inside the ZIP to these paths,
@@ -111,9 +123,10 @@ an unavailable message; users should never enter a token.
    ZIP: switch/re4-controls/game.nro → sdmc:/switch/re4-controls/game.nro
    ```
 
-3. Reopen RE4 Controls in application mode; it prepares its own HOME shortcut.
-   With the games still closed, choose **RE4 → Install / update mod** and, if
-   installed, **RE6 → Install RE6 module** to replace the modules and overlays.
+3. Reopen RE Controls in application mode; it prepares its own HOME shortcut.
+   With the games closed, select each used **RE4 / RE5** page and choose
+   **Install / update mod**. For legacy RE6 Graphics replace the three manual
+   files listed in `README-re6-graphics.md` from the same SD ZIP.
 4. Launch the game again and connect its overlay to the game.
 
 Replacing only `re4-controls.nro` can leave the HOME shortcut loading an older
@@ -123,36 +136,59 @@ delete the settings files or reset settings to update.
 
 ## Remove the mod
 
-Close RE4, open the standalone app and select **Disable mod**. It disables only
-files matching its own installation receipt. If installing manually, remove only
-the three game/overlay files listed above and restore your previous ExeFS files.
+Close the target RE4/RE5 game, select its page in the app and choose **Disable mod**.
+It disables only files matching its own installation receipt. For manual installs,
+remove only that game's own three module/overlay files and restore your previous
+ExeFS files. Disable preserves saved settings. Legacy RE6 uses the separate
+manual-file procedure; there is no current RE6 page.
 The own HOME application can be removed separately from System Settings.
 
 ## Русский кратко
 
-Скопируйте NRO на SD, закройте RE4 и запустите приложение из hbmenu в режиме
-приложения. Выберите «Установить / обновить мод». Затем в игре откройте свой
-загрузчик оверлеев, выберите RE4 Controls и «Подключиться к игре».
+Скопируйте NRO на SD, закройте нужную игру и запустите приложение из hbmenu в
+режиме приложения. Кнопками L/R выберите RE4 или RE5 и «Установить / обновить мод».
+Затем в игре откройте свой загрузчик оверлеев, выберите RE4 Controls или
+RE5 Controls и подключитесь к игре. Перед настройкой RE5 выберите локального игрока.
+Страницы RE6 больше нет; её отдельная графика устанавливается вручную из трёх
+файлов SD ZIP, перечисленных в `README-re6-graphics.md`.
 
 Обычная камера, прицел левым/правым стиком и гироскоп регулируются отдельно.
 Гироскоп действует только при наведении из оружия. Мёртвая зона гироскопа —0.50°/с,
 мёртвые зоны стиков —0.05; максимальная скорость стиков —1.00.
 
 Обновление: «Обновления → Проверить обновления → Скачать / установить», затем
-откройте приложение заново и обновите мод при закрытой игре. Для RE6 выберите
-«Установить модуль RE6» на её странице. Само обновление приложения не заменяет
+откройте приложение заново и обновите мод на странице RE4/RE5 при закрытой игре.
+Для прежнего модуля графики RE6 замените три его файла из SD ZIP вручную.
+Само обновление приложения не заменяет
 установленные игровые модули и оверлеи.
 
-При ручной замене, даже на ту же версию, полностью закройте приложение и обе
+При ручной замене, даже на ту же версию, полностью закройте приложение и нужные
 игры. Из одного релиза скопируйте `re4-controls.nro` и файлы `bridge.nro` /
 `game.nro` из SD ZIP в `sdmc:/switch/re4-controls/`, заменив все три. Снова
-откройте приложение и обновите модули RE4/RE6 при закрытых играх. Настройки и
+откройте приложение и обновите модули RE4/RE5 при закрытых играх. Настройки и
 калибровка сохраняются. Для полного применения графики RE4 требуется
 **HOME → X → Закрыть** и новый запуск игры.
 
 Ключи и токены пользователю не нужны. Отключение мода: «Отключить мод» при
-закрытой RE4.
+закрытой выбранной RE4/RE5.
 
 The package is experimental. Special weapons and every scripted/QTE state have
 not been exhaustively checked. Developer build/reload instructions and dependency
 notices are available in the source repository.
+
+
+Since 0.28.6 the retired RE4 / RE6 Telemetry menu is absent from normal packages. Startup retires only an owned `re6-telemetry.ovl` with a matching old receipt; changed or foreign files remain untouched. Existing capture files are kept. To remove old native frame journals, update the respective RE4/RE6 modules with each game closed and restart the games.
+
+For a controlled recovery launch, use hbmenu/netloader with `--recovery`.
+This skips automatic HOME-icon publication and GitHub initialization. Local
+installation and settings remain available. For local updates or reports,
+choose **Updates → Local update → Start server** explicitly (available from both
+RE4/RE5 pages). The server starts Off on every launch and reports its IP/port.
+Stop or Back waits for the receiver before leaving; close/reopen manually after
+a successful update. This workflow does not automatically restart the app.
+
+Application reports rotate through five fixed files under
+`switch/re4-controls/app-report-0.log` to `app-report-4.log`, each at most64KiB
+(total 320 KiB, within 1 MiB). They record startup/action/error/exit stages. An authenticated
+report download is available only while the local server is enabled. Console
+startup and sleep/wake hangs were previously reported; a universal fix remains unproven.

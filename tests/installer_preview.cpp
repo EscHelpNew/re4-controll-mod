@@ -25,11 +25,37 @@ SDL_Color pixel_at(SDL_Surface* image,int x,int y){
     std::memcpy(&pixel,static_cast<const unsigned char*>(image->pixels)+y*image->pitch+x*image->format->BytesPerPixel,image->format->BytesPerPixel);
     SDL_Color color{};SDL_GetRGB(pixel,image->format,&color.r,&color.g,&color.b);return color;
 }
-void check_game_frame(const char* path,bool re6){
+void check_game_tabs(const char* path,unsigned active){
+    auto* image=SDL_LoadBMP(path);assert(image);
+    assert(active<2);
+    for(unsigned tab=0;tab<2;++tab){
+        const int x=958+85*int(tab);
+        const auto underline=pixel_at(image,x+8,130);
+        if(tab!=active)assert(std::max({underline.r,underline.g,underline.b})<35);
+        else if(tab==0)assert(underline.r>underline.g+30&&underline.r>underline.b+30);
+        else if(tab==1)assert(underline.r>60&&std::abs(int(underline.r)-underline.g)<5&&std::abs(int(underline.r)-underline.b)<5);
+        int min_x=image->w,min_y=image->h,max_x=-1,max_y=-1;
+        for(int y=101;y<130;++y)for(int px=x+1;px<x+67;++px){
+            const auto c=pixel_at(image,px,y);
+            if(c.r>70&&c.g>70&&c.b>60){min_x=std::min(min_x,px);min_y=std::min(min_y,y);max_x=std::max(max_x,px);max_y=std::max(max_y,y);}
+        }
+        assert(max_x>=min_x&&max_y>=min_y);
+        const float ink_x=(min_x+max_x)*.5f,ink_y=(min_y+max_y)*.5f;
+        assert(std::fabs(ink_x-(x+33.5f))<=1.f&&std::fabs(ink_y-115.5f)<=1.f);
+    }
+    // The retired third slot has no label or highlight.
+    for(int y=100;y<132;++y)for(int x=1125;x<1165;++x){
+        const auto c=pixel_at(image,x,y);
+        assert(!(c.r>70&&c.g>70&&c.b>60));
+    }
+    SDL_FreeSurface(image);
+}
+void check_game_frame(const char* path){
+    check_game_tabs(path,0);
     auto* image=SDL_LoadBMP(path);assert(image && image->w==1280 && image->h==720);
     // Home actions begin at the panel's 16px top inset, without a second heading.
     const auto accent=pixel_at(image,66,190);
-    assert(re6?(accent.b>accent.r && accent.r>accent.g):(accent.r>accent.g && accent.g>accent.b));
+    assert(accent.r>accent.g && accent.g>accent.b);
     // Both borders enclose content, with an unobstructed 16px gutter between them.
     for(int y=168;y<615;++y){
         const auto left=pixel_at(image,821,y),right=pixel_at(image,838,y);
@@ -49,16 +75,9 @@ void check_game_frame(const char* path,bool re6){
     unsigned logo_accent=0;
     for(int y=23;y<151;++y)for(int x=42;x<170;++x){
         const auto c=pixel_at(image,x,y);
-        if(re6?(c.b>c.r+20 && c.r>c.g+20 && c.b>100):(c.r>c.g+30 && c.r>c.b+30 && c.r>100))++logo_accent;
+        if(c.r>c.g+30 && c.r>c.b+30 && c.r>100)++logo_accent;
     }
     assert(logo_accent>100); // The actual selected-game bitmap must be present.
-    if(re6){
-        // RE6 cannot display the RE4 stick-response plot or extra home rows.
-        const auto blank=pixel_at(image,864,420);
-        assert(blank.r==23 && blank.g==24 && blank.b==19);
-        const auto fifth_row=pixel_at(image,66,420);
-        assert(fifth_row.r==23 && fifth_row.g==24 && fifth_row.b==19);
-    }
     SDL_FreeSurface(image);
 }
 #undef assert
@@ -324,12 +343,17 @@ int main(){
     renderer.draw(model);assert(renderer.save_preview("build/installer-updates-en.bmp"));
     model.settings.language=re4::Language::Russian;model.update.stage=re4::UpdateStage::Downloading;model.update.received=4*1024*1024;
     renderer.draw(model);assert(renderer.save_preview("build/installer-updates-ru.bmp"));
-    assert(renderer.initialize(font.data(),font.size(),"build/app-logo.bmp",true,"build/app-logo-re6.bmp"));
+    model.page=re4::InstallerPage::LocalUpdate;model.selected=0;
+    model.local_update={};renderer.draw(model);assert(renderer.save_preview("build/installer-local-update-off-ru.bmp"));
+    model.settings.language=re4::Language::English;model.local_update.state=re4::LocalUpdateState::Listening;
+    model.local_update.address="192.168.1.131:28285";
+    renderer.draw(model);assert(renderer.save_preview("build/installer-local-update-listening-en.bmp"));
+    assert(renderer.initialize(font.data(),font.size(),"build/app-logo.bmp",true,"build/app-logo-re6.bmp","build/app-logo-re5.bmp"));
     for(auto language:{re4::Language::English,re4::Language::Russian}){
         model={};model.settings.language=language;
         const auto* re4_path=language==re4::Language::English?"build/installer-home-en.bmp":"build/installer-home-ru.bmp";
         renderer.draw(model);assert(renderer.save_preview(re4_path));
-        check_game_frame(re4_path,false);
+        check_game_frame(re4_path);
         // Recognize the original 4, rather than accepting the shared red RE logo.
         auto* re4_frame=SDL_LoadBMP(re4_path);assert(re4_frame);
         const auto diagonal=pixel_at(re4_frame,114,63),left_stem=pixel_at(re4_frame,82,68);
@@ -337,23 +361,51 @@ int main(){
         assert(left_stem.r<30 && left_stem.g<30 && left_stem.b<30);
         SDL_FreeSurface(re4_frame);
         assert(model.handle(re4::UiEvent::NextGame)==re4::InstallerAction::None);
+        assert(model.game==re4::GameTarget::RE5);
         renderer.draw(model);
-        const auto* path=language==re4::Language::English?"build/installer-re6-home-en.bmp":"build/installer-re6-home-ru.bmp";
-        assert(renderer.save_preview(path));check_game_frame(path,true);
-        model.selected=2;assert(model.item_count()==5&&model.handle(re4::UiEvent::Confirm)==re4::InstallerAction::None);
-        assert(model.page==re4::InstallerPage::Graphics&&model.item_count()==3);
-        for(unsigned row=0;row<3;++row){model.selected=row;renderer.draw(model);
-            const auto file="build/installer-re6-graphics-"+std::string(language==re4::Language::English?"en":"ru")+"-"+std::to_string(row)+".bmp";
-            assert(renderer.save_preview(file.c_str()));check_graphics_picture(file.c_str());}
-        assert(model.handle(re4::UiEvent::Back)==re4::InstallerAction::None&&model.page==re4::InstallerPage::Home&&model.selected==2);
+        const auto* re5_path=language==re4::Language::English?"build/installer-re5-home-en.bmp":"build/installer-re5-home-ru.bmp";
+        assert(renderer.save_preview(re5_path));check_game_tabs(re5_path,1);
+        auto* re5_frame=SDL_LoadBMP(re5_path);assert(re5_frame);
+        const auto re5_accent=pixel_at(re5_frame,66,190);
+        assert(re5_accent.r==150&&re5_accent.g==150&&re5_accent.b==150);
+        unsigned gray_logo=0;
+        for(int y=23;y<151;++y)for(int x=42;x<170;++x){const auto c=pixel_at(re5_frame,x,y);if(c.r>100&&std::abs(int(c.r)-int(c.g))<5&&std::abs(int(c.r)-int(c.b))<5)++gray_logo;}
+        assert(gray_logo>100);
+        const auto crosshair=pixel_at(re5_frame,105,36);
+        assert(crosshair.r>100&&std::abs(int(crosshair.r)-int(crosshair.g))<5&&std::abs(int(crosshair.r)-int(crosshair.b))<5);
+        SDL_FreeSurface(re5_frame);
+        model.settings.left_deadzone=.2f;model.settings.right_deadzone=.35f;
+        model.page=re4::InstallerPage::Diagnostics;model.diagnostic.connected=true;model.diagnostic.sensors=1;
+        const auto re5_stem=std::string("build/installer-re5-")+(language==re4::Language::English?"en":"ru");
+        renderer.draw(model);assert(renderer.save_preview((re5_stem+"-diagnostics.bmp").c_str()));
+        check_deadzone((re5_stem+"-diagnostics.bmp").c_str(),.2f,.35f);
+        model.handle(re4::UiEvent::OpenGyroTest);model.selected=1;
+        model.diagnostic.gyro_rate[0]=.125f;model.diagnostic.gyro_rate[1]=-.25f;
+        renderer.draw(model);assert(renderer.save_preview((re5_stem+"-gyro-debug.bmp").c_str()));
+        check_gyro_marker((re5_stem+"-gyro-debug.bmp").c_str(),810,350);
+        auto* debug=SDL_LoadBMP((re5_stem+"-gyro-debug.bmp").c_str());assert(debug);
+        const auto edge=pixel_at(debug,29,142),selected_fill=pixel_at(debug,31,142);
+        assert(edge.r==150&&edge.g==150&&edge.b==150);
+        assert(std::abs(int(selected_fill.r)-selected_fill.g)<=2&&std::abs(int(selected_fill.r)-selected_fill.b)<=2);
+        unsigned readout=0;for(int y=560;y<635;++y)for(int x=36;x<350;++x){const auto c=pixel_at(debug,x,y);if(c.r>150&&c.g>140&&c.b>120)++readout;}assert(readout>100);
+        SDL_FreeSurface(debug);model.handle(re4::UiEvent::Back);model.page=re4::InstallerPage::Home;model.selected=0;
+        assert(model.handle(re4::UiEvent::NextGame)==re4::InstallerAction::None);
+        renderer.draw(model);
+        assert(model.game==re4::GameTarget::RE4);
+        const auto* path=language==re4::Language::English?"build/installer-re4-returned-en.bmp":"build/installer-re4-returned-ru.bmp";
+        assert(renderer.save_preview(path));check_game_frame(path);
     }
     renderer.close();renderer.close();
     assert(SDL_WasInit(SDL_INIT_VIDEO)==0 && !renderer.save_preview("build/installer-closed.bmp"));
     // Reinitialize after freeing both logos and cached EN/RU glyphs.
-    assert(renderer.initialize(font.data(),font.size(),"build/app-logo.bmp",true,"build/app-logo-re6.bmp"));
+    assert(renderer.initialize(font.data(),font.size(),"build/app-logo.bmp",true,"build/app-logo-re6.bmp","build/app-logo-re5.bmp"));
     model={};model.handle(re4::UiEvent::PreviousGame);renderer.draw(model);
-    assert(renderer.save_preview("build/installer-re6-reopened.bmp"));
-    check_game_frame("build/installer-re6-reopened.bmp",true);
+    assert(model.game==re4::GameTarget::RE5);
+    assert(renderer.save_preview("build/installer-re5-reopened.bmp"));
+    check_game_tabs("build/installer-re5-reopened.bmp",1);
+    model.handle(re4::UiEvent::NextGame);assert(model.game==re4::GameTarget::RE4);
+    renderer.draw(model);assert(renderer.save_preview("build/installer-re4-reopened.bmp"));
+    check_game_frame("build/installer-re4-reopened.bmp");
     renderer.close();assert(SDL_WasInit(SDL_INIT_VIDEO)==0);
     std::puts("actual installer renderer: EN/RU frames, diagnostics and cleanup PASS");
 }

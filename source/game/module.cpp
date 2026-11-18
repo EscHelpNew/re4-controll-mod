@@ -21,6 +21,9 @@
 #include "re4/scope.hpp"
 #include "re4/reticle_draw.hpp"
 #include "re4/enemy_health.hpp"
+#include "re4/enemy_health_reference.hpp"
+#include "re4/enemy_health_families.hpp"
+#include "re4/health_profile.hpp"
 #include "re4/enemy_health_fade.hpp"
 #include "re4/enemy_health_numbers.hpp"
 #include "re4/grenade_prediction.hpp"
@@ -41,11 +44,11 @@
 #include "re4/character_height_view.hpp"
 #include "re4/character_emitter.hpp"
 #include "re4/emitter_diagnostics.hpp"
+#include "re4/health_capture.hpp"
 #include "re4/health_name.hpp"
 #include "re4/character_loading.hpp"
 #include "re4/character_textures.hpp"
 #include "re4/gyro_frame.hpp"
-#include "re6/journal.hpp"
 #include <atomic>
 #include <cstdio>
 
@@ -90,36 +93,37 @@ __attribute__((used, section(".data.re4control")))
 volatile re4::SharedControl control = re4::initial_shared_control();
 __attribute__((used, section(".data.re4emitter"), aligned(16)))
 volatile re4::EmitterDiagnosticsWire emitter_diagnostics = re4::initial_emitter_diagnostics();
-__attribute__((used)) re6::ProducerRing<1024> telemetry_ring;
-struct TelemetryInput {NpadState pad{};std::uint64_t tick=0;std::uint32_t id=0,style=0;};
-static_assert(sizeof(TelemetryInput)==56);
-std::atomic<std::uint64_t> telemetry_input_sequence{0},telemetry_input_words[7]{};
-std::atomic_flag telemetry_input_writer=ATOMIC_FLAG_INIT;
-std::uint32_t telemetry_input_id=UINT32_MAX,telemetry_input_style=0;
-std::uint64_t telemetry_last_frame=0;
-void telemetry_write_input(const NpadState& pad,std::uint32_t id,std::uint32_t style){
-    if((id!=0&&id!=0x20)||telemetry_input_writer.test_and_set(std::memory_order_acquire))return;
-    if(!(pad.attributes&1)&&(id!=telemetry_input_id||style!=telemetry_input_style)){
-        telemetry_input_writer.clear(std::memory_order_release);return;
+__attribute__((used, section(".data.re4health"), aligned(16)))
+volatile re4::HealthCaptureWire health_capture = re4::initial_health_capture();
+std::atomic_flag health_capture_writer=ATOMIC_FLAG_INIT;
+// The case preview needs only the latest physical right-stick position.
+// This bounded snapshot is local gameplay input; no frame journal is retained.
+constexpr std::uint64_t native_tick_hz=19'200'000;
+struct MenuInput {std::uint64_t tick=0;std::int32_t right_x=0;std::uint32_t attributes=0;};
+static_assert(sizeof(MenuInput)==16);
+std::atomic<std::uint64_t> menu_input_sequence{0},menu_input_words[2]{};
+std::atomic_flag menu_input_writer=ATOMIC_FLAG_INIT;
+std::uint32_t menu_input_id=UINT32_MAX,menu_input_style=0;
+void menu_write_input(const NpadState& pad,std::uint32_t id,std::uint32_t style){
+    if((id!=0&&id!=0x20)||menu_input_writer.test_and_set(std::memory_order_acquire))return;
+    if(!(pad.attributes&1)&&(id!=menu_input_id||style!=menu_input_style)){
+        menu_input_writer.clear(std::memory_order_release);return;
     }
-    telemetry_input_id=id;telemetry_input_style=style;
-    const TelemetryInput value{pad,svcGetSystemTick(),id,style};std::uint64_t words[7];std::memcpy(words,&value,sizeof(value));
-    const auto before=telemetry_input_sequence.fetch_add(1,std::memory_order_acq_rel);
-    for(unsigned i=0;i<7;++i)telemetry_input_words[i].store(words[i],std::memory_order_relaxed);
-    telemetry_input_sequence.store(before+2,std::memory_order_release);
-    telemetry_input_writer.clear(std::memory_order_release);
+    menu_input_id=id;menu_input_style=style;
+    const MenuInput value{svcGetSystemTick(),pad.rx,pad.attributes};std::uint64_t words[2];std::memcpy(words,&value,sizeof(value));
+    const auto before=menu_input_sequence.fetch_add(1,std::memory_order_acq_rel);
+    for(unsigned i=0;i<2;++i)menu_input_words[i].store(words[i],std::memory_order_relaxed);
+    menu_input_sequence.store(before+2,std::memory_order_release);
+    menu_input_writer.clear(std::memory_order_release);
 }
-bool telemetry_read_input(std::uint64_t tick,re6::Record& out){
-    const auto before=telemetry_input_sequence.load(std::memory_order_acquire);if(!before||(before&1))return false;
-    std::uint64_t words[7];for(unsigned i=0;i<7;++i)words[i]=telemetry_input_words[i].load(std::memory_order_relaxed);
+bool menu_read_input(std::uint64_t tick,std::int32_t& right_x){
+    const auto before=menu_input_sequence.load(std::memory_order_acquire);if(!before||(before&1))return false;
+    std::uint64_t words[2];for(unsigned i=0;i<2;++i)words[i]=menu_input_words[i].load(std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_acquire);
-    if(before!=telemetry_input_sequence.load(std::memory_order_acquire))return false;
-    TelemetryInput value{};std::memcpy(&value,words,sizeof(value));
-    if(!(value.pad.attributes&1)||!value.tick||tick<value.tick||tick-value.tick>re6::kTickHz/10)return false;
-    out.input_tick=value.tick;out.sample_id=value.pad.sample;out.buttons=value.pad.buttons;
-    out.controller_id=value.id;out.controller_style=value.style;
-    out.sticks[0]=value.pad.lx;out.sticks[1]=value.pad.ly;out.sticks[2]=value.pad.rx;out.sticks[3]=value.pad.ry;
-    out.validity|=re6::InputValid;return true;
+    if(before!=menu_input_sequence.load(std::memory_order_acquire))return false;
+    MenuInput value{};std::memcpy(&value,words,sizeof(value));
+    if(!(value.attributes&1)||!value.tick||tick<value.tick||tick-value.tick>native_tick_hz/10)return false;
+    right_x=value.right_x;return true;
 }
 re4::Settings settings=[] {re4::Settings s;s.analog_enabled=false;s.remap_enabled=false;return s;}();
 float raw_left_x = 0;
@@ -209,7 +213,8 @@ struct AimPoint {
     std::atomic<std::uintptr_t> actor{0},weapon{0};
     std::atomic<std::uint32_t> x{0},y{0},z{0},weapon_id{0};
     std::atomic<std::uint32_t> health{0};
-    std::atomic<std::uint64_t> target_key{0};
+    std::atomic<std::uint64_t> target_key{0},reference_weapon{0};
+    std::atomic<std::uint32_t> reference_unit{0};
     std::atomic<std::uint32_t> matrices[28]{};
 } aim_point,pending_aim_point,displayed_aim_point;
 AimPoint enemy_health_point,pending_enemy_health,displayed_enemy_health,enemy_health_camera;
@@ -378,7 +383,8 @@ void clear_view_frame(){
 std::uint32_t view_float_bits(float value){std::uint32_t bits;std::memcpy(&bits,&value,4);return bits;}
 float view_float_value(std::uint32_t bits){float value;std::memcpy(&value,&bits,4);return value;}
 void publish_aim_point(AimPoint& target,void* actor,void* weapon,re4::ViewVec3 value,std::uint64_t frame,
-        const re4::ViewMatrix3x4* view=nullptr,const re4::ViewMatrix4x4* projection=nullptr,std::uint32_t health=0,std::uint64_t target_key=0){
+        const re4::ViewMatrix3x4* view=nullptr,const re4::ViewMatrix4x4* projection=nullptr,std::uint32_t health=0,std::uint64_t target_key=0,
+        std::uint32_t reference_unit=0,std::uint64_t reference_weapon=0){
     target.sequence.fetch_add(1,std::memory_order_acq_rel);
     std::atomic_thread_fence(std::memory_order_release);
     target.frame.store(frame,std::memory_order_relaxed);
@@ -386,6 +392,8 @@ void publish_aim_point(AimPoint& target,void* actor,void* weapon,re4::ViewVec3 v
     target.weapon.store(reinterpret_cast<std::uintptr_t>(weapon),std::memory_order_relaxed);
     target.health.store(health,std::memory_order_relaxed);
     target.target_key.store(target_key,std::memory_order_relaxed);
+    target.reference_unit.store(reference_unit,std::memory_order_relaxed);
+    target.reference_weapon.store(reference_weapon,std::memory_order_relaxed);
     target.x.store(view_float_bits(value.x),std::memory_order_relaxed);
     target.y.store(view_float_bits(value.y),std::memory_order_relaxed);
     target.z.store(view_float_bits(value.z),std::memory_order_relaxed);
@@ -398,7 +406,8 @@ void publish_aim_point(AimPoint& target,void* actor,void* weapon,re4::ViewVec3 v
     target.sequence.fetch_add(1,std::memory_order_release);
 }
 bool read_aim_point(const AimPoint& source,void* actor,std::uint64_t required_frame,re4::ViewVec3& value,
-        re4::ViewMatrix3x4* view=nullptr,re4::ViewMatrix4x4* projection=nullptr,std::uint32_t* health=nullptr,std::uint64_t* target_key=nullptr,bool check_weapon=true){
+        re4::ViewMatrix3x4* view=nullptr,re4::ViewMatrix4x4* projection=nullptr,std::uint32_t* health=nullptr,std::uint64_t* target_key=nullptr,bool check_weapon=true,
+        std::uint32_t* reference_unit=nullptr,std::uint64_t* reference_weapon=nullptr){
     const auto before=source.sequence.load(std::memory_order_acquire);
     if(before&1)return false;
     const auto frame=source.frame.load(std::memory_order_relaxed);
@@ -406,6 +415,8 @@ bool read_aim_point(const AimPoint& source,void* actor,std::uint64_t required_fr
     const auto weapon_id=source.weapon_id.load(std::memory_order_relaxed);
     if(health)*health=source.health.load(std::memory_order_relaxed);
     if(target_key)*target_key=source.target_key.load(std::memory_order_relaxed);
+    if(reference_unit)*reference_unit=source.reference_unit.load(std::memory_order_relaxed);
+    if(reference_weapon)*reference_weapon=source.reference_weapon.load(std::memory_order_relaxed);
     value={view_float_value(source.x.load(std::memory_order_relaxed)),
         view_float_value(source.y.load(std::memory_order_relaxed)),view_float_value(source.z.load(std::memory_order_relaxed))};
     if(view&&projection){
@@ -749,7 +760,7 @@ void poll_settings() {
     re4::acknowledge_settings(control, settings, before);
 }
 void capture(NpadState& pad, std::uint32_t id, std::uint32_t style) {
-    telemetry_write_input(pad,id,style); // Exact original SDK state, before remapping.
+    menu_write_input(pad,id,style); // Physical case-preview axis, before remapping.
     const auto physical_buttons=pad.buttons;
     // Transform the original SDK state once, including menu and QTE input.
     // Overlay/HOME controls belong to other processes and remain physical.
@@ -1068,7 +1079,7 @@ HOOK_DEFINE_TRAMPOLINE(CameraApply) {
             fps_override_count.fetch_add(1,std::memory_order_relaxed);
             first_person_frame.store(view_frame.load(std::memory_order_relaxed),std::memory_order_release);
         }else if(stable_profile&&settings.re6_response
-            &&(character==0||(character==1&&actor[0x115]<=4))){
+            &&(character==0||character==2||(character==1&&actor[0x115]<=4))){
             re4::ViewMatrix3x4 body;std::memcpy(&body,actor+0x18,sizeof(body));
             re4::ViewVec3 root,checked;re4::ViewQfpsOutput result;
             re4::ViewQfpsOutput neutral;
@@ -1228,21 +1239,7 @@ HOOK_DEFINE_TRAMPOLINE(CameraCalculate) {
         const bool previous=unified_camera_calculation;unified_camera_calculation=true;
         CameraContext follow{};auto* prior=camera_follow_context;camera_follow_context=&follow;
         Orig();camera_follow_context=prior;unified_camera_calculation=previous;
-        const auto frame=view_frame.load(std::memory_order_acquire);
-        if(frame==telemetry_last_frame)return;
-        telemetry_last_frame=frame;
-        re6::Record record{};record.frame=frame;record.tick=svcGetSystemTick();
-        telemetry_read_input(record.tick,record);
-        auto* actor=*reinterpret_cast<const std::uint8_t**>(main_base+re4::profile::player_slot);
-        const auto* state=*reinterpret_cast<const std::uint8_t**>(main_base+0xB1AE08);
-        if(view_scene(const_cast<std::uint8_t*>(actor))){
-            record.actor=reinterpret_cast<std::uintptr_t>(actor);record.camera=main_base+0x11319C0;
-            std::memcpy(record.player,actor+0x18,sizeof(record.player));
-            std::memcpy(record.view,state+0xD8,sizeof(record.view));
-            std::memcpy(record.projection,state+0x10C,sizeof(record.projection));
-            record.validity|=re6::PlayerValid|re6::CameraValid|re6::ProjectionValid;
-        }
-        telemetry_ring.capture(record);
+
     }
 };
 HOOK_DEFINE_TRAMPOLINE(FinalLookAt) {
@@ -1442,8 +1439,7 @@ extern "C" void exl_main(void*, void*) {
     }
     if (main.m_Total.m_Size < 0x1273300) { control.status = 2; return; }
     main_base = reinterpret_cast<std::uintptr_t>(memory);
-    re6::BuildId telemetry_build{};std::memcpy(telemetry_build.data(),re4::profile::build_id,32);
-    telemetry_ring.initialize(svcGetSystemTick(),telemetry_build,re4::profile::title_id);
+    enemy_health_guard_bind(memory,main.m_Total.m_Size);
     aiming_predicate = reinterpret_cast<int (*)(void*)>(main_base + 0x317630);
     native_grenade_bone=reinterpret_cast<decltype(native_grenade_bone)>(main_base+0x2B4F90);
     native_grenade_segment=reinterpret_cast<decltype(native_grenade_segment)>(main_base+0x8330);

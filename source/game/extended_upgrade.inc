@@ -22,7 +22,8 @@ bool extended_upgrade_mask_known=true;
 // Selection only. Geometry and fade are read at the native sprite draw, after
 // 28FEA0 has evaluated this frame's parent transforms and colour animation.
 struct ExtendedUpgradeSquare {
-    std::uintptr_t previous=0,last=0,record=0;
+    std::uintptr_t previous=0,last=0,record=0,manager=0;
+    std::array<std::uintptr_t,6> firepower{}; // Native group1C ids65..6A only.
     int entry=-1;
     std::array<std::uint8_t,14> identity{};
 };
@@ -198,10 +199,14 @@ HOOK_DEFINE_TRAMPOLINE(ExtendedLevelBar){
         if(!(show&1)||entry<0||!extended_upgrade_active()||!extended_upgrade_native.sprite)return;
         auto* manager=reinterpret_cast<void*>(modern_move_slot(0xB26C90));if(!manager)return;
         const auto& w=re4::kExtendedUpgradeWeapons[entry];
-        ExtendedUpgradeSquare square;
-        square.previous=reinterpret_cast<std::uintptr_t>(extended_upgrade_native.sprite(manager,0x65+w.max-2,0x1C));
-        square.last=reinterpret_cast<std::uintptr_t>(extended_upgrade_native.sprite(manager,0x65+w.max-1,0x1C));
-        if(!square.previous||!square.last||square.previous==main_base+0x124D630||square.last==main_base+0x124D630)return;
+        ExtendedUpgradeSquare square;square.manager=reinterpret_cast<std::uintptr_t>(manager);
+        for(unsigned i=0;i<w.max;++i){
+            const auto sprite=reinterpret_cast<std::uintptr_t>(extended_upgrade_native.sprite(manager,0x65+i,0x1C));
+            if(!sprite||sprite==main_base+0x124D630)return;
+            for(unsigned j=0;j<i;++j)if(square.firepower[j]==sprite)return;
+            square.firepower[i]=sprite;
+        }
+        square.previous=square.firepower[w.max-2];square.last=square.firepower[w.max-1];
         square.entry=entry;square.record=address;
         if(record){
             std::uint32_t selected_packed=0;
@@ -210,24 +215,65 @@ HOOK_DEFINE_TRAMPOLINE(ExtendedLevelBar){
         extended_upgrade_square=square;
     }
 };
-// 290F00 is the sprite callback stored at *(main+ B275C0), queued by
-// 290DD0/4F4790. Drawing alongside the source inherits native group visibility,
+// Apply only to a private draw copy: RGB follows the native parent tint and
+// effective alpha stays exactly as evaluated by the native colour animation.
+bool extended_upgrade_square_color(std::array<std::uint8_t,0x170>& copy,bool owned){
+    std::array<std::uint8_t,4> rgba{201,31,23,copy[0xFF]};
+    if(!owned){
+        std::uintptr_t manager=0;
+        if(!extended_read(main_base+0xB26C90,manager)||!manager)return false;
+        const auto color=reinterpret_cast<std::uintptr_t>(extended_upgrade_native.sprite(reinterpret_cast<void*>(manager),3,0x1C));
+        if(!color||color==main_base+0x124D630||!extended_read(color+0xFC,rgba))return false;
+    }
+    std::uintptr_t parent=0;std::array<float,4> tint{255,255,255,255},effective{};
+    std::memcpy(&parent,copy.data()+0x68,sizeof(parent));
+    std::memcpy(effective.data(),copy.data()+0x104,sizeof(effective));
+    if(parent&&!extended_read(parent+0x104,tint))return false;
+    for(unsigned channel=0;channel<4;++channel)
+        if(!std::isfinite(tint[channel])||tint[channel]<0||tint[channel]>255
+            ||!std::isfinite(effective[channel])||effective[channel]<0||effective[channel]>255)return false;
+    // Native290494..2904F0 multiplies local RGB by parent effective RGB/255,
+    // truncating. The bought row uses explicit red, independent of template2.
+    for(unsigned channel=0;channel<3;++channel)effective[channel]=float(unsigned(float(rgba[channel])*tint[channel]/255.f));
+    std::memcpy(copy.data()+0xFC,rgba.data(),sizeof(rgba));
+    std::memcpy(copy.data()+0x104,effective.data(),sizeof(effective));
+    return true;
+}
+// 290F00 is the sprite callback stored at *(main+B275C0), queued by
+// 290DD0/4F4790. Drawing private copies here inherits native visibility,
 // layer, projection, quad, texture, blend mode and this frame's exact fade.
 HOOK_DEFINE_TRAMPOLINE(ExtendedSquareDraw){
     static void Callback(void* sprite){
         if(health_name_sprite(sprite))return;
-        Orig(sprite);
         const auto selected=extended_upgrade_square;
-        if(reinterpret_cast<std::uintptr_t>(sprite)!=selected.last||selected.entry<0
-            ||!extended_upgrade_active()||!extended_upgrade_native.sprite)return;
-        if(selected.record){
+        const auto address=reinterpret_cast<std::uintptr_t>(sprite);
+        bool selected_row=selected.entry>=0&&extended_upgrade_active()&&extended_upgrade_native.sprite;
+        if(selected_row&&selected.record){
             std::array<std::uint8_t,14> identity{};
-            if(!extended_read(selected.record,identity)||identity!=selected.identity)return;
+            selected_row=extended_read(selected.record,identity)&&identity==selected.identity;
         }
+        bool firepower=false;
+        if(selected_row&&address)for(const auto source:selected.firepower)if(source==address)firepower=true;
+        if(!firepower){Orig(sprite);return;}
+        // A queued pointer can outlive its manager/layout. Verify every exact
+        // group1C/id binding, including the last pair used for extra geometry.
+        std::uintptr_t manager=0;
+        bool current=extended_read(main_base+0xB26C90,manager)&&manager&&manager==selected.manager;
+        if(current)for(unsigned i=0;i<re4::kExtendedUpgradeWeapons[selected.entry].max;++i){
+            if(reinterpret_cast<std::uintptr_t>(extended_upgrade_native.sprite(reinterpret_cast<void*>(manager),0x65+i,0x1C))
+                !=selected.firepower[i]){current=false;break;}
+        }
+        if(!current){Orig(sprite);return;}
         alignas(16) std::array<std::uint8_t,0x170> copy{};
+        if(!extended_read(address,copy)||copy[0]==0xFF||(copy[0]&9)!=9||copy[0x9E]!=0){Orig(sprite);return;}
+        const bool owned=selected.record&&extended_upgrade_mask_known&&extended_upgrade_applied(selected.record)==selected.entry;
+        if(owned){
+            if(!extended_upgrade_square_color(copy,true)){Orig(sprite);return;}
+            Orig(copy.data()); // Whole visible Firepower row red after purchase.
+        }else Orig(sprite);
+        if(address!=selected.last)return;
         std::uint8_t previous_flags=0;
-        if(!extended_read(selected.last,copy)||copy[0]==0xFF||(copy[0]&9)!=9||copy[0x9E]!=0
-            ||!extended_read(selected.previous,previous_flags)||previous_flags==0xFF||(previous_flags&9)!=9)return;
+        if(!extended_read(selected.previous,previous_flags)||previous_flags==0xFF||(previous_flags&9)!=9)return;
         float distance=0;
         for(unsigned offset:{0x14u,0x24u,0x34u}){
             float previous=0,last=0;
@@ -238,26 +284,8 @@ HOOK_DEFINE_TRAMPOLINE(ExtendedSquareDraw){
             last+=step;std::memcpy(copy.data()+offset,&last,sizeof(last));
         }
         if(!(distance>1.f&&distance<14400.f))return;
-        const bool owned=selected.record&&extended_upgrade_mask_known&&extended_upgrade_applied(selected.record)==selected.entry;
-        std::uintptr_t manager=0;
-        if(!extended_read(main_base+0xB26C90,manager)||!manager)return;
-        const auto color=reinterpret_cast<std::uintptr_t>(extended_upgrade_native.sprite(reinterpret_cast<void*>(manager),owned?2:3,0x1C));
-        std::array<std::uint8_t,4> rgba{};
-        if(!color||color==main_base+0x124D630||!extended_read(color+0xFC,rgba))return;
-        std::uintptr_t parent=0;std::array<float,4> tint{255,255,255,255},effective{};
-        std::memcpy(&parent,copy.data()+0x68,sizeof(parent));
-        std::memcpy(effective.data(),copy.data()+0x104,sizeof(effective));
-        if(parent&&!extended_read(parent+0x104,tint))return;
-        for(unsigned channel=0;channel<4;++channel)
-            if(!std::isfinite(tint[channel])||tint[channel]<0||tint[channel]>255
-                ||!std::isfinite(effective[channel])||effective[channel]<0||effective[channel]>255)return;
-        // 290494..2904F0 multiplies each local channel by the parent's effective
-        // channel /255, truncating. Preserve the source alpha, including its
-        // local colour animation, so a fade never leaves an opaque extra slot.
-        for(unsigned channel=0;channel<3;++channel)effective[channel]=float(unsigned(float(rgba[channel])*tint[channel]/255.f));
-        std::memcpy(copy.data()+0xFC,rgba.data(),sizeof(rgba));
-        std::memcpy(copy.data()+0x104,effective.data(),sizeof(effective));
-        Orig(copy.data());
+        if(!owned&&!extended_upgrade_square_color(copy,false))return;
+        Orig(copy.data()); // Additional slot: red when owned, native empty otherwise.
     }
 };
 // 4D4FC0(TW,shop,show): next value and price. Native hides row0 at its maximum.

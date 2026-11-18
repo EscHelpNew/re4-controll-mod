@@ -73,3 +73,10 @@ The grenade landing example crops the same unchanged RE4 source to rectangle
 soft red radial marker only when the grenade option is enabled. Its sample
 location demonstrates appearance rather than a measured throw; it is not a
 console capture. The same source attribution and CAPCOM copyright apply.
+
+## RE5
+
+Retrieved 2026-11-11 from the official [Nintendo RE5 page](https://www.nintendo.com/us/store/products/resident-evil-5-switch/), product `70010000015876`, gallery image2 excluding video, Switch release2019-10-29.
+`re5-source.jpg` is the unchanged1280x720 JPEG: [direct source](https://assets.nintendo.com/image/upload/store/software/switch/70010000015876/6f75124b936d5daef8607c3fe332cec042c610f056117baf5c5fd36df9843105.jpg). SHA256 `6f75124b936d5daef8607c3fe332cec042c610f056117baf5c5fd36df9843105`. Chris aiming in an alley.
+
+`re5-gyro-test-background.png` is an AI-edited derivative produced with OpenAI ImageGen on2026-11-11, removing the baked red laser and dot. It was resampled to1672x941; other details may differ. The original JPEG is retained unchanged. The companion JSON records its hash,dimensions,source and attribution; prompt.txt records the edit request. Only the application marker moves. This remains CAPCOM imagery, outside the repository software license. The build validates its identity and converts to a separate1280x720 RGB565 header; RE4's image remains separate.

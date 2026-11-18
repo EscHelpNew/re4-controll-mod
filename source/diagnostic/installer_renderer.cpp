@@ -8,6 +8,7 @@
 #include "re4/input.hpp"
 #include "re4/graphics_preview_image.hpp"
 #include "re4/gyro_test_background.hpp"
+#include "re5/gyro_test_background.hpp"
 #include "re4/gyro_preview.hpp"
 #include "re4/enemy_health_preview.hpp"
 #include "re4/grenade_spot_preview.hpp"
@@ -23,6 +24,7 @@ namespace {
 constexpr int width=1280,height=720;
 constexpr SDL_Color cream{220,211,184,255},muted{146,143,121,255},red{172,48,36,255};
 constexpr SDL_Color panel{24,25,20,245},line{73,73,57,255},highlight{77,31,25,255};
+constexpr SDL_Color gray{150,150,150,255},gray_highlight{47,47,47,255};
 constexpr SDL_Color purple{156,99,218,255},purple_highlight{52,31,77,255};
 const char* tr(const InstallerModel& m,const char* en,const char* ru){return m.settings.language==Language::Russian?ru:en;}
 std::uint32_t next_codepoint(const char*& p){
@@ -48,8 +50,10 @@ struct InstallerRenderer::Impl {
     SDL_Texture* background=nullptr;
     SDL_Texture* logo=nullptr;
     SDL_Texture* re6_logo=nullptr;
-    SDL_Texture* graphics_images[2]{};
+    SDL_Texture* re5_logo=nullptr;
+    SDL_Texture* graphics_images[3]{};
     SDL_Texture* gyro_image=nullptr;
+    SDL_Texture* re5_gyro_image=nullptr;
     SDL_Texture* health_image=nullptr;
     unsigned health_options=~0u;
     SDL_Texture* grenade_image=nullptr;
@@ -86,12 +90,14 @@ struct InstallerRenderer::Impl {
         }
     }
     void gyro_test(const InstallerModel& m){
-        if(!gyro_image){
-            auto* surface=SDL_CreateRGBSurfaceWithFormatFrom(const_cast<std::uint16_t*>(gyro_background::pixels),
+        auto*& scene=m.game==GameTarget::RE5?re5_gyro_image:gyro_image;
+        const auto* pixels=m.game==GameTarget::RE5?re5::gyro_background::pixels:gyro_background::pixels;
+        if(!scene){
+            auto* surface=SDL_CreateRGBSurfaceWithFormatFrom(const_cast<std::uint16_t*>(pixels),
                 gyro_background::kWidth,gyro_background::kHeight,16,gyro_background::kWidth*2,SDL_PIXELFORMAT_RGB565);
-            if(surface){gyro_image=SDL_CreateTextureFromSurface(renderer,surface);SDL_FreeSurface(surface);}
+            if(surface){scene=SDL_CreateTextureFromSurface(renderer,surface);SDL_FreeSurface(surface);}
         }
-        if(gyro_image)SDL_RenderCopy(renderer,gyro_image,nullptr,nullptr);
+        if(scene)SDL_RenderCopy(renderer,scene,nullptr,nullptr);
         else text(tr(m,"Static frame unavailable","Статичный кадр недоступен"),420,250,24,cream);
         fill({20,20,350,526},{10,12,9,166});border({20,20,350,526},{146,143,121,100});
         fill({20,552,350,152},{10,12,9,184});
@@ -99,7 +105,11 @@ struct InstallerRenderer::Impl {
         text(tr(m,"Static game frame","Статичный игровой кадр"),390,24,18,cream,750);
         for(unsigned row=0;row<m.item_count();++row){
             const int y=row<7?82+int(row)*52:456;
-            if(row==m.selected){fill({28,y,334,row<7?49:42},{77,31,25,180});fill({28,y,3,row<7?49:42},red);}
+            if(row==m.selected){
+                const bool re5=m.game==GameTarget::RE5;
+                fill({28,y,334,row<7?49:42},re5?SDL_Color{50,50,50,180}:SDL_Color{77,31,25,180});
+                fill({28,y,3,row<7?49:42},re5?SDL_Color{150,150,150,255}:red);
+            }
             if(row==7)text(m.item_label(row),39,y+10,21,cream,312);
             else{
                 text(m.item_label(row),39,y+6,18,row==m.selected?cream:muted,218,true,2);
@@ -164,7 +174,7 @@ struct InstallerRenderer::Impl {
         text(tr(m,"Enlarged example","Увеличенный пример"),862,553,14,muted,344);
     }
     void graphics_picture(const InstallerModel& m){
-        const unsigned index=m.game==GameTarget::RE6?1:0;
+        const unsigned index=m.game==GameTarget::RE6?1:m.game==GameTarget::RE5?2:0;
         const auto image=graphics_preview::image(m.game);
         if(!graphics_images[index]&&graphics_preview::valid_image(image)){
             auto* surface=SDL_CreateRGBSurfaceWithFormatFrom(const_cast<std::uint16_t*>(image.pixels),
@@ -208,6 +218,28 @@ struct InstallerRenderer::Impl {
         const char* p=s.c_str();float result=0;
         while(*p && *p!='\n')result+=glyph(next_codepoint(p),size).advance;
         return result;
+    }
+    void centered_text(const std::string& s,SDL_Rect bounds,unsigned size,SDL_Color c){
+        const float baseline=ascent*stbtt_ScaleForPixelHeight(&font,float(size));
+        float cursor=0.f;int min_x=width,min_y=height,max_x=-1,max_y=-1;
+        const char* p=s.c_str();
+        while(*p){
+            const auto cp=next_codepoint(p);
+            if(cp=='\n')break;
+            const auto& g=glyph(cp,size);
+            if(g.texture){
+                const int left=int(cursor)+g.x,top=int(baseline)+g.y;
+                min_x=std::min(min_x,left);min_y=std::min(min_y,top);
+                max_x=std::max(max_x,left+g.w);max_y=std::max(max_y,top+g.h);
+            }
+            cursor+=g.advance;
+        }
+        if(max_x<=min_x||max_y<=min_y)return;
+        const float ink_center_x=(min_x+max_x-1)*.5f;
+        const float ink_center_y=(min_y+max_y-1)*.5f;
+        const int origin_x=int(std::lround(bounds.x+(bounds.w-1)*.5f-ink_center_x));
+        const int origin_y=int(std::lround(bounds.y+(bounds.h-1)*.5f-ink_center_y));
+        text(s,origin_x,origin_y,size,c);
     }
     void text(const std::string& s,int x,int y,unsigned size,SDL_Color c,int maximum=0,bool wrap=false,unsigned max_lines=8){
         const float baseline=ascent*stbtt_ScaleForPixelHeight(&font,float(size));
@@ -264,11 +296,24 @@ struct InstallerRenderer::Impl {
             fill({78,407,int(690*std::min(1.f,float(m.update.received)/m.update.total)),8},red);
         }
         if(!m.update.detail.empty())text(m.update.detail,78,438,15,muted,690);
-        for(unsigned i=0;i<2;++i){
-            const int y=498+int(i)*49;
+        for(unsigned i=0;i<m.item_count();++i){
+            const int y=458+int(i)*49;
             if(i==m.selected){fill({65,y-2,723,43},highlight);fill({65,y-2,4,43},red);}
             text(m.item_label(i),81,y+7,23,i==m.selected?cream:muted,690);
         }
+    }
+    void local_update(const InstallerModel& m){
+        text(tr(m,"LOCAL UPDATE","ЛОКАЛЬНОЕ ОБНОВЛЕНИЕ"),76,184,17,muted);
+        text(tr(m,"Address / port","Адрес / порт"),78,224,18,muted);
+        text(m.local_update.address.empty()?"—":m.local_update.address,78,255,25,cream,690);
+        text(std::string(tr(m,"State: ","Состояние: "))+m.status_text(),78,303,21,cream,690);
+        char progress[96];std::snprintf(progress,sizeof(progress),"%s %u / %u %s",tr(m,"Received:","Получено:"),
+            unsigned(m.local_update.received),unsigned(m.local_update.total),tr(m,"bytes","байт"));
+        text(progress,78,342,18,muted,690);
+        text(tr(m,"Storage: SD card","Хранилище: SD-карта"),78,377,18,muted,690);
+        if(!m.local_update.detail.empty())text(m.local_update.detail,78,416,17,cream,690,true,3);
+        fill({65,535,723,43},highlight);fill({65,535,4,43},red);
+        text(m.item_label(0),81,544,23,cream,690);
     }
     void diagnostics(const InstallerModel& m){
         char out[256];
@@ -307,7 +352,7 @@ struct InstallerRenderer::Impl {
 };
 InstallerRenderer::InstallerRenderer()=default;
 InstallerRenderer::~InstallerRenderer(){close();}
-bool InstallerRenderer::initialize(const void* data,std::size_t size,const char* logo_path,bool hidden,const char* re6_logo_path){
+bool InstallerRenderer::initialize(const void* data,std::size_t size,const char* logo_path,bool hidden,const char* re6_logo_path,const char* re5_logo_path){
     close();impl_=new Impl;impl_->hidden=hidden;
     if(!data || size<1000){impl_->failure="Shared font unavailable";return false;}
     const auto* bytes=static_cast<const unsigned char*>(data);
@@ -331,6 +376,10 @@ bool InstallerRenderer::initialize(const void* data,std::size_t size,const char*
         SDL_Surface* surface=SDL_LoadBMP(logo_path);
         if(surface){impl_->logo=SDL_CreateTextureFromSurface(impl_->renderer,surface);SDL_FreeSurface(surface);}
     }
+    if(re5_logo_path){
+        SDL_Surface* surface=SDL_LoadBMP(re5_logo_path);
+        if(surface){impl_->re5_logo=SDL_CreateTextureFromSurface(impl_->renderer,surface);SDL_FreeSurface(surface);}
+    }
     if(re6_logo_path){
         SDL_Surface* surface=SDL_LoadBMP(re6_logo_path);
         if(surface){impl_->re6_logo=SDL_CreateTextureFromSurface(impl_->renderer,surface);SDL_FreeSurface(surface);}
@@ -351,8 +400,8 @@ bool InstallerRenderer::initialize(const void* data,std::size_t size,const char*
 void InstallerRenderer::draw(const InstallerModel& m){
     if(!impl_ || !impl_->renderer)return;
     auto& p=*impl_;
-    const bool re6=m.game==GameTarget::RE6;
-    const auto accent=re6?purple:red;
+    const bool re6=m.game==GameTarget::RE6,re5=m.game==GameTarget::RE5;
+    const auto accent=re6?purple:re5?gray:red;
     SDL_SetRenderDrawColor(p.renderer,10,12,9,255);SDL_RenderClear(p.renderer);
     if(m.page==InstallerPage::GyroTest){
         p.gyro_test(m);
@@ -360,19 +409,36 @@ void InstallerRenderer::draw(const InstallerModel& m){
         SDL_RenderPresent(p.renderer);return;
     }
     if(p.background)SDL_RenderCopy(p.renderer,p.background,nullptr,nullptr);
-    auto* logo=re6?p.re6_logo:p.logo;
+    auto* logo=re6?p.re6_logo:re5?p.re5_logo:p.logo;
     if(logo){const SDL_Rect dest{42,23,128,128};SDL_RenderCopy(p.renderer,logo,nullptr,&dest);}
     else if(re6)p.text("6",78,36,110,purple);
-    p.text(re6?"RE6 CONTROLS":"RE4 CONTROLS",183,43,46,cream);
+    else if(re5)p.text("5",78,36,110,gray);
+    p.text(re6?"RE6 CONTROLS":re5?"RE5 CONTROLS":"RE4 CONTROLS",183,43,46,cream);
     p.text(m.page_title(),186,106,18,muted);
+    if(re5)p.text(m.re5_player==0?tr(m,"PLAYER 1","ИГРОК 1"):tr(m,"PLAYER 2","ИГРОК 2"),690,106,18,gray);
+    if(m.recovery_mode)p.text(tr(m,"RECOVERY MODE","\u0420\u0415\u0416\u0418\u041c \u0412\u041e\u0421\u0421\u0422\u0410\u041d\u041e\u0412\u041b\u0415\u041d\u0418\u042f"),620,57,17,cream,480);
     p.text(re4::kVersion,1150,51,18,muted);
-    p.text("L  RE4",1000,106,18,re6?muted:red);
-    p.text("RE6  R",1125,106,18,re6?purple:muted);
+    p.text("L",875,106,18,muted);
+    constexpr GameTarget games[]{GameTarget::RE4,GameTarget::RE5};
+    constexpr SDL_Color colors[]{red,gray};
+    constexpr const char* labels[]{"RE4","RE5"};
+    for(unsigned tab=0;tab<2;++tab){
+        const int x=958+int(tab)*85;const bool active=m.game==games[tab];
+        if(active){
+            const auto color=colors[tab];
+            p.fill({x,100,68,32},{color.r,color.g,color.b,28});
+            p.border({x,100,68,32},{color.r,color.g,color.b,80});
+            p.fill({x+8,130,52,2},{color.r,color.g,color.b,180});
+        }
+        p.centered_text(labels[tab],{x,100,68,32},18,active?cream:muted);
+    }
+    p.text("R",1180,106,18,muted);
     p.fill({52,151,1176,1},line);
     p.fill({52,167,770,449},panel);p.border({52,167,770,449},line);
     p.fill({838,167,390,449},panel);p.border({838,167,390,449},line);
     if(m.page==InstallerPage::Diagnostics)p.diagnostics(m);
     else if(m.page==InstallerPage::Updates)p.updates(m);
+    else if(m.page==InstallerPage::LocalUpdate)p.local_update(m);
     else{
         const bool home=m.page==InstallerPage::Home;
         if(!home){
@@ -386,7 +452,7 @@ void InstallerRenderer::draw(const InstallerModel& m){
         if(count<visible)first=0;
         for(unsigned i=first;i<count && i<first+visible;++i){
             const int y=(home?185:222)+int(i-first)*49;
-            if(i==m.selected){p.fill({65,y-2,743,43},re6?purple_highlight:highlight);p.fill({65,y-2,4,43},accent);}
+            if(i==m.selected){p.fill({65,y-2,743,43},re6?purple_highlight:re5?gray_highlight:highlight);p.fill({65,y-2,4,43},accent);}
             p.text(m.item_label(i),81,y+7,23,i==m.selected?cream:muted,485);
             const auto value=m.item_value(i);
             if(!value.empty())p.text(value,786-int(p.measure(value,18)),y+10,18,cream,240);
@@ -400,7 +466,11 @@ void InstallerRenderer::draw(const InstallerModel& m){
     p.text(m.selected_help(),862,185,19,cream,344,true,5);
     if(m.page==InstallerPage::Graphics){
         p.graphics_picture(m);
-    }else if(re6){
+    }else if(m.page==InstallerPage::LocalUpdate){
+        p.text(tr(m,"MANUAL CONNECTION","ПОДКЛЮЧЕНИЕ ВРУЧНУЮ"),862,360,16,muted);
+        p.text(tr(m,"Use the shown address from a\ncomputer on the same network.\nReports are downloadable only\nwhile local update is enabled.\nReopen the app after installation.",
+                    "Откройте адрес с компьютера\nв той же сети. Отчёты можно\nскачать, пока локальное\nобновление включено. После\nустановки откройте заново."),862,399,19,cream,344,true,6);
+    }else if(re6 && m.page!=InstallerPage::Updates){
         p.text(tr(m,"GRAPHICS AND MEASUREMENT","ГРАФИКА И ЖУРНАЛ"),862,360,16,muted);
         p.text(tr(m,"In Uberhand: RE6 Graphics.\nFiltering and anti-aliasing.\nNative gyro is retained.",
                     "В Uberhand: RE6 Graphics.\nФильтрация и сглаживание.\nШтатный гироскоп."),862,399,19,cream,344,true,4);
@@ -424,8 +494,12 @@ void InstallerRenderer::draw(const InstallerModel& m){
         p.text(tr(m,"Changes with shape and size","Меняется вместе с видом и размером"),862,585,15,muted,344);
     }else if(m.page==InstallerPage::Mapping || m.page==InstallerPage::MappingTargets){
         p.text(tr(m,"PHYSICAL OVERLAY CONTROLS","ФИЗИЧЕСКИЕ КНОПКИ ОВЕРЛЕЯ"),862,386,16,muted,344);
-        p.text(tr(m,"Overlay buttons stay unchanged.\nOpen it to recover any mapping.\n\nHOME/Capture are system buttons\nand cannot be mapped in RE4.",
-                    "Кнопки оверлея не меняются.\nОткройте его для исправления\nназначений.\n\nHOME/Capture — системные кнопки\nвне управления RE4."),862,420,19,cream,344,true,6);
+        const auto* mapping_help=re5?tr(m,
+            "Overlay buttons stay unchanged.\nOpen it to recover any mapping.\n\nHOME/Capture are system buttons\nand cannot be mapped in RE5.",
+            "Кнопки оверлея не меняются.\nОткройте его для исправления\nназначений.\n\nHOME/Capture — системные кнопки\nвне управления RE5."):
+            tr(m,"Overlay buttons stay unchanged.\nOpen it to recover any mapping.\n\nHOME/Capture are system buttons\nand cannot be mapped in RE4.",
+               "Кнопки оверлея не меняются.\nОткройте его для исправления\nназначений.\n\nHOME/Capture — системные кнопки\nвне управления RE4.");
+        p.text(mapping_help,862,420,19,cream,344,true,6);
     }else{
         p.text(tr(m,"STICK RESPONSE","КРИВАЯ СТИКОВ"),862,360,16,muted);
         p.text(curve_name(m.settings.stick_curve,m.settings.language),862,386,18,cream);
@@ -433,8 +507,9 @@ void InstallerRenderer::draw(const InstallerModel& m){
         p.text(m.page==InstallerPage::Home?tr(m,"In game: L + R + UP","В игре: L + R + вверх")
                                          :tr(m,"Native stick maximum: 1.00","Максимум скорости стиков: 1.00"),862,585,15,muted,344);
     }
-    const bool error=m.status==InstallerStatus::Failed||m.status==InstallerStatus::Conflict||m.status==InstallerStatus::GameRunning
-        || (m.page==InstallerPage::Updates && m.update.stage==UpdateStage::Failed);
+    const bool error=m.page==InstallerPage::LocalUpdate?m.local_update.state==LocalUpdateState::Failed
+        :m.page==InstallerPage::Updates?m.update.stage==UpdateStage::Failed
+        :m.status==InstallerStatus::Failed||m.status==InstallerStatus::Conflict||m.status==InstallerStatus::GameRunning;
     p.text(m.status_text(),55,632,21,error?red:cream,1170);
     p.fill({52,665,1176,1},line);
     p.text(tr(m,"UP/DOWN: select    A: confirm    LEFT/RIGHT: change    B: back    +: exit",
@@ -454,8 +529,10 @@ void InstallerRenderer::close(){
     for(auto& entry:impl_->glyphs)if(entry.second.texture)SDL_DestroyTexture(entry.second.texture);
     if(impl_->logo)SDL_DestroyTexture(impl_->logo);
     if(impl_->re6_logo)SDL_DestroyTexture(impl_->re6_logo);
+    if(impl_->re5_logo)SDL_DestroyTexture(impl_->re5_logo);
     for(auto* texture:impl_->graphics_images)if(texture)SDL_DestroyTexture(texture);
     if(impl_->gyro_image)SDL_DestroyTexture(impl_->gyro_image);
+    if(impl_->re5_gyro_image)SDL_DestroyTexture(impl_->re5_gyro_image);
     if(impl_->health_image)SDL_DestroyTexture(impl_->health_image);
     if(impl_->grenade_image)SDL_DestroyTexture(impl_->grenade_image);
     if(impl_->background)SDL_DestroyTexture(impl_->background);

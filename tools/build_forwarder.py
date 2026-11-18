@@ -15,6 +15,7 @@ def build(keys: Path) -> None:
     sys.path.insert(0, str(ROOT))
     from tools.prepare_icon import prepare
     from tools.version import get_version
+    from tools.release import inspect_nro
     from nton.constants import Directories, Files
     output = (ROOT / 'build/forwarder-stage' / uuid.uuid4().hex).resolve()
     published = (ROOT / 'build/forwarder').resolve()
@@ -35,16 +36,21 @@ def build(keys: Path) -> None:
     config['title_id'] = title.upper()
     if config['title_id'] in ('0000000000000000', '010099A00BC1E000'):
         raise ValueError('Configure the diagnostic application\'s own nonzero title ID')
+    source = ROOT / 'build/re4-controls.nro'
+    # nton 3.0.1's explicit --version replaces a 15-byte slice with 16 bytes,
+    # shifting every later NACP field. Reuse the already validated NRO NACP.
+    if inspect_nro(source.read_bytes()) != get_version():
+        raise ValueError('Build the current application version before its HOME launcher')
     icon = output / 'icon.jpg'
     prepare(ROOT / 'assets/icon-re.png', icon)
     from nton.main import main
     log = ROOT / 'build/forwarder-build.log'
     with log.open('w', encoding='utf-8') as stream:
         with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-            main(['build', str(ROOT / 'build/re4-controls.nro'), '--sdmc',
+            main(['build', str(source), '--sdmc',
                   '/switch/re4-controls/bridge.nro', '--id', config['title_id'],
                   '--name', config['name'], '--publisher', config['author'],
-                  '--version', get_version(), '--icon', str(icon)], standalone_mode=False)
+                  '--icon', str(icon)], standalone_mode=False)
     packages = list(output.glob('*.nsp'))
     if len(packages) != 1:
         raise RuntimeError('Forwarder build did not produce exactly one NSP; inspect private build log')

@@ -5,6 +5,7 @@ import socket
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('live_diagnostics', ROOT / 'tools/live_diagnostics.py')
@@ -41,6 +42,52 @@ class Server:
 
 
 class LiveDiagnosticsTests(unittest.TestCase):
+    def test_re5_snapshot_reuses_auth_wire_and_checks_selected_game(self):
+        value = {'schema': 1, 'game': 'RE5', 'build_id': '4E' * 32}
+        body = json.dumps(value).encode()
+        server = Server(b'OK JSON ' + str(len(body)).encode() + b'\n' + body)
+        self.assertEqual(client.snapshot('127.0.0.1', TOKEN, server.port, game='RE5'), value)
+        server.finish()
+        self.assertEqual(server.requests, [('AUTH ' + TOKEN + '\n').encode(), b'SNAPSHOT\n'])
+
+    def test_selected_game_mismatch_rejected_without_payload_or_key_in_error(self):
+        for selected, actual in [('RE4', 'RE5'), ('RE5', 'RE4')]:
+            body = json.dumps({'schema': 1, 'game': actual, 'message': TOKEN}).encode()
+            server = Server(b'OK JSON ' + str(len(body)).encode() + b'\n' + body)
+            with self.assertRaises(client.DiagnosticError) as caught:
+                client.snapshot('127.0.0.1', TOKEN, server.port, game=selected)
+            server.finish()
+            self.assertNotIn(TOKEN, str(caught.exception))
+
+    def test_invalid_game_rejected_before_connecting(self):
+        with mock.patch.object(client.socket, 'create_connection') as connect:
+            with self.assertRaises(client.DiagnosticError):
+                client.snapshot('unused', TOKEN, game='RE6')
+            connect.assert_not_called()
+
+    def test_re5_default_port_and_watch_forward_selection(self):
+        with mock.patch.object(client.socket, 'create_connection', side_effect=OSError) as connect:
+            with self.assertRaises(OSError):
+                client.snapshot('unused', TOKEN, game='RE5')
+            self.assertEqual(connect.call_args.args[0], ('unused', 28774))
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / 'watch.jsonl'
+            with mock.patch.object(client, 'snapshot', return_value={'schema': 1, 'game': 'RE5'}) as read:
+                count, successes = client.watch('unused', TOKEN, output, duration=.1, interval=.1, game='RE5')
+            self.assertEqual(count, successes)
+            self.assertGreater(successes, 0)
+            self.assertEqual(read.call_args.kwargs['game'], 'RE5')
+
+    def test_cli_re5_default_and_explicit_ports(self):
+        for extra, expected in [([], 28774), (['--port', '30001'], 30001)]:
+            with mock.patch.object(client.sys, 'argv', ['live_diagnostics', '--host', 'unused', '--game', 'RE5', *extra, 'snapshot']), \
+                    mock.patch.object(client, 'load_token', return_value=TOKEN), \
+                    mock.patch.object(client, 'snapshot', return_value={'schema': 1, 'game': 'RE5'}) as read, \
+                    mock.patch('builtins.print'):
+                self.assertEqual(client.main(), 0)
+                self.assertEqual(read.call_args.args, ('unused', TOKEN, expected))
+                self.assertEqual(read.call_args.kwargs['game'], 'RE5')
+
     def test_transport_failure_fields_before_auth_and_snapshot(self):
         line = b'ERR TRANSPORT 2 4 -1 22 0000D401 3\n'
         expected = {'stage': 2, 'fd': 4, 'result': -1, 'errno': 22,

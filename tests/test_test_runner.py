@@ -56,9 +56,8 @@ class TestRunnerTests(unittest.TestCase):
     def test_catalog_retains_every_committed_native_spec(self):
         expected = {p.stem for p in (ROOT / 'tests').glob('*_tests.cpp')} | {'installer_preview'}
         self.assertEqual({c.name for c in NATIVE_CASES}, expected)
-        self.assertEqual(len(NATIVE_CASES), 112)
-        self.assertEqual(sum(c.standard == 'c++17' for c in NATIVE_CASES), 39)
-        self.assertEqual(sum(c.standard == 'c++20' for c in NATIVE_CASES), 73)
+        self.assertEqual(len(NATIVE_CASES), len(expected))
+        self.assertTrue(all(c.standard in ('c++17', 'c++20') for c in NATIVE_CASES))
         for case in NATIVE_CASES:
             self.assertEqual(case.sources[0], 'tests/' + case.name + '.cpp')
 
@@ -66,11 +65,12 @@ class TestRunnerTests(unittest.TestCase):
         cases = {c.name: c for c in NATIVE_CASES}
         self.assertEqual(cases['telemetry_transfer_tests'].libraries, ('advapi32', 'ws2_32'))
         self.assertEqual(cases['live_debug_transport_tests'].libraries, ('ws2_32',))
+        self.assertEqual(cases['local_update_server_tests'].libraries, ('ws2_32',))
         self.assertEqual(cases['installer_preview'].libraries, ('SDL2',))
         self.assertEqual({c.name for c in NATIVE_CASES if c.graphics},
-                         {'installer_preview', 're6_overlay_ui_tests', 'overlay_ui_tests', 'profile_ui_tests'})
+                         {'installer_preview', 're5_overlay_ui_tests', 're6_overlay_ui_tests', 'overlay_ui_tests', 'profile_ui_tests'})
         self.assertEqual(cases['actual_home_tests'].runtime_inputs, ('assets/home-launcher.bin',))
-        self.assertEqual({c.name for c in NATIVE_CASES if c.c_sources}, {'update_tests', 'update_worker_tests'})
+        self.assertEqual({c.name for c in NATIVE_CASES if c.c_sources}, {'update_tests', 'update_worker_tests', 'local_update_server_tests'})
 
     def test_real_pool_is_parallel_and_bounded_for_each_supported_size(self):
         for jobs in (2, 3, 4):
@@ -182,8 +182,8 @@ class TestRunnerTests(unittest.TestCase):
             for case in cases:
                 self.assertEqual(self.native(case, True)['status'], 'passed')
         objects = [Path(c[c.index('-o') + 1]) for c in commands if '-std=c11' in c]
-        self.assertEqual(len(objects), 2)
-        self.assertNotEqual(objects[0], objects[1])
+        self.assertEqual(len(objects), sum(len(case.c_sources) for case in cases))
+        self.assertEqual(len(set(objects)), len(objects))
         for command in commands:
             if any(x.startswith('-std=') for x in command):
                 self.assertIn('--coverage', command)
@@ -355,7 +355,7 @@ class TestRunnerTests(unittest.TestCase):
         self.assertEqual(latest['exit_code'], 1)
         self.assertEqual(latest['run_dir'], str(second))
 
-    def test_prepare_copies_graphics_and_generates_both_bitmaps_once(self):
+    def test_prepare_copies_graphics_and_generates_three_bitmaps_once(self):
         source = self.root / 'assets/graphics/source.bin'
         source.parent.mkdir(parents=True)
         source.write_bytes(b'original')
@@ -363,7 +363,7 @@ class TestRunnerTests(unittest.TestCase):
             result = runner._prepare(self.root, self.run)
         self.assertEqual([r['status'] for r in result], ['passed', 'passed'])
         self.assertEqual(graphics.call_count, 1)
-        self.assertEqual(bitmaps.call_count, 2)
+        self.assertEqual(bitmaps.call_count, 3)
         self.assertEqual((self.run / 'shared/assets/graphics/source.bin').read_bytes(), b'original')
         self.assertFalse((self.root / 'build/graphics').exists())
 
@@ -386,7 +386,7 @@ class TestRunnerTests(unittest.TestCase):
     def test_preview_copies_generated_logos_and_sets_child_sdl_environment(self):
         folder = self.run / 'shared/build'
         folder.mkdir(parents=True)
-        for name in ('app-logo.bmp', 'app-logo-re6.bmp'):
+        for name in ('app-logo.bmp', 'app-logo-re6.bmp', 'app-logo-re5.bmp'):
             (folder / name).write_bytes(name.encode())
         calls = []
         with patch.object(runner, 'run_logged', side_effect=lambda argv, **kw:

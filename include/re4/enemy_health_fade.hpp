@@ -9,6 +9,8 @@ struct EnemyHealthFadeTarget {
     std::uint64_t id=0;
     ViewVec3 anchor{};
     int current=0,maximum=0;
+    std::uint32_t reference_unit=0;
+    std::uint64_t reference_weapon=0;
 };
 struct EnemyHealthFadeEntry {
     EnemyHealthFadeTarget target{};

@@ -1,3 +1,5 @@
+#include "native_journal_probe.hpp"
+#include "game_original_relative_relocations.hpp"
 // Exercise the actual game adapter callbacks against a bounded fake game image.
 // Only external engine/SDK calls are substituted; no extracted game is needed.
 #include <cstdint>
@@ -544,11 +546,18 @@ struct Fixture {
         std::memset(const_cast<re4::SharedControl*>(&control),0,sizeof(control));
         std::memcpy(image.data()+re4::profile::build_id_offset,re4::profile::build_id,32);
         for(auto s:re4::profile::sites)std::memcpy(image.data()+s.offset,&s.instruction,4);
-        for(auto s:re4::profile::relative_pointers){
+        for(auto s:re4_test::kOriginalRelativeRelocations){
             const std::uint64_t target=reinterpret_cast<std::uintptr_t>(image.data())+s.target_offset;
             std::memcpy(image.data()+s.offset,&target,sizeof(target));
         }
+        for(auto offset:re4_test::kOriginalUnrelocatedNulls){
+            std::uint64_t native_null=1;std::memcpy(&native_null,image.data()+offset,8);assert(native_null==0);
+        }
+        for(const auto& word:re4::health_profile::kAddedWords){
+            assert(re4::health_profile::immutable_word(word.rva));std::memcpy(image.data()+word.rva,&word.expected,4);
+        }
         main_base=reinterpret_cast<std::uintptr_t>(image.data());
+        enemy_health_guard_bind(image.data(),image.size());
         game_test::module.m_Total={main_base,image.size()};
         *reinterpret_cast<void**>(image.data()+re4::profile::player_slot)=actor;
         *reinterpret_cast<float*>(actor+0x304)=1.25f;
@@ -717,7 +726,7 @@ int main(){
     }
     // Native world follow runs after the earlier local-X filter. Sustained
     // right strafe used to bring the character all the way to screen center.
-    for(unsigned character:{0u,1u})for(float dt:{.5f,1.f,2.f}){
+    for(unsigned character:{0u,1u,2u})for(float dt:{.5f,1.f,2.f}){
         Fixture f;f.view_mode();f.input_state[0x503C]=std::uint8_t(character);
         settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
@@ -741,7 +750,7 @@ int main(){
         }
         assert(follow_calls==121);calculate_probe=false;
     }
-    for(unsigned character:{0u,1u}){
+    for(unsigned character:{0u,1u,2u}){
         Fixture f;f.view_mode();f.input_state[0x503C]=std::uint8_t(character);
         settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
@@ -978,7 +987,7 @@ int main(){
         assert((game_test::directions_seen&15)==0&&near(game_test::motion_speed_seen,0));
     }
     native_primary={0,3,10};native_secondary={0,5,6};
-    for(unsigned character:{0u,1u})for(bool aiming:{false,true}){
+    for(unsigned character:{0u,1u,2u})for(bool aiming:{false,true}){
         if(character==1&&aiming)continue;
         Fixture f;f.view_mode();if(aiming){f.aim();f.camera()[0x26C]=0;}
         f.input_state[0x503C]=std::uint8_t(character);
@@ -1008,7 +1017,7 @@ int main(){
         CameraInput::Callback(f.camera());assert(re4::view_transform_point(native_basis,camera_collision_input.eye0,world));
         assert(std::fabs(world.x+932)<.001f&&std::fabs(world.z-668)<.001f);
     }
-    for(unsigned character:{0u,1u})for(unsigned gate=0;gate<12;++gate){
+    for(unsigned character:{0u,1u,2u})for(unsigned gate=0;gate<12;++gate){
         Fixture f;f.view_mode();settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1.15f;
         f.input_state[0x503C]=std::uint8_t(character);
         sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
@@ -1016,7 +1025,7 @@ int main(){
         if(gate==0)settings.first_person=true;
         if(gate==1)settings.re6_response=false;
         if(gate==2)settings.unified_controls=false;
-        if(gate==3)f.input_state[0x503C]=2;
+        if(gate==3)f.input_state[0x503C]=3;
         if(gate==4)f.actor[0x115]=5;
         if(gate==5)f.camera()[0x222]=1;
         if(gate==6)f.camera()[0x26C]=0;
@@ -1034,6 +1043,27 @@ int main(){
             re4::ViewQfpsOutput original;assert(re4::third_person_view(native_profile,1.15f,original));
             assert(std::memcmp(&camera_collision_input,&original,sizeof(original))==0);
         }else assert(std::memcmp(&camera_collision_input,&native_profile,sizeof(native_profile))==0);
+    }
+    // Actual Ada uses the common gameplay camera only while its existing
+    // native ownership and scene guards remain valid. Menus, events, scopes
+    // and other playable actors keep their original profile byte for byte.
+    for(unsigned gate=0;gate<12;++gate){
+        Fixture f;f.view_mode();f.input_state[0x503C]=2;
+        settings.unified_controls=true;settings.re6_response=true;settings.third_person_distance=1;
+        sensor_attributes=1;*reinterpret_cast<int*>(f.image.data()+0xAFF39C)=2;
+        *reinterpret_cast<float*>(f.input_state.data()+0xA4)=1;
+        publish_view_settings();unified_pitch_actor=reinterpret_cast<std::uintptr_t>(f.actor);unified_pitch=.25f;
+        if(gate==0)f.image[0x1131718+0x54]=16; // Native scope owns the camera.
+        if(gate==1)f.image[0x1131718+0x54]=17;
+        if(gate==2)f.image[0x1131718+0x48]=0;
+        if(gate==3)f.input_state[0x5092]=4; // Scripted camera/event.
+        if(gate==4)f.input_state[0x509E]=0x80; // Native screen/scene exclusion.
+        if(gate==5)f.input_state[0x1AB]=0x40;
+        if(gate==6)f.actor[0x114]=1;
+        if(gate>=7&&gate<=10)f.input_state[0x503C]=std::uint8_t(gate==10?255:gate-4);
+        if(gate==11)*reinterpret_cast<void**>(f.image.data()+re4::profile::player_slot)=f.other_model;
+        CameraInput::Callback(f.camera());
+        assert(std::memcmp(&camera_collision_input,&native_profile,sizeof(native_profile))==0);
     }
     for(unsigned sub=0;sub<4;++sub){
         Fixture f;f.view_mode();f.aim();settings.unified_controls=true;settings.move_while_reloading=true;
@@ -1189,26 +1219,17 @@ int main(){
     }
     {
         Fixture f;f.view_mode();
-        re6::BuildId id{};std::memcpy(id.data(),re4::profile::build_id,32);
-        assert(telemetry_ring.initialize(100,id,re6::kRe4TitleId));
-        telemetry_last_frame=0;
         settings.remap_enabled=true;settings.button_map[0]=1;
         NpadState pad{};pad.sample=53;pad.buttons=1;pad.lx=-32768;pad.ly=321;pad.rx=17321;pad.ry=-12345;pad.attributes=1;
         game_test::tick=192000;capture(pad,0,4);assert(pad.buttons!=1);
-        game_test::tick+=640000;CameraCalculate::Callback();
-        re6::Record r{};std::uint64_t words[32]{};
-        for(unsigned i=0;i<32;++i)words[i]=telemetry_ring.storage.slots[0].words[i].load();
-        std::memcpy(&r,words,sizeof(r));
-        assert(r.validity==15&&r.buttons==1&&r.sample_id==53&&r.input_tick==192000);
-        assert(r.tick==832000&&r.frame==view_frame&&r.sticks[0]==-32768&&r.sticks[2]==17321);
-        assert(r.player[3]==100&&r.player[7]==200&&r.player[11]==300&&r.view[0]==1&&r.projection[0]==.75f);
-        CameraCalculate::Callback();assert(telemetry_ring.storage.header.sequence.load()==4); // No duplicate simulation frame.
-        view_frame.fetch_add(1);game_test::tick+=1920001;CameraCalculate::Callback();
-        for(unsigned i=0;i<32;++i)words[i]=telemetry_ring.storage.slots[1].words[i].load();
-        std::memcpy(&r,words,sizeof(r));assert(!(r.validity&re6::InputValid));
-        NpadState other=pad;other.rx=-99;other.attributes=1;capture(other,1,1);
-        re6::Record input{};assert(!telemetry_read_input(game_test::tick,input)); // Secondary pad cannot replace primary snapshot.
-        pad.attributes=0;capture(pad,0,4);assert(!telemetry_read_input(game_test::tick,input));
+        assert(control.raw_rx==17321/32767.f&&sensor_attributes==1);
+        const auto actor_before=std::vector<std::uint8_t>(f.actor,f.actor+sizeof(f.actor));
+        const auto input_before=f.input_state;
+        game_test::tick+=640000;CameraCalculate::Callback();CameraCalculate::Callback();
+        assert(std::memcmp(actor_before.data(),f.actor,actor_before.size())==0&&f.input_state==input_before);
+        assert(!unified_camera_calculation&&camera_follow_context==nullptr);
+        assert(native_journal_test::captures==0&&native_journal_test::storage_instances==0);
+
     }
     for(bool aim:{false,true}){
         Fixture f;f.view_mode();if(aim)f.aim();settings.unified_controls=true;settings.analog_enabled=false;
@@ -1916,6 +1937,7 @@ int main(){
         }
         exl_main(nullptr,nullptr);
         assert(control.status==1 && game_test::installed==64 && game_test::initialized==1);
+        assert(native_journal_test::initializations==0);
         assert(PadNormalize::Callback(nullptr)==7);PadNormalize::Callback(nullptr);
         assert(control.frames==2 && game_test::mounts==1); // No filesystem polling per frame.
     }

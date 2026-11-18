@@ -47,6 +47,17 @@ void updates_data_without_restarting_fade_or_borrowing_storage() {
     CHECK(find(fade,1)->target.current==40&&find(fade,1)->target.anchor.y==22);
     fade.update(100+duration+half,nullptr); opacity(fade,1,.5f);
 }
+void copied_reference_units_do_not_change_bar_or_restart_fade() {
+    EnemyHealthFade fade;auto a=target();a.reference_unit=58;a.reference_weapon=3;
+    fade.update(0,&a);fade.update(in_half,&a);opacity(fade,1,.5f);
+    a.current=40;a.reference_unit=0;fade.update(in_half,&a);opacity(fade,1,.5f);
+    CHECK(find(fade,1)->target.current==40&&find(fade,1)->target.reference_unit==0);
+    a.reference_unit=58;fade.update(in_duration,&a);opacity(fade,1,1);
+    auto b=target(2);b.reference_unit=100;b.reference_weapon=4;fade.update(in_duration,&b);
+    a.reference_unit=999;a.reference_weapon=99;
+    CHECK(find(fade,1)->target.reference_unit==58&&find(fade,1)->target.reference_weapon==3);
+    CHECK(find(fade,2)->target.reference_unit==100&&find(fade,2)->target.reference_weapon==4);
+}
 void switches_targets_and_reverses_from_current_opacity() {
     EnemyHealthFade fade; const auto a=target(),b=target(2);
     fade.update(0,&a); fade.update(duration,&a);
@@ -165,6 +176,7 @@ void invalid_targets_fade_out_without_copying_bad_data() {
 int main() {
     appears_over_200ms_and_disappears_over_300ms();
     updates_data_without_restarting_fade_or_borrowing_storage();
+    copied_reference_units_do_not_change_bar_or_restart_fade();
     switches_targets_and_reverses_from_current_opacity();
     repeated_updates_do_not_advance_or_restart_time();
     sampled_transitions_are_monotonic_including_reacquisition_and_switch();

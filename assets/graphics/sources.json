@@ -10,6 +10,17 @@
     "copyright": "CAPCOM CO., LTD. All rights reserved.",
     "description": "Official gameplay screenshot: Leon aiming in the village, ground, fence, buildings and distant roofs."
   },
+  "re5": {
+    "game": "Resident Evil 5 (Nintendo Switch port)",
+    "release_date": "2019-10-29",
+    "source_page": "https://www.nintendo.com/us/store/products/resident-evil-5-switch/",
+    "image_url": "https://assets.nintendo.com/image/upload/store/software/switch/70010000015876/6f75124b936d5daef8607c3fe332cec042c610f056117baf5c5fd36df9843105.jpg",
+    "sha256": "6f75124b936d5daef8607c3fe332cec042c610f056117baf5c5fd36df9843105",
+    "width": 1280,
+    "height": 720,
+    "copyright": "CAPCOM CO., LTD. All rights reserved.",
+    "description": "Official gameplay screenshot: Chris aiming in a village alley with enemies, ground textures, fence and distant buildings."
+  },
   "re6": {
     "game": "Resident Evil 6 (Nintendo Switch port)",
     "release_date": "2019-10-29",

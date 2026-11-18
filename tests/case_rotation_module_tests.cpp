@@ -28,16 +28,22 @@ struct CaseFixture {
             {reinterpret_cast<std::uintptr_t>(model),sizeof(model),1},{reinterpret_cast<std::uintptr_t>(part),sizeof(part),1},
             {reinterpret_cast<std::uintptr_t>(archive),sizeof(archive),1}})game_test::memory_maps.push_back(region);
         CharacterIdentity identity;assert(character_menu_identity(model,identity));
-        game_test::tick=re6::kTickHz;view_frame.store(100);
+        game_test::tick=native_tick_hz;view_frame.store(100);
         modern_root_observer=+[](void* actor){native_seen_yaw=character_value<float>(actor,0xB4);};
+    }
+    // Native Ada factory494BF4: costume0/2 uses pl0b (81 bones),
+    // costume1 pl0c and costume3 pl16 use100; both Ada campaigns use type2.
+    void ada(unsigned costume,unsigned count){
+        f.input_state[0x503C]=2;f.input_state[0x503D]=std::uint8_t(costume);
+        model[0x11A]=std::uint8_t(count);archive[0x129]=std::uint8_t(count);
     }
     float yaw()const{return character_value<float>(model,0xB4);}
     void pad(int x,unsigned attributes=1){
         NpadState value{};value.attributes=attributes;value.sample=view_frame.load();
         value.rx=x;value.ry=23456;value.lx=-12345;value.ly=21000;value.buttons=0xA5;
-        telemetry_write_input(value,0x20,2);
+        capture(value,0x20,2);
     }
-    void step(int x,std::uint64_t delta=re6::kTickHz/60,bool sample=true){
+    void step(int x,std::uint64_t delta=native_tick_hz/60,bool sample=true){
         game_test::tick+=delta;view_frame.fetch_add(1);if(sample)pad(x);
         const auto before=modern_original_roots;assert(ModernRoot::Callback(model,nullptr)==17);
         assert(modern_original_roots==before+1);
@@ -45,7 +51,7 @@ struct CaseFixture {
 };
 float rotate(unsigned frames){
     CaseFixture x;x.step(32767);
-    for(unsigned i=0;i<frames;++i)x.step(32767,re6::kTickHz/frames);
+    for(unsigned i=0;i<frames;++i)x.step(32767,native_tick_hz/frames);
     return x.yaw();
 }
 }
@@ -58,12 +64,55 @@ int main(){
         x.step(3276);assert(x.yaw()==held); // Within configured deadzone.
         x.step(-32767);assert(x.yaw()<held);
         const auto left=x.yaw();x.step(16384);assert(x.yaw()>left&&x.yaw()-left<held-before);
-        re6::Record input{};assert(telemetry_read_input(game_test::tick,input));
-        assert(input.sticks[0]==-12345&&input.sticks[1]==21000&&input.sticks[2]==16384&&input.sticks[3]==23456&&input.buttons==0xA5);
+        std::int32_t right_x=0;assert(menu_read_input(game_test::tick,right_x)&&right_x==16384);
+        NpadState secondary{};secondary.attributes=1;secondary.rx=-32767;
+        capture(secondary,1,1);assert(menu_read_input(game_test::tick,right_x)&&right_x==16384);
+        secondary.attributes=0;capture(secondary,0,1);
+        assert(menu_read_input(game_test::tick,right_x)&&right_x==16384); // Another style cannot disconnect the active handheld.
+
         const auto once=x.yaw();
         x.pad(-32767);ModernRoot::Callback(x.model,nullptr);assert(x.yaw()==once);
         const auto player=std::vector<std::uint8_t>(x.f.actor,x.f.actor+sizeof(x.f.actor));
         ModernRoot::Callback(x.f.actor,nullptr);assert(std::memcmp(player.data(),x.f.actor,player.size())==0);
+    }
+    // Regression: changing actual503C to Ada previously disabled rotation
+    // even though the exact native case body owns the current Ada archiveBIN0.
+    for(const auto costume:{0u,1u,2u,3u}){
+        CaseFixture x;x.ada(costume,costume==1||costume==3?100:81);
+        CharacterIdentity cosmetic;assert(!character_menu_identity(x.model,cosmetic));
+        const auto actor=std::vector<std::uint8_t>(x.f.actor,x.f.actor+sizeof(x.f.actor));
+        x.step(32767);x.step(32767);assert(x.yaw()>0);
+        assert(near(native_seen_yaw,x.yaw()));
+        const auto held=x.yaw();x.step(0);assert(x.yaw()==held);
+        x.step(-32767);assert(x.yaw()<held);
+        x.step(32767);const auto once=x.yaw();x.pad(-32767);
+        ModernRoot::Callback(x.model,nullptr);assert(x.yaw()==once);
+        ModernRoot::Callback(x.f.actor,nullptr);
+        assert(std::memcmp(actor.data(),x.f.actor,actor.size())==0);
+        // Rotation may write only the authenticated preview's yaw.
+        const auto body=std::vector<std::uint8_t>(x.model,x.model+sizeof(x.model));
+        x.step(32767);auto expected=body;
+        std::memcpy(expected.data()+0xB4,x.model+0xB4,sizeof(float));
+        assert(std::memcmp(expected.data(),x.model,expected.size())==0);
+    }
+    // An Ada-shaped actor or a mismatched archive must never broaden ownership.
+    for(unsigned bad=0;bad<14;++bad){
+        CaseFixture x;x.ada(3,100);x.step(32767);const auto before=x.yaw();
+        if(bad==0)x.f.input_state[0x503C]=1;
+        if(bad==1)x.f.input_state[0x503C]=3;
+        if(bad==2)x.f.input_state[0x503C]=4;
+        if(bad==3)x.f.input_state[0x503C]=5;
+        if(bad==4)x.f.input_state[0x503D]=255;
+        if(bad==5)x.model[0x11A]=81;
+        if(bad==6)x.archive[0x129]=81;
+        if(bad==7)character_store(x.archive,0x10,0x110u);
+        if(bad==8)character_store(x.f.image.data(),0x1272140,static_cast<void*>(x.part));
+        if(bad==9)character_store(x.f.image.data(),0xAFF4A8+0x14,0x3C0u);
+        if(bad==10)character_store(x.model,0,main_base+0xAFF530);
+        if(bad==11)x.model[0x118]=2;
+        if(bad==12)character_store(x.model,0x188,static_cast<void*>(x.part));
+        if(bad==13)character_renderer_ready.store(false);
+        x.step(32767);assert(x.yaw()==before);
     }
     const auto at30=rotate(30),at60=rotate(60),at120=rotate(120);
     assert(near(at30,2.0943951f)&&near(at30,at60)&&near(at60,at120));
@@ -73,16 +122,16 @@ int main(){
     }
     {
         CaseFixture x;x.step(32767);x.step(32767);auto before=x.yaw();
-        x.step(32767,re6::kTickHz/5,false);assert(x.yaw()==before); // Stale input and long pause.
+        x.step(32767,native_tick_hz/5,false);assert(x.yaw()==before); // Stale input and long pause.
         x.step(32767);assert(x.yaw()>before);
-        x.step(32767,re6::kTickHz*6/100,false);before=x.yaw();
-        x.step(32767,re6::kTickHz*6/100,false);assert(x.yaw()==before); // Stale held sample with a normal frame gap.
+        x.step(32767,native_tick_hz*6/100,false);before=x.yaw();
+        x.step(32767,native_tick_hz*6/100,false);assert(x.yaw()==before); // Stale held sample with a normal frame gap.
         x.step(32767);
-        before=x.yaw();game_test::tick+=re6::kTickHz/60;view_frame.fetch_add(1);x.pad(32767,0);
+        before=x.yaw();game_test::tick+=native_tick_hz/60;view_frame.fetch_add(1);x.pad(32767,0);
         ModernRoot::Callback(x.model,nullptr);assert(x.yaw()==before);
         x.step(32767);assert(x.yaw()>before);
         before=x.yaw();character_menu_invalidate();x.step(32767);assert(x.yaw()==before);x.step(32767);assert(x.yaw()>before);
-        before=x.yaw();game_test::tick-=re6::kTickHz;view_frame.fetch_add(1);x.pad(32767);
+        before=x.yaw();game_test::tick-=native_tick_hz;view_frame.fetch_add(1);x.pad(32767);
         ModernRoot::Callback(x.model,nullptr);assert(x.yaw()==before);
         x.step(32767);assert(x.yaw()>before);
     }

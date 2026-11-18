@@ -16,6 +16,22 @@ spec.loader.exec_module(tool)
 
 
 class GyroBackgroundTests(unittest.TestCase):
+    def test_re5_background_has_own_validated_frame_and_cannot_use_re4(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(ROOT / 'assets/graphics', root / 'assets/graphics')
+            tool.prepare(root)
+            header = root / 'build/graphics/re5_gyro_test_background_image.hpp'
+            self.assertTrue(header.exists(), 'RE5 test must use its own scene')
+            text = header.read_text(encoding='ascii')
+            self.assertIn('namespace re5::gyro_background', text)
+            body = re.search(r'pixels\[1280 \* 720\] = \{(.*?)\};', text, re.S).group(1)
+            self.assertEqual(len(re.findall(r'0x[0-9a-f]{4}', body)), 1280 * 720)
+            self.assertNotEqual(header.read_bytes(), (root / 'build/graphics/gyro_test_background_image.hpp').read_bytes())
+            (root / 'assets/graphics/re5-gyro-test-background.png').write_bytes(b'tampered')
+            with self.assertRaisesRegex(ValueError, 'hash'):
+                tool.prepare(root)
+
     def test_fullscreen_output_is_deterministic_and_keeps_thumbnails(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)

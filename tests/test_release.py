@@ -13,6 +13,18 @@ def nro():
     return bytes(data)
 
 class ReleaseTests(unittest.TestCase):
+    def test_normal_release_does_not_ship_retired_telemetry(self):
+        from tools.payload import RE6_FILES
+        self.assertNotIn('switch/.overlays/re6-telemetry.ovl', PUBLIC_FILES)
+        self.assertNotIn('re6-telemetry.ovl', RE6_FILES)
+        self.assertNotIn('README-measurement-ru.md', PUBLIC_FILES)
+
+    def test_re5_artifacts_and_guide_are_explicitly_allowlisted(self):
+        self.assertTrue({'atmosphere/contents/010018100CD46000/exefs/subsdk9',
+                         'atmosphere/contents/010018100CD46000/exefs/main.npdm',
+                         'switch/.overlays/re5-controls.ovl',
+                         'README-re5-controls.md'}.issubset(PUBLIC_FILES))
+
     def test_allowlisted_release_manifest_hashes_and_private_file_refusal(self):
         with TemporaryDirectory() as temp:
             root=Path(temp);image=root/'app.nro';image.write_bytes(nro());package=root/'public.zip'

@@ -35,6 +35,9 @@ public:
         first_[depth_-1]=false;
         string(text,std::strlen(text));raw(":");
     }
+    void array(){if(depth_==8){ok_=false;return;}raw("[");first_[depth_++]=true;}
+    void element(){if(!depth_){ok_=false;return;}if(!first_[depth_-1])raw(",");first_[depth_-1]=false;}
+    void end_array(){if(!depth_){ok_=false;return;}--depth_;raw("]");}
     void object(){if(depth_==8){ok_=false;return;}raw("{");first_[depth_++]=true;}
     void end(){if(!depth_){ok_=false;return;}--depth_;raw("}");}
     void number(std::uint64_t value){char text[32];const auto r=std::to_chars(text,text+sizeof(text),value);raw(text,std::size_t(r.ptr-text));}
@@ -64,6 +67,7 @@ const char* status_name(LiveDiagnosticStatus status){
         case LiveDiagnosticStatus::ServiceUnavailable:return "service_unavailable";
         case LiveDiagnosticStatus::UnsupportedBuild:return "unsupported_build";
         case LiveDiagnosticStatus::ModuleMissing:return "module_missing";
+        case LiveDiagnosticStatus::DiscoveryLimited:return "discovery_limited";
         case LiveDiagnosticStatus::ReadFailed:return "read_failed";
         case LiveDiagnosticStatus::Connected:return "connected";
     }
@@ -176,6 +180,96 @@ void hud_cached_json(Json& j,const LiveHudRendererObservation& h){
     hud_values_json(j,"projection",h.projection,valid);hud_values_json(j,"correction",h.correction,valid);
     hud_values_json(j,"combined",h.combined,valid);j.end();
 }
+void module_observation_json(Json& j,const LiveDiagnosticSnapshot& snapshot){
+    const auto& o=snapshot.module_observation;
+    if((!o.found&&!o.scan_reads&&!o.scan_limit)||!snapshot.supported){j.null("module_observation");return;}
+    j.key("module_observation");j.object();j.u("schema",1);j.b("found",o.found);j.b("stable",o.stable);
+    j.b("accepted_as_connection",snapshot.connected&&o.status==1&&o.stable);if(o.found){j.s("version",o.version.data(),o.version.size());j.u("abi",o.abi);j.u("status",o.status);j.u("capabilities",o.capabilities);j.u("frames",o.frames);}
+    else {j.null("version");j.null("abi");j.null("status");j.null("capabilities");j.null("frames");}
+    j.u("scan_reads",o.scan_reads);j.u("scan_bytes",o.scan_bytes);j.b("scan_limit",o.scan_limit);j.end();
+}
+void profile_observation_json(Json& j,const LiveDiagnosticSnapshot& snapshot){
+    const auto& o=snapshot.profile_observation;
+    if(!o.attempted||!snapshot.supported){j.null("profile_observation");return;}
+    j.key("profile_observation");j.object();j.u("schema",1);j.s("scope","legacy_v18_extra_requirements");
+    j.b("diagnostic_only",true);j.b("current_profile_gate",false);j.b("best_effort",true);
+    j.b("process_stable",o.stable);j.b("complete",o.complete);j.b("budget_exceeded",o.budget_exceeded);
+    j.u("pages",o.pages);j.u("bytes",o.bytes);j.u("read_calls",o.read_calls);
+    j.u("words_checked",o.words_checked);j.u("pointers_checked",o.pointers_checked);
+    j.u("unread_pages",o.unread_pages);j.u("mismatch_count",o.mismatch_count);
+    j.key("mismatches");j.array();
+    for(unsigned i=0;i<std::min<unsigned>(o.record_count,o.mismatches.size());++i){
+        const auto& m=o.mismatches[i];j.element();j.object();j.s("kind",m.pointer?"relative_pointer":"word");
+        j.u("rva",m.rva);j.b("in_bounds",m.in_bounds);j.b("readable",m.readable);
+        if(m.pointer){j.u("expected_rva",m.expected);j.b("observed_in_main",m.observed_in_main);j.b("observed_null",m.observed_null);
+            if(m.readable&&m.observed_in_main)j.u("observed_rva",m.observed);else j.null("observed_rva");}
+        else {j.u("expected_word",m.expected);if(m.readable)j.u("observed_word",m.observed);else j.null("observed_word");}
+        j.end();
+    }
+    j.end_array();j.end();
+}
+void health_reference_json(Json& j,const HealthReport& h){
+    constexpr const char* statuses[]={"module_missing","no_game","unsupported_build","read_failed","no_target","unstable","collected"};
+    constexpr const char* gates[]={"none","settings_read","settings_pending","bars_off","numbers_off","context","pool","target","health",
+        "weapon","mode_rank","class","subtype","body_status","coefficient","prediction","unstable","unsupported_family"};
+    j.key("health_reference");j.object();j.u("schema",h.schema);j.u("predictor_version",h.predictor_version);
+    j.s("scope","ordinary_body_reference");j.b("captured_hud_unit",false);j.b("best_effort",true);
+    j.u("status",unsigned(h.status));j.s("status_name",unsigned(h.status)<7?statuses[unsigned(h.status)]:"unknown");
+    j.u("first_failed_gate",unsigned(h.first_failed_gate));j.s("gate_name",unsigned(h.first_failed_gate)<18?gates[unsigned(h.first_failed_gate)]:"unknown");
+    j.u("read_mask",h.read_mask);j.u("rejected_mask",h.rejected_mask);j.u("ipc_reads",h.ipc_reads);j.b("observed_consistent",h.observed_consistent);
+    j.b("settings_valid",h.settings_valid);j.b("settings_applied",h.settings_applied);j.b("bars_on",h.bars_on);j.b("numbers_on",h.numbers_on);
+    j.u("settings_sequence",h.settings_sequence);j.u("applied_sequence",h.applied_sequence);j.u("settings_source",h.settings_source);
+    j.u("routine_pack",h.routine_pack);j.u("controller_pack",h.controller_pack);j.u("input_held_low",h.input_held_low);
+    j.u("pool_count",h.pool_count);j.u("pool_stride",h.pool_stride);
+    if(h.target_slot!=UINT32_MAX)j.u("target_slot",h.target_slot);else j.null("target_slot");
+    j.u("flags",h.flags);j.u("type",h.type);j.u("subtype",h.subtype);j.i("current",h.current);j.i("maximum",h.maximum);
+    j.u("part_flags",h.part_flags);j.u("body_status",h.body_status);j.u("phase",h.phase);j.b("link944",h.link944);j.b("link974",h.link974);
+    j.u("mode",h.mode);j.u("rank",h.rank);j.u("weapon_index",h.weapon_index);
+    if(h.vptr_in_main&&h.vptr_rva!=UINT32_MAX)j.u("vptr_rva",h.vptr_rva);else j.null("vptr_rva");
+    if(h.update_in_main&&h.update_rva!=UINT32_MAX)j.u("update_rva",h.update_rva);else j.null("update_rva");
+    if(h.table_rva!=UINT32_MAX)j.u("table_rva",h.table_rva);else j.null("table_rva");
+    j.i("coefficient",h.coefficient);j.u("predicted_unit",h.predicted_unit);j.end();
+}
+void health_last_capture_json(Json& j,const LiveDiagnosticSnapshot& snapshot){
+    const auto& c=snapshot.health_last_capture;
+    if(!snapshot.health_last_capture_valid||!health_capture_header_valid(c)||(c.sequence&1)||c.valid!=1){
+        j.null("health_last_capture");return;
+    }
+    using F=HealthCaptureField;
+    const auto value=[&](F field){return c.words[unsigned(field)];};
+    const auto wide=[&](F low,F high){return std::uint64_t(value(low))|(std::uint64_t(value(high))<<32);};
+    const auto observed=[&](F field){return (value(F::ReadMask)&(std::uint32_t(1)<<unsigned(field)))!=0;};
+    j.key("health_last_capture");j.object();j.u("schema",c.version);j.u("sequence",c.sequence);
+    j.b("retained",true);j.b("provider_observation",true);
+    j.u("capture_view_frame",wide(F::ViewFrameLo,F::ViewFrameHi));
+    const auto captured=wide(F::ControlFrameLo,F::ControlFrameHi),current=snapshot.shared.frames;
+    j.u("capture_control_frame",captured);j.u("current_module_frame",current);
+    const bool comparable=observed(F::ControlFrameLo)&&observed(F::ControlFrameHi)&&current>=captured;
+    j.b("age_comparable",comparable);if(comparable)j.u("age_frames",current-captured);else j.null("age_frames");
+    // Opaque identity stays split into exact unsigned words; it is never an address.
+    j.u("target_key_lo",value(F::TargetKeyLo));j.u("target_key_hi",value(F::TargetKeyHi));
+    const auto hp=value(F::Health);j.i("current",std::int16_t(hp));j.i("maximum",std::int16_t(hp>>16));
+    j.u("weapon_stamp_before",value(F::WeaponBefore));j.u("weapon_stamp_after",value(F::WeaponAfter));
+    j.u("computed_unit",value(F::ComputedUnit));j.u("published_unit",value(F::PublishedUnit));
+    constexpr const char* gates[]={"none","settings_read","settings_pending","bars_off","numbers_off","context","pool","target","health",
+        "weapon","mode_rank","class","subtype","body_status","coefficient","prediction","unstable","unsupported_family"};
+    const auto gate=value(F::FailedGate);j.u("first_failed_gate",gate);j.s("gate_name",gate<18?gates[gate]:"unknown");
+    const auto outcome=value(F::Outcome);j.u("outcome",outcome);j.s("outcome_name",outcome==1?"published":outcome==2?"stamp_mismatch":"unknown");
+    constexpr F fields[]={F::Flags,F::Type,F::Subtype,F::BodyStatus,F::Phase,F::Mode,F::Rank,F::WeaponIndex};
+    constexpr const char* names[]={"flags","type","subtype","body_status","phase","mode","rank","weapon_index"};
+    for(unsigned i=0;i<8;++i)j.u(names[i],value(fields[i]));
+    for(const auto field:{F::VptrRva,F::UpdateRva,F::TableRva}){
+        const char* name=field==F::VptrRva?"vptr_rva":field==F::UpdateRva?"update_rva":"table_rva";
+        if(observed(field)&&value(field)!=UINT32_MAX)j.u(name,value(field));else j.null(name);
+    }
+    j.i("coefficient",std::int32_t(value(F::Coefficient)));j.u("read_mask",value(F::ReadMask));
+    j.u("link_mask",value(F::LinkMask));j.b("link944",(value(F::LinkMask)&1)!=0);j.b("link974",(value(F::LinkMask)&2)!=0);
+    j.u("pool_count",value(F::PoolCount));j.u("pool_stride",value(F::PoolStride));
+    if(observed(F::GuardRva)&&observed(F::GuardExpected)&&observed(F::GuardObserved)&&value(F::GuardRva)!=UINT32_MAX){
+        j.key("native_guard");j.object();j.u("rva",value(F::GuardRva));j.u("expected",value(F::GuardExpected));j.u("observed",value(F::GuardObserved));j.end();
+    }else j.null("native_guard");
+    j.end();
+}
 void emitters_json(Json& j,const LiveDiagnosticSnapshot& snapshot){
     const auto& wire=snapshot.emitters;
     if(!snapshot.emitters_valid||!emitter_diagnostics_header_valid(wire)||(wire.sequence&1)){
@@ -202,13 +296,16 @@ bool format_live_diagnostics(const LiveDiagnosticSnapshot& snapshot,char* output
     j.object();j.u("schema",1);j.s("game","RE4");j.s("overlay_version",kVersion);
     j.key("connection");j.object();j.s("status",status_name(snapshot.status));j.b("process_found",snapshot.process_found);
     j.b("supported",snapshot.supported);j.b("connected",snapshot.connected);j.end();
-    if(!snapshot.connected||!snapshot.supported){j.null("module_version");j.null("module");j.end();return j.finish(size);}
+    module_observation_json(j,snapshot);profile_observation_json(j,snapshot);
+    if(!snapshot.connected||!snapshot.supported){j.null("module_version");j.null("module");j.null("health_reference");j.null("health_last_capture");j.end();return j.finish(size);}
     j.s("module_version",c.module_version,sizeof(c.module_version));j.key("module");j.object();
 #define U(name) j.u(#name,c.name)
 #define F(name) j.f(#name,c.name)
 #define I(name) j.i(#name,c.name)
     U(abi);U(status);U(capabilities);U(frames);U(sequence);U(applied_sequence);j.end();
     emitters_json(j,snapshot);
+    health_reference_json(j,snapshot.health_reference);
+    health_last_capture_json(j,snapshot);
     j.key("controls");j.object();F(raw_lx);F(raw_ly);F(raw_rx);F(raw_ry);F(applied_turn_gain);
     U(direction_calls);U(speed_calls);U(pad_samples);U(last_pad_id);F(maximum_raw_lx);F(last_turn_factor);F(original_yaw_delta);F(corrected_yaw_delta);
     U(movement_calls);U(camera_calls);U(aim_calls);F(movement_factor);U(aim_source);I(applied_aim_x);I(applied_aim_y);F(aim_full_scale);

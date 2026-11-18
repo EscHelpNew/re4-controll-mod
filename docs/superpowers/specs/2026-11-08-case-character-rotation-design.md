@@ -28,3 +28,15 @@ directions, deadzone, full/partial deflection, release, duplicate calls, frame
 rate independence, stale/disconnected input, paused clock, invalid identity,
 new generation and simultaneous left-stick input. Existing appearance/knife
 and gameplay movement/aim fixtures must continue to pass.
+
+
+## Actual Ada campaign extension (0.28.12)
+
+Rotation also admits actual native Ada through an independent case-body identity.
+It verifies the same current native body pool, global pointer and vtable, plus
+Ada's current archive BIN0 and authenticated costume0..3 skeleton81/100-bone
+variants. It changes only the native preview yaw; unsupported characters,
+costumes and mismatched model/archive ownership retain the native path. The
+cosmetic donor-rendering identity remains Leon-only. This extension applies to
+both Ada campaigns through their shared native preview route; console visual
+acceptance is still required.

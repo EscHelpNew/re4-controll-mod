@@ -40,8 +40,8 @@ def crash(host,token,port=PORT):
     sock,stream=_connect(host,token,port)
     with sock,stream:
         sock.sendall(b'CRASH\n');header=_line(stream)
-        match=re.fullmatch(rb'OK REPORT ([0-9]{1,6})',header)
-        if not match or not 0<int(match[1])<=65536+1024:raise ReloadError('Invalid crash report length')
+        match=re.fullmatch(rb'OK REPORT ([0-9]{1,7})',header)
+        if not match or not 0<int(match[1])<=1024*1024:raise ReloadError('Invalid crash report length')
         size=int(match[1]);data=stream.read(size)
         if len(data)!=size:raise ReloadError('Incomplete crash report')
         return data.replace(token.encode('ascii'),b'[REDACTED]')

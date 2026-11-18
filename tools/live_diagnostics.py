@@ -1,4 +1,4 @@
-"""Read authenticated RE4 overlay diagnostics, including while its UI is hidden."""
+"""Read authenticated RE4 or RE5 overlay diagnostics, including while its UI is hidden."""
 from pathlib import Path
 import argparse
 from datetime import datetime, timezone
@@ -11,6 +11,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 PORT = 28773
+PORTS = {'RE4': PORT, 'RE5': 28774}
 LIMIT = 16384
 
 
@@ -59,7 +60,14 @@ def _line(stream):
     return line[:-1]
 
 
-def snapshot(host, token, port=PORT, timeout=5):
+def _selected_port(game, port):
+    if game not in PORTS:
+        raise DiagnosticError('Unsupported diagnostic game')
+    return PORTS[game] if port is None else port
+
+
+def snapshot(host, token, port=None, timeout=5, *, game='RE4'):
+    port = _selected_port(game, port)
     if re.fullmatch('[0-9a-fA-F]{64}', token) is None:
         raise DiagnosticError('Invalid local connection key')
     with socket.create_connection((host, port), timeout) as conn, conn.makefile('rb') as stream:
@@ -84,7 +92,7 @@ def snapshot(host, token, port=PORT, timeout=5):
             value = json.loads(data.decode('utf-8'), parse_constant=invalid_constant)
         except (ValueError, UnicodeError):
             raise DiagnosticError('Invalid diagnostic JSON') from None
-        if not isinstance(value, dict) or value.get('schema') != 1 or value.get('game') != 'RE4':
+        if not isinstance(value, dict) or type(value.get('schema')) is not int or value.get('schema') != 1 or value.get('game') != game:
             raise DiagnosticError('Unsupported diagnostic schema')
         return value
 
@@ -97,7 +105,8 @@ def save_snapshot(path, value):
         stream.write('\n')
 
 
-def watch(host, token, output, duration=15, interval=.25, port=PORT):
+def watch(host, token, output, duration=15, interval=.25, port=None, *, game='RE4'):
+    port = _selected_port(game, port)
     if not math.isfinite(duration) or not 0 < duration <= 3600 or not math.isfinite(interval) or not .1 <= interval <= 10:
         raise DiagnosticError('Duration must be 0..3600 seconds and interval 0.1..10 seconds')
     output = Path(output)
@@ -109,7 +118,7 @@ def watch(host, token, output, duration=15, interval=.25, port=PORT):
             start = time.monotonic()
             record = {'host_time_utc': datetime.now(timezone.utc).isoformat(), 'sample': count}
             try:
-                record['data'] = snapshot(host, token, port, timeout=min(5, max(.1, end - start)))
+                record['data'] = snapshot(host, token, port, timeout=min(5, max(.1, end - start)), game=game)
                 successes += 1
             except (OSError, DiagnosticError) as error:
                 # Do not echo network payloads or credentials into a report.
@@ -126,7 +135,8 @@ def watch(host, token, output, duration=15, interval=.25, port=PORT):
 def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--host', required=True)
-    parser.add_argument('--port', type=int, default=PORT)
+    parser.add_argument('--port', type=int)
+    parser.add_argument('--game', choices=tuple(PORTS), default='RE4')
     parser.add_argument('--token-file', type=Path, default=ROOT / 'data/token.txt')
     sub = parser.add_subparsers(dest='command', required=True)
     get = sub.add_parser('snapshot')
@@ -136,18 +146,19 @@ def main():
     monitor.add_argument('--seconds', type=float, default=15)
     monitor.add_argument('--interval', type=float, default=.25)
     args = parser.parse_args()
+    args.port = _selected_port(args.game, args.port)
     if not 0 < args.port <= 65535:
         raise DiagnosticError('Invalid diagnostic port')
     token = load_token(args.token_file)
     if args.command == 'snapshot':
-        value = snapshot(args.host, token, args.port)
+        value = snapshot(args.host, token, args.port, game=args.game)
         if args.output:
             save_snapshot(args.output, value)
             print('Saved diagnostic snapshot:', args.output)
         else:
             print(json.dumps(value, ensure_ascii=True, indent=2, allow_nan=False))
     else:
-        count, successes = watch(args.host, token, args.output, args.seconds, args.interval, args.port)
+        count, successes = watch(args.host, token, args.output, args.seconds, args.interval, args.port, game=args.game)
         print(f'Saved {count} samples ({successes} snapshots): {args.output}')
         if not successes:
             return 1

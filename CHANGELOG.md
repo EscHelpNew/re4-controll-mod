@@ -1,5 +1,193 @@
 # Changelog
 
+## 0.28.27 (2026-11-18; includes changes since public 0.27.7)
+
+### Added
+
+- RE5 support with two local players' controls/gyro, controller tests, shared graphics presets and an owned module/overlay installer. The game selector now contains RE4 and RE5; legacy RE6 Graphics remains separately packaged.
+- Manual Local update server and five bounded application reports. Networking starts only when selected; restart after transfer is manual. Retire standalone RE4/RE6 Telemetry and automatic frame journals.
+
+### Fixed
+
+- RE5 Modern camera direction, vertical look and anchoring, with movement while aiming/shooting, using the knife and reloading. User acceptance covers the installed older main, attached Joy-Con and local player 1 (internal slot 0); both profiles/players have host regressions.
+- RE4 fixed native Firepower1.0 health-number references for upgraded weapons and linked boss HP owners. Real subtype-23 numeric output was verified on console in 0.28.20; actual game HP/damage remain unchanged.
+- Ada-story shoulder camera and native case rotation, plus the full purchased extended Firepower row's red indication, confirmed on console in 0.28.12.
+
+Known issue: previously reported application startup and sleep/wake hangs do not have a proven universal fix. Split-screen, the newer RE5 main and first-person do not inherit the accepted configuration's physical result.
+
+Detailed changes, update steps and validation: [0.28.27 release notes](docs/releases/v0.28.27.md). Host cases: 142/142; Switch builds, package validation and public audit passed. Coverage was not recalculated. Historical candidate entries below retain their original status at the time.
+
+## 0.28.26 (local diagnostic candidate, 2026-11-18)
+
+- Physical0.28.25 testing confirms movement while aiming/shooting, using the knife and reloading. The Modern camera still flips/flickers, lacks useful vertical stick control and fails to hold character composition. This candidate does not change those camera algorithms or the working movement implementation.
+- Add an optional retained camera observation: raw/filtered input, last nonzero right-Y, exact native component callback rejection, expected/current world transforms, native/result arm and post-desired pose. Actual callback stages remain separate from asynchronous actor observations. Existing opt-in Monitor leases authorize collection; monitoring remains Off by default, with no new thread/server or automatic journal.
+- Preserve core384/112/192-byte IPC blocks, all924 guards and49 hooks. Missing optional observations do not prevent old native-module connection/settings. A complete5808-byte stable observation uses bounded base64 transport and a host decoder preserving original float bits.
+- Install the full RE5 module and matching overlay, restart RE5, then reselect RE5 Controls from the Uberhand list. Hardware diagnosis and a subsequent evidence-based camera correction remain pending. No RE4 gameplay, translation or application startup behavior changes are included.
+
+## 0.28.25 (local candidate, 2026-11-17)
+
+- Allow explicitly enabled RE5 reload movement through the native reload-specific input lock. Live action1F snapshots and both original native initializers confirm this flag; nonreload and disabled-reload locks and other qualification checks remain enforced.
+- Consume fresh published Modern camera pitch without waiting for a later actor world callback. Keep committed body heading and validate the same input generation, look epoch, release and exact world transform.
+- Preserve accepted Modern X/Y input across a brief busy pose lock, using a non-renewing100ms lease from the last real native validation. Keep owner, routes, generation, look epoch, release and write-stage checks; a scheduling overlap no longer resets accepted pitch to zero.
+- Publish Modern overview eye/up/target through fresh native component output before history/collision. Native aim, knife and reload retain their native component orientation with configured distance. This removes the retained-pose restore/rescaling path from these non-first-person Modern modes.
+- Both native profiles authenticate924 immutable words (all915 prior guards plus9 qualified up-vector output/consumer words). Full RE5 module and matching overlay installation plus game restart are required; physical0.28.25 acceptance remains pending. Physical0.28.24 testing confirmed aiming/knife movement only.
+
+## 0.28.24 (local candidate, 2026-11-17)
+
+- Allow RE5 ordinary initialized combat state to reach the movement adapter: actor1B10 selects native motion setup, and zero still reaches animation/pose evaluation. Remove the erroneous nonzero requirement; keep action, ownership, health, resource, topology and transactional checks.
+- Apply ordinary distance-only camera scaling to fresh native component output before native history and collision. Avoid rewinding post-collision camera history and rescaling a retained pose after skipped desired updates. Both exact native profiles retain the previous897 guards and add18 qualified immutable words (915 total).
+- Include the explicit bounded actor/camera Monitor snapshots from0.28.23. Full RE5 mod and overlay installation followed by a complete game restart is required. Physical movement and camera acceptance remains pending.
+
+## 0.28.23 (local diagnostic candidate, 2026-11-17)
+
+- Extend explicit RE5 Monitor snapshots with bounded, read-only native actor state and exact camera settings to diagnose combat-movement rejections. Monitor remains disabled by default.
+- Physical0.28.22 testing still reports camera-distance jitter and no movement during aiming, knife attacks or reload. This diagnostic candidate does not claim those gameplay issues fixed.
+
+## 0.28.22 (local candidate, 2026-11-17)
+
+- Fix RE5 combat-movement qualification rejecting valid native animation data: forward binding leaves ankle solver metadata at0 after later quaternion tracks, while the adapter incorrectly insisted on19. Accept the two native-supported ankle states0/19 and retain hip42/knee2, parent, ownership, resource, channel and fingerprint checks.
+- Read weapon category from the native startup-initialized item-parameter table instead of inventory flags; authenticate the supported 144-record weapon group and preserve unsupported-category rejection.
+- Add native binding-order regressions and positive runtime proposal/pose callback coverage for supported aiming, reload and knife actions, both local players and both exact native profiles. Keep native movement timing, collision and IK selection.
+- Retain the coupled RE5 camera and two-game selector from0.28.21. Full RE5 mod and overlay installation plus a complete game restart is required; console movement acceptance remains pending.
+
+## 0.28.21 (local candidate, 2026-11-16)
+
+- Show only RE4 and RE5 in the installer game selector, with centered red/gray tabs and preserved independent settings and local-player selection.
+- Replace RE5 Modern's orbit-only walking camera with coupled native body yaw and a cached shoulder rig anchored to the current player root. Consume measured look input once across worker timing and retain the shared 35-degree overview pitch band.
+- Apply body heading at the qualified actor world-transform stage; retain native collision afterward, native aim/scope handling and scripted action ownership. Preserve original camera baselines across skipped restoration and reseed look after ownership changes.
+- Authenticate 897 immutable native words for each supported RE5 build, preserving the installed older build and its translation. Full RE5 module and overlay installation followed by a game restart is required.
+- Reuse the existing optional two-second monitor lease's spare counter for native body-heading applications, without changing shared ABI or adding automatic telemetry.
+- Console camera/body acceptance remains pending; existing action-movement behavior still requires separate verification. Application startup freezes remain a separate unresolved issue.
+
+## 0.28.20 (local candidate, 2026-11-16)
+
+- Check the first writable page of each eligible native mapping before deeper diagnostic discovery, retaining the existing read and byte limits. This avoids spending the entire snapshot budget on earlier mappings before reaching the loaded game module.
+- Report exhausted diagnostic discovery as incomplete rather than claiming that the module is missing. Preserve normal overlay connection behavior, game hooks, HP calculations, rendering and application lifecycle.
+- Remote console acceptance confirms the actual subtype-23 target: native, published and independent reference units all equal 58; raw HP 1347/1500 formats as 23.2/25.9, with no rejected normalization gate. Intermittent RE Controls startup freezes remain unresolved.
+
+## 0.28.19 (local candidate, 2026-11-16)
+
+- Correct the 0.28.18 module-loading regression: three NULL registry slots without ELF relocations were incorrectly required to equal the main-image base address, rejecting the module before hooks were installed.
+- Restore the exact previously supported core checks and validate new HP dependencies separately for the active class. Optional HP failures retain the previous number scale instead of disabling controls, gyro or graphics.
+- Report rejected module candidates and bounded historical validation observations through the existing opt-in diagnostic snapshot. Preserve the HP formulas and rendering from 0.28.18.
+- Intermittent RE Controls startup freezes remain unresolved; startup and teardown behavior are unchanged in this fix. The user confirmed module connection and visible normalized HP; remote numeric acceptance remains pending.
+
+## 0.28.18 (withdrawn local candidate, 2026-11-16)
+
+- Fix the observed subtype-23 HP fallback and qualify all 32 native enemy class identities, selecting the reference formula by the actual handler rather than an incomplete type/subtype whitelist.
+- Normalize all 256 common-handler subtypes and separate coefficient, fixed-damage, one-hit and hit-count families. Use a fixed normal-close, unfrozen, unbonused body reference; random native damage keeps its ordinary nominal reference.
+- Preserve numeric rendering, bar ratios, actual game health/damage and the existing optional diagnostic service. Defined zero/script-only body references retain the existing numeric fallback. Console acceptance is pending.
+
+## 0.28.17 (local candidate, 2026-11-15)
+
+- Retain the latest native HP reference observation in a small pointer-free memory record, readable through the existing opt-in diagnostic snapshot after aiming ends.
+- Preserve the numeric display, game health/damage and existing shared ABI; the remaining hardware normalization failure is still under investigation.
+
+## 0.28.16 (local candidate, 2026-11-15)
+
+- Correct an overly restrictive native mode/rank check in HP normalization; use the original deterministic byte-mode branch and observed rank while preserving the previous numeric display.
+- Add bounded HP eligibility observations to the existing opt-in diagnostic snapshot, with no new menu, automatic polling or game writes.
+- Explicitly flush completed application-journal writes to the filesystem; startup-freeze and HP hardware acceptance remain pending.
+
+## 0.28.15 (local candidate, 2026-11-15)
+
+- Restore numeric HP eligibility for additional authenticated ordinary enemy variants and linked body parts; reproduce their native normal-body and phase arithmetic without changing actual health or damage.
+- Preserve the previous numeric display and fade behavior. Unknown reference coefficients retain the previous HP scale instead of hiding numbers.
+- Preserve fixed Firepower1.0 units across weapon upgrades. Console acceptance of the missing-number case is pending.
+
+## 0.28.14 (local candidate, 2026-11-15)
+
+- Add an explicit Local update page for all three games; networking stays off at startup, transfers preserve SHA256 validation, and restarting remains manual.
+- Keep the five newest own application reports, capped at64KiB each (320KiB total), and download them through the authenticated local server.
+- Record startup/exit/error boundaries without automatic frame logs. Intermittent startup stalls and missing RE4 health numbers remain under investigation; hardware acceptance is pending.
+
+## 0.28.13 (local candidate, 2026-11-15)
+
+- Rework health numbers around a fixed normal-body Firepower1.0 reference, independent of ordinary and extended upgrades; preserve authoritative raw HP bar ratios and actual game damage.
+- Resolve native Saddler and Salazar linked HP owners for the existing aimed boss bars, retaining the visible aimed part as the anchor.
+- Cover ordinary firearm and normal-close shotgun references plus qualified boss body phases; special/immune/unsupported references retain the raw bar without a fabricated number. Console test reported missing numeric HP labels for the ordinary Handgun/Professional case; raw bars remain. Diagnosis is open.
+
+## 0.28.12 (local candidate, 2026-11-15)
+
+- Admit actual Ada into the qualified shoulder-camera path and enable native case-model rotation for her authenticated81/100-bone costumes.
+- Colour the entire purchased extended Firepower bar red, including its additional segment, while preserving native sprite storage, geometry and fading.
+- The user confirmed the Ada-story camera, case rotation and purchased full-row colour on console. Enemy-health and damage-report diagnosis continues separately.
+
+## 0.28.11 (local candidate, 2026-11-14)
+
+- Correct HOME forwarder metadata generation: preserve the embedded application version without inserting a byte into NACP; reject malformed metadata and unintended system save allocations before bundling.
+- Read the native RE5 movement block flag at its actual one-byte width, preserving all other ownership and action guards.
+- Sleep/freeze diagnosis and RE5 camera/movement console acceptance remain pending.
+
+## 0.28.10 (local candidate, 2026-11-14)
+
+- Pass coherent per-player input frames to camera and movement callbacks running on other game workers, replacing the invalid permanent input-thread restriction.
+- Retain ownership, physical controller and freshness validation; protect shared camera, gait and reticle state without waiting on a lock.
+- Gameplay acceptance remains pending. Separate intermittent freezes while starting RE Controls remain unresolved.
+
+## 0.28.9 (local candidate, 2026-11-14)
+
+- Restore the owned native desired camera pose before the next native update to prevent camera distance changes feeding back into persistent camera history.
+- Add default-off, two-second runtime counter windows requested through RE5 monitoring to diagnose remaining control callback rejection. No recording journal or background native worker is added.
+- Gameplay controls and camera stability still require console validation.
+
+## 0.28.8 (local candidate, 2026-11-13)
+
+- Fix RE5 native controller-style translation for attached and paired Joy-Con so local input can reach custom controls, camera and movement features. Preserve player ownership and unsupported-controller guards.
+- Reproduce the attached Joy-Con rejection from a console diagnostic snapshot; gameplay acceptance of the correction is pending.
+
+## 0.28.7 (diagnostic candidate, 2026-11-13)
+
+- Extend explicitly enabled RE5 monitoring with bounded, read-only local input route observations; keep controls guards and default-off monitoring unchanged.
+- Keep the recovery mode label visible in the application header across game tabs.
+- Older RE5 identity and settings activation are console-verified; ineffective gameplay controls remain under diagnosis.
+
+## 0.28.6 (local candidate, 2026-11-13)
+
+- Remove the separate RE4 / RE6 Telemetry overlay from normal builds and packages; retire owned legacy copies without changing controls, captures or other mods.
+- Remove automatic RE4/RE6 frame journals and telemetry-only RE6 pad/matrix hooks; retain graphics, gameplay controls and case-menu rotation.
+- Add explicit hbmenu recovery launch with network services, automatic restart and HOME-icon publication disabled for isolated troubleshooting.
+- Preserve installed older RE5 support from0.28.5. Console gameplay and system-freeze diagnosis remain pending.
+
+## 0.28.5 (local candidate, 2026-11-13)
+
+- Add a separate guarded profile for the installed older RE5 build, preserving the game and Russian translation files. Keep the newer profile and both local players.
+- Recover an empty metadata BuildID only from a known in-memory GNU note and a matching native identity record published after full startup validation. Keep unknown images and stale processes blocked.
+- Console controls acceptance and system-wide freeze diagnosis remain pending.
+
+## 0.28.4 (diagnostic candidate, 2026-11-13)
+
+- Distinguish an unavailable all-zero RE5 metadata BuildID from a different game image.
+- Add bounded read-only GNU build-ID note observations and main-image extent diagnostics. Keep compatibility checks and game writes unchanged. System-wide freeze diagnosis remains unresolved.
+
+## 0.28.3 (diagnostic candidate, 2026-11-12)
+
+- Add opt-in authenticated RE5 monitoring and exact process/BuildID/error diagnostics, including unsupported games. Keep native compatibility guards unchanged.
+- Distinguish metadata/IPC errors from a genuinely unsupported image. Custom camera and movement hardware diagnosis is in progress.
+
+
+## 0.28.2 (local candidate, 2026-11-12)
+
+- Center the RE4, RE5 and RE6 tab captions horizontally and vertically inside their highlighted tabs.
+- Keep the existing per-game tab colors and label order; console validation is pending.
+
+## 0.28.1 (local candidate, 2026-11-12)
+
+- Apply owned RE5 free-camera orientation in first and third person with upward-positive look; hold the released-stick angle, retain ordinary native camera return and preserve scope/component/collision guards.
+- Keep classic turn sensitivity independent from unified left-stick movement. Preserve saved per-player controls and shared graphics Custom profiles across standalone language/reset saves while retaining manual edit and calibration updates.
+- Recognize RE5 install/overlay/disable results, show the selected game's bilingual status and accurate SMAA/stage-shadow help, and use gray RE5 gyro debug selection with the red point retained.
+- Add a subtle active-game tab highlight in red for RE4, gray for RE5 and purple for RE6, with inactive tabs dimmed.
+- Include the RE5 candidate guide and exact owned artifacts in package/release validation. Console gameplay/rendering acceptance remains pending; this candidate has not been deployed or published.
+
+## 0.28.0 (local candidate, 2026-11-12)
+
+- Add an independent gray RE5 page between RE4 and RE6, crosshair5 icon, English/Russian UI, per-player controls and controller/gyro diagnostics for both local players.
+- Add guarded RE5 v196608 control adapters, custom SixAxis filtering, stick curves/deadzones/remapping, native scope zoom, camera options and weapon-ray reticle projected into the matching local viewport.
+- Add shared RE5 Native/Custom/Quality graphics presets with AF16x, native SMAA1X, matched projection/culling distance1.75x and optional stage shadows; restart the game fully for sampler changes.
+- Install and disable RE5 module/overlay as an owned transactional pair while preserving RE4/RE6 and user configs. Keep native sensor gestures, collisions, ground stepping and leg IK.
+- Console acceptance is pending for Chris/Sheva, weapon transitions, diagonal gait, scope signs, camera/body clipping and local split-screen. Host tests and ARM builds do not establish these visual/runtime results.
+
+
 ## 0.27.2 (2026-11-08)
 
 - Show the spare-ammo count and cosmetic character name only when the actual native health arc is drawn in the same frame; follow its fade, hierarchy visibility and screen bounds.

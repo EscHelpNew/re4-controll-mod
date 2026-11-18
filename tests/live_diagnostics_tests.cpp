@@ -59,8 +59,48 @@ int main(){
     assert(format_live_diagnostics(snapshot,out.data(),live_diagnostic_json_limit,size));
     assert(size&&size<live_diagnostic_json_limit&&std::strlen(out.data())==size);valid_json(out.data());
     assert(std::string(out.data()).find("\"connected\":false")!=std::string::npos);
+    assert(std::string(out.data()).find("\"health_reference\":null")!=std::string::npos);
+    assert(std::string(out.data()).find("\"health_last_capture\":null")!=std::string::npos);
+    assert(std::string(out.data()).find("\"module_observation\":null")!=std::string::npos);
+    {
+        LiveDiagnosticSnapshot failed;failed.status=LiveDiagnosticStatus::ModuleMissing;failed.process_found=failed.supported=true;
+        auto& module=failed.module_observation;module.found=module.stable=true;module.abi=24;module.status=2;module.capabilities=1;
+        module.scan_reads=128;module.scan_bytes=512*1024;std::memcpy(module.version.data(),"0.28.18",8);
+        auto& profile=failed.profile_observation;profile.attempted=profile.stable=profile.complete=true;
+        profile.pages=profile.read_calls=128;profile.bytes=512*1024;profile.words_checked=2066;profile.pointers_checked=69;
+        profile.mismatch_count=99;profile.record_count=UINT32_MAX;
+        for(unsigned i=0;i<8;++i){auto& mismatch=profile.mismatches[i];mismatch.rva=0x123400+i*4;mismatch.expected=UINT32_MAX;
+            mismatch.observed=UINT32_MAX;mismatch.in_bounds=mismatch.readable=true;mismatch.pointer=i&1;mismatch.observed_in_main=false;}
+        assert(format_live_diagnostics(failed,out.data(),out.size(),size));valid_json(out.data());
+        const std::string raw(out.data());
+        assert(raw.find("\"module_observation\":{\"schema\":1,\"found\":true,\"stable\":true,\"accepted_as_connection\":false")!=std::string::npos);
+        assert(raw.find("\"version\":\"0.28.18\",\"abi\":24,\"status\":2")!=std::string::npos);
+        assert(raw.find("\"connected\":false")!=std::string::npos&&raw.find("\"module\":null")!=std::string::npos);
+        assert(raw.find("\"scope\":\"legacy_v18_extra_requirements\"")!=std::string::npos);
+        assert(raw.find("\"observed_word\":4294967295")!=std::string::npos);
+        assert(raw.find("\"observed_in_main\":false,\"observed_null\":false,\"observed_rva\":null")!=std::string::npos);
+        assert(raw.find("address")==std::string::npos&&size<live_diagnostic_json_limit);
+        failed.supported=false;
+        assert(format_live_diagnostics(failed,out.data(),out.size(),size));
+        assert(std::string(out.data()).find("\"module_observation\":null,\"profile_observation\":null")!=std::string::npos);
+    }
+    {
+        LiveDiagnosticSnapshot limited;limited.status=LiveDiagnosticStatus::DiscoveryLimited;limited.process_found=limited.supported=true;
+        limited.module_observation.scan_limit=true;limited.module_observation.scan_reads=115;limited.module_observation.scan_bytes=523784;
+        assert(format_live_diagnostics(limited,out.data(),out.size(),size));valid_json(out.data());
+        const std::string text(out.data());assert(text.find("\"status\":\"discovery_limited\"")!=std::string::npos);
+        assert(text.find("\"found\":false")!=std::string::npos&&text.find("\"scan_limit\":true")!=std::string::npos);
+        assert(text.find("\"version\":null")!=std::string::npos&&text.find("\"connected\":false")!=std::string::npos);
+    }
     snapshot.process_found=snapshot.supported=snapshot.connected=true;snapshot.status=LiveDiagnosticStatus::Connected;
     snapshot.shared=initial_shared_control();snapshot.shared.status=1;
+    auto& health=snapshot.health_reference;health.status=HealthReportStatus::Collected;
+    health.settings_valid=health.settings_applied=health.bars_on=health.numbers_on=health.observed_consistent=true;
+    health.read_mask=255;health.mode=255;health.rank=8;health.weapon_index=2;health.type=16;health.subtype=3;
+    health.vptr_in_main=health.update_in_main=true;health.vptr_rva=0xAE7050;health.update_rva=0x8F470;health.table_rva=0xAF055C;
+    health.current=1500;health.maximum=3000;health.coefficient=150;health.predicted_unit=62;
+    health.settings_sequence=4;health.applied_sequence=4;
+
     snapshot.shared.frames=std::numeric_limits<std::uint64_t>::max();snapshot.shared.capabilities=0xFFFFFFFF;
     std::memcpy(snapshot.shared.module_version,"v\"\\\n\x80",6);
     snapshot.shared.raw_lx=std::numeric_limits<float>::quiet_NaN();
@@ -74,6 +114,12 @@ int main(){
     snapshot.player_valid=snapshot.camera_valid=true;snapshot.camera_projection[3]=std::numeric_limits<float>::infinity();
     assert(format_live_diagnostics(snapshot,out.data(),live_diagnostic_json_limit,size));valid_json(out.data());
     const std::string text(out.data());
+    assert(text.find("\"health_reference\":{\"schema\":1,\"predictor_version\":18")!=std::string::npos);
+    assert(text.find("\"predicted_unit\":62")!=std::string::npos);
+    assert(text.find("\"mode\":255,\"rank\":8,\"weapon_index\":2")!=std::string::npos);
+    assert(text.find("\"settings_applied\":true")!=std::string::npos);
+    assert(text.find("\"current\":1500,\"maximum\":3000")!=std::string::npos);
+
     assert(text.find("\"emitters\":null")!=std::string::npos);
     assert(text.find("\"positions_sample_readable\":false")!=std::string::npos);
     assert(text.find("\"knife\":{\"valid\":false")!=std::string::npos);
@@ -152,6 +198,14 @@ int main(){
     assert(native.find("\"source_shape_metadata_only\":true")!=std::string::npos);
     assert(native.find("\"positions_sample_finite\":true")!=std::string::npos);
     assert(native.find("\"samples_only\":true")!=std::string::npos);
+    snapshot.module_observation.found=snapshot.module_observation.stable=true;
+    snapshot.module_observation.abi=24;snapshot.module_observation.status=1;snapshot.module_observation.capabilities=UINT32_MAX;
+    snapshot.module_observation.frames=UINT64_MAX;std::memcpy(snapshot.module_observation.version.data(),"0.28.19",8);
+    snapshot.profile_observation.attempted=snapshot.profile_observation.stable=snapshot.profile_observation.complete=true;
+    snapshot.profile_observation.record_count=8;snapshot.profile_observation.mismatch_count=UINT32_MAX;
+    snapshot.profile_observation.pages=snapshot.profile_observation.read_calls=128;snapshot.profile_observation.bytes=512*1024;
+    for(unsigned i=0;i<8;++i){auto& m=snapshot.profile_observation.mismatches[i];m.rva=m.expected=m.observed=UINT32_MAX;
+        m.pointer=i&1;m.readable=m.in_bounds=m.observed_in_main=true;}
     snapshot.emitters_valid=true;snapshot.emitters=initial_emitter_diagnostics();snapshot.emitters.sequence=8;
     for(auto& record:snapshot.emitters.records){
         for(auto& word:record)word=0xFFFFFFFF;
@@ -165,12 +219,129 @@ int main(){
         assert(emitter.find(std::string("\"")+channel+"\":{\"attempts\":4294967295")!=std::string::npos);
     assert(emitter.find("\"visual_delta\":[-12.5,0.25,19]")!=std::string::npos);
     assert(emitter.find("\"fresh_delta\":[1,null,null]")!=std::string::npos);
+    // Actual retained producer record is distinct from the live best-effort candidate.
+    auto& capture=snapshot.health_last_capture;capture=initial_health_capture();capture.sequence=10;capture.valid=1;
+    snapshot.health_last_capture_valid=true;HealthCaptureSample sample;
+    using CF=HealthCaptureField;
+    sample.set(CF::ViewFrameLo,900);sample.set(CF::ViewFrameHi,1);
+    sample.set(CF::ControlFrameLo,100);sample.set(CF::ControlFrameHi,0);
+    sample.set(CF::TargetKeyLo,UINT32_MAX);sample.set(CF::TargetKeyHi,123);
+    sample.set(CF::Health,std::uint32_t(std::uint16_t(-12))|(std::uint32_t(3000)<<16));
+    sample.set(CF::WeaponBefore,3);sample.set(CF::WeaponAfter,4);sample.set(CF::ComputedUnit,58);sample.set(CF::PublishedUnit,0);
+    sample.set(CF::FailedGate,unsigned(HealthReportGate::None));sample.set(CF::Outcome,2);
+    sample.set(CF::Mode,255);sample.set(CF::Rank,10);sample.set(CF::WeaponIndex,2);
+    sample.set(CF::Coefficient,std::uint32_t(-1));sample.set(CF::LinkMask,3);sample.set(CF::VptrRva,0xAE7050);
+    std::memcpy(capture.words,sample.words,sizeof(sample.words));snapshot.shared.frames=104;
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    const std::string retained(out.data());assert(size<live_diagnostic_json_limit);
+    assert(retained.find("\"health_last_capture\":{\"schema\":1,\"sequence\":10")!=std::string::npos);
+    assert(retained.find("\"retained\":true,\"provider_observation\":true")!=std::string::npos);
+    assert(retained.find("\"capture_view_frame\":4294968196,\"capture_control_frame\":100,\"current_module_frame\":104")!=std::string::npos);
+    assert(retained.find("\"age_comparable\":true,\"age_frames\":4")!=std::string::npos);
+    assert(retained.find("\"target_key_lo\":4294967295,\"target_key_hi\":123")!=std::string::npos);
+    assert(retained.find("\"current\":-12,\"maximum\":3000")!=std::string::npos);
+    assert(retained.find("\"weapon_stamp_before\":3,\"weapon_stamp_after\":4,\"computed_unit\":58,\"published_unit\":0")!=std::string::npos);
+    assert(retained.find("\"first_failed_gate\":0,\"gate_name\":\"none\",\"outcome\":2,\"outcome_name\":\"stamp_mismatch\"")!=std::string::npos);
+    assert(retained.find("\"predicted_unit\":62")!=std::string::npos);
+    assert(retained.find("\"vptr_rva\":"+std::to_string(0xAE7050)+",\"update_rva\":null,\"table_rva\":null,\"coefficient\":-1")!=std::string::npos);
+    assert(retained.find("\"native_guard\":null")!=std::string::npos); // Unmodified17/18 record has no guard bits.
+    sample.set(CF::GuardRva,0x90508);sample.set(CF::GuardExpected,0x12345678);sample.set(CF::GuardObserved,UINT32_MAX);
+    std::memcpy(capture.words,sample.words,sizeof(sample.words));
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    assert(std::string(out.data()).find("\"native_guard\":{\"rva\":"+std::to_string(0x90508)+",\"expected\":305419896,\"observed\":4294967295}")!=std::string::npos);
+    capture.words[unsigned(CF::ReadMask)]&=~(std::uint32_t(1)<<unsigned(CF::GuardObserved));
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));
+    assert(std::string(out.data()).find("\"native_guard\":null")!=std::string::npos);
+    sample.set(CF::GuardRva,UINT32_MAX);std::memcpy(capture.words,sample.words,sizeof(sample.words));
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));
+    assert(std::string(out.data()).find("\"native_guard\":null")!=std::string::npos);
+    snapshot.shared.frames=99;
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    assert(std::string(out.data()).find("\"age_comparable\":false,\"age_frames\":null")!=std::string::npos);
+    capture.words[unsigned(CF::ReadMask)]&=~(std::uint32_t(1)<<unsigned(CF::ControlFrameHi));snapshot.shared.frames=104;
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));
+    assert(std::string(out.data()).find("\"age_comparable\":false,\"age_frames\":null")!=std::string::npos);
+    // The fixed live candidate and actual retained provider tuple remain distinct observations.
+    const auto before_actual_tuple=health;
+    health.type=0x1E;health.subtype=0x17;health.body_status=2;health.phase=15;health.mode=6;health.rank=10;
+    health.weapon_index=2;health.coefficient=150;health.current=health.maximum=1500;health.predicted_unit=58;
+    sample.set(CF::Type,0x1E);sample.set(CF::Subtype,0x17);sample.set(CF::BodyStatus,2);sample.set(CF::Phase,15);
+    sample.set(CF::Mode,6);sample.set(CF::Rank,10);sample.set(CF::WeaponIndex,2);sample.set(CF::Coefficient,150);
+    sample.set(CF::ComputedUnit,58);sample.set(CF::PublishedUnit,58);sample.set(CF::Outcome,1);
+    sample.set(CF::WeaponAfter,3);sample.set(CF::LinkMask,0);sample.set(CF::Health,0x05DC05DC);
+    std::memcpy(capture.words,sample.words,sizeof(sample.words));
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    const std::string actual_tuple(out.data());
+    assert(actual_tuple.find("\"health_reference\":{\"schema\":1,\"predictor_version\":18")!=std::string::npos);
+    assert(actual_tuple.find("\"type\":30,\"subtype\":23,\"current\":1500,\"maximum\":1500")!=std::string::npos);
+    assert(actual_tuple.find("\"predicted_unit\":58")!=std::string::npos);
+    assert(actual_tuple.find("\"computed_unit\":58,\"published_unit\":58")!=std::string::npos);
+    assert(actual_tuple.find("\"first_failed_gate\":0,\"gate_name\":\"none\",\"outcome\":1,\"outcome_name\":\"published\"")!=std::string::npos);
+    health.subtype=6;health.predicted_unit=0;health.first_failed_gate=HealthReportGate::Prediction;
+    health.rejected_mask=health_report_gate_bit(HealthReportGate::Prediction);
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    const std::string immune_tuple(out.data());
+    assert(immune_tuple.find("\"status_name\":\"collected\",\"first_failed_gate\":15,\"gate_name\":\"prediction\"")!=std::string::npos);
+    assert(immune_tuple.find("\"type\":30,\"subtype\":6,\"current\":1500,\"maximum\":1500")!=std::string::npos);
+    assert(immune_tuple.find("\"predicted_unit\":0")!=std::string::npos);
+    assert(immune_tuple.find("\"computed_unit\":58,\"published_unit\":58")!=std::string::npos);
+    health.type=0x22;health.subtype=6;health.body_status=255;health.phase=4;
+    health.vptr_rva=0xAE8170;health.update_rva=0xDF550;health.predicted_unit=127;
+    health.first_failed_gate=HealthReportGate::None;health.rejected_mask=0;
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    const std::string plain_family(out.data());
+    assert(plain_family.find("\"type\":34,\"subtype\":6,\"current\":1500,\"maximum\":1500")!=std::string::npos);
+    assert(plain_family.find("\"body_status\":255")!=std::string::npos);
+    assert(plain_family.find("\"vptr_rva\":"+std::to_string(0xAE8170)+",\"update_rva\":"+std::to_string(0xDF550))!=std::string::npos);
+    assert(plain_family.find("\"predicted_unit\":127")!=std::string::npos);
+    assert(plain_family.find("\"computed_unit\":58,\"published_unit\":58")!=std::string::npos);
+    health=before_actual_tuple;
+    for(unsigned invalid=0;invalid<6;++invalid){
+        auto bad=initial_health_capture();bad.sequence=2;bad.valid=1;
+        if(invalid==0)bad.marker[0]^=1;
+        if(invalid==1)bad.version=2;
+        if(invalid==2)bad.bytes=159;
+        if(invalid==3)bad.sequence=3;
+        if(invalid==4)bad.valid=0;
+        if(invalid==5)bad.valid=2;
+        capture=bad;assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+        assert(std::string(out.data()).find("\"health_last_capture\":null")!=std::string::npos);
+    }
+    capture=initial_health_capture();capture.sequence=2;capture.valid=1;
+    for(auto& word:capture.words)word=UINT32_MAX;
+    capture.words[unsigned(CF::GuardRva)]=UINT32_MAX-1; // Worst valid guard triplet remains inside the same16KiBcanaries.
+    assert(format_live_diagnostics(snapshot,out.data(),live_diagnostic_json_limit,size));valid_json(out.data());
+    assert(size<live_diagnostic_json_limit);
+    assert(std::string(out.data()).find("\"outcome_name\":\"unknown\"")!=std::string::npos);
     snapshot.emitters.sequence=9;
     assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
     assert(std::string(out.data()).find("\"emitters\":null")!=std::string::npos);
     snapshot.emitters.sequence=8;snapshot.emitters.bytes=999;
     assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));
     assert(std::string(out.data()).find("\"emitters\":null")!=std::string::npos);
+    // Missing target still exports the observed global context; unknown fields are explicit null RVAs.
+    health.status=HealthReportStatus::NoTarget;health.first_failed_gate=HealthReportGate::Target;
+    health.read_mask=HealthSettings|HealthContext|HealthPool|HealthGlobals;health.target_slot=UINT32_MAX;
+    health.vptr_in_main=health.update_in_main=false;health.vptr_rva=health.update_rva=health.table_rva=UINT32_MAX;
+    health.predicted_unit=0;health.coefficient=-1;health.current=-32768;health.maximum=32767;
+    health.observed_consistent=false;health.flags=UINT32_MAX;health.rejected_mask=UINT32_MAX;
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    const std::string absent_target(out.data());
+    const auto hp=absent_target.find("\"health_reference\":");assert(hp!=std::string::npos);
+    const auto health_end=absent_target.find('}',hp);const auto health_text=absent_target.substr(hp,health_end-hp+1);
+    assert(health_text.find("\"status_name\":\"no_target\"")!=std::string::npos);
+    assert(health_text.find("\"gate_name\":\"target\"")!=std::string::npos);
+    assert(health_text.find("\"mode\":255,\"rank\":8,\"weapon_index\":2")!=std::string::npos);
+    assert(health_text.find("\"vptr_rva\":null,\"update_rva\":null,\"table_rva\":null")!=std::string::npos);
+    assert(health_text.find("\"coefficient\":-1,\"predicted_unit\":0")!=std::string::npos);
+    assert(health_text.find("\"current\":-32768,\"maximum\":32767")!=std::string::npos);
+    assert(health_text.find("\"captured_hud_unit\":false,\"best_effort\":true")!=std::string::npos);
+    assert(health_text.find("pointer")==std::string::npos&&health_text.find("address")==std::string::npos);
+    health.status=static_cast<HealthReportStatus>(UINT32_MAX);health.first_failed_gate=static_cast<HealthReportGate>(UINT32_MAX);
+    health.schema=health.predictor_version=health.ipc_reads=health.settings_sequence=health.applied_sequence=UINT32_MAX;
+    assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());
+    assert(size<live_diagnostic_json_limit&&std::string(out.data()).find("\"status_name\":\"unknown\"")!=std::string::npos);
+    health={};
     snapshot.emitters=initial_emitter_diagnostics();
     hud.context_stable=false;
     assert(format_live_diagnostics(snapshot,out.data(),out.size(),size));valid_json(out.data());

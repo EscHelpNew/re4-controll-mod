@@ -62,8 +62,10 @@ def diagnostic():
                    'source/overlay/storage.cpp',
                    'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
                    'source/diagnostic/home_policy.cpp','source/diagnostic/home_launcher.cpp',
-                   'source/diagnostic/update_worker.cpp','source/re6/log_server.cpp','source/diagnostic/support_report.cpp',
-                   'source/diagnostic/main.cpp','source/re6/settings.cpp','source/re6/settings_file.cpp'):
+                   'source/diagnostic/update_worker.cpp','source/diagnostic/support_report.cpp',
+                   'source/diagnostic/app_journal.cpp','source/diagnostic/local_update_server.cpp',
+                   'source/diagnostic/main.cpp','source/re6/settings.cpp','source/re6/settings_file.cpp',
+                   'source/re5/settings.cpp','source/re5/settings_file.cpp','source/re5/profiles.cpp'):
         dest = OUT / (source.removesuffix('.cpp').replace('/','_') + '.o')
         run([tool('g++'), '-std=gnu++17', '-fno-exceptions', '-fno-rtti', *common,
              '-c', source, '-o', dest])
@@ -78,15 +80,18 @@ def diagnostic():
          '--titleid=' + cfg['title_id']])
     prepare_bitmap(ROOT/'assets/icon-original.png',OUT/'app-logo.bmp')
     prepare_bitmap(ROOT/'assets/icon-re6.png',OUT/'app-logo-re6.bmp')
+    prepare_bitmap(ROOT/'assets/icon-re5.png',OUT/'app-logo-re5.bmp')
     base = OUT / 'experimental/atmosphere/contents/010099A00BC1E000/exefs'
-    payload_files={'app-logo.bmp':OUT/'app-logo.bmp','app-logo-re6.bmp':OUT/'app-logo-re6.bmp',
+    payload_files={'app-logo.bmp':OUT/'app-logo.bmp','app-logo-re6.bmp':OUT/'app-logo-re6.bmp','app-logo-re5.bmp':OUT/'app-logo-re5.bmp',
         'home-launcher.bin':ROOT/'assets/home-launcher.bin','subsdk9':base/'subsdk9','main.npdm':base/'main.npdm',
         're4-controls.ovl':OUT/'experimental/switch/.overlays/re4-controls.ovl',
         'liberation-serif-OFL.txt':ROOT/'assets/fonts/liberation-serif/LICENSE'}
     re6_base=OUT/'experimental/atmosphere/contents/01002A000CD48000/exefs'
     payload_files.update({'re6-subsdk9':re6_base/'subsdk9','re6-main.npdm':re6_base/'main.npdm',
-        're6-telemetry.ovl':OUT/'experimental/switch/.overlays/re6-telemetry.ovl',
         're6-controls.ovl':OUT/'experimental/switch/.overlays/re6-controls.ovl'})
+    re5_base=OUT/'experimental/atmosphere/contents/010018100CD46000/exefs'
+    payload_files.update({'re5-subsdk9':re5_base/'subsdk9','re5-main.npdm':re5_base/'main.npdm',
+        're5-controls.ovl':OUT/'experimental/switch/.overlays/re5-controls.ovl'})
     payload=stage_payload(ROOT,payload_files)
     icon = prepare_app_icon(ROOT / 'assets/icon-re.png', OUT / 'icon.jpg')
     run([sdk_tool('elf2nro'), elf, nro, '--nacp=' + str(nacp), '--icon=' + str(icon),
@@ -113,7 +118,7 @@ def module():
     profile = ROOT / 'profiles/010099A00BC1E000/npdm.json'
     (stage / 'config.json').write_text(profile.read_text(encoding='utf-8'), encoding='utf-8')
     shutil.copy2(ROOT / 'source/game/module.cpp', stage / 'source/program/main.cpp')
-    for name in ('modern_move.inc','character_appearance.inc','character_pack_budget.inc','aim_raise.inc','scoped_aim.inc','enemy_health.inc','grenade_spot.inc','pickup_confirmation.inc','startup_logos.inc','dpad_weapons.inc','weapon_popup.inc','weapon_popup_native_text.inc','inventory_damage.inc','inventory_damage_native_text.inc','extended_upgrade.inc','money_bonus.inc','ammo_counter.inc','health_name.inc'):
+    for name in ('modern_move.inc','character_appearance.inc','case_rotation.inc','character_pack_budget.inc','aim_raise.inc','scoped_aim.inc','enemy_health.inc','enemy_health_reference.inc','enemy_health_target.inc','grenade_spot.inc','pickup_confirmation.inc','startup_logos.inc','dpad_weapons.inc','weapon_popup.inc','weapon_popup_native_text.inc','inventory_damage.inc','inventory_damage_native_text.inc','extended_upgrade.inc','money_bonus.inc','ammo_counter.inc','health_name.inc'):
         shutil.copy2(ROOT / 'source/game' / name, stage / 'source/program' / name)
     core = stage / 'source/re4-core'
     core.mkdir(exist_ok=True)
@@ -198,24 +203,6 @@ def overlay():
     print('Built EXPERIMENTAL overlay:', output)
 
 
-def telemetry_overlay():
-    includes=['-I'+str(ROOT/'include'),'-I'+str(ROOT/'source/re6_overlay'),
-              '-isystem',str(ROOT/'third_party/libtesla/include'),'-isystem',str(SDK/'libnx/include')]
-    flags=['-std=gnu++20','-O2','-g','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
-           '-fno-exceptions','-ffixed-x18','-march=armv8-a+crc+crypto','-mtune=cortex-a57',
-           '-mtp=soft','-fPIE','-D__SWITCH__',*includes]
-    elf=OUT/'re6-telemetry-overlay.elf'
-    env=os.environ.copy();env['DEVKITPRO']=SDK.as_posix()
-    run([tool('g++'),*flags,'source/re6_overlay/main.cpp','source/re6_overlay/worker.cpp',
-         '-specs='+str(SDK/'libnx/switch.specs'),'-L'+str(SDK/'libnx/lib'),'-lnx','-lm','-o',elf],env=env)
-    output=OUT/'experimental/switch/.overlays/re6-telemetry.ovl';output.parent.mkdir(parents=True,exist_ok=True)
-    nacp=OUT/'re6-telemetry-overlay.nacp'
-    run([sdk_tool('nacptool'),'--create','RE4 / RE6 Telemetry','re4-controls',VERSION,nacp])
-    icon=prepare_app_icon(ROOT/'assets/icon-re6.png',OUT/'icon-re6.jpg')
-    run([sdk_tool('elf2nro'),elf,output,'--nacp='+str(nacp),'--icon='+str(icon)])
-    print('Built read-only telemetry overlay:',output)
-
-
 def re6_graphics_overlay():
     prepare_graphics(ROOT)
     includes=['-I'+str(ROOT/'include'),'-I'+str(ROOT/'build/graphics'),'-I'+str(ROOT/'source/re6_controls'),
@@ -234,6 +221,36 @@ def re6_graphics_overlay():
     icon=prepare_app_icon(ROOT/'assets/icon-re6.png',OUT/'icon-re6.jpg')
     run([sdk_tool('elf2nro'),elf,output,'--nacp='+str(nacp),'--icon='+str(icon)])
     print('Built RE6 graphics overlay:',output)
+
+
+def re5_graphics_overlay():
+    prepare_graphics(ROOT)
+    includes=['-I'+str(ROOT/'include'),'-I'+str(ROOT/'build/graphics'),'-I'+str(ROOT/'source/re5_controls'),
+              '-isystem',str(ROOT/'third_party/libtesla/include'),'-isystem',str(SDK/'libnx/include')]
+    flags=['-std=gnu++20','-O2','-g','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
+           '-fno-exceptions','-ffixed-x18','-march=armv8-a+crc+crypto','-mtune=cortex-a57',
+           '-mtp=soft','-fPIE','-D__SWITCH__',*includes]
+    elf=OUT/'re5-graphics-overlay.elf'
+    env=os.environ.copy();env['DEVKITPRO']=SDK.as_posix()
+    run([tool('g++'),*flags,'source/re5_controls/main.cpp','source/re5_controls/game_link.cpp',
+         'source/re5_controls/live_debug.cpp','source/overlay/live_debug_server.cpp',
+         'source/re5_controls/storage.cpp','source/re5/settings.cpp','source/re5/settings_file.cpp','source/re5/profiles.cpp','source/settings.cpp','source/profiles.cpp','source/settings_file.cpp','source/control_menu.cpp',
+         '-specs='+str(SDK/'libnx/switch.specs'),'-L'+str(SDK/'libnx/lib'),'-lnx','-lm','-o',elf],env=env)
+    output=OUT/'experimental/switch/.overlays/re5-controls.ovl';output.parent.mkdir(parents=True,exist_ok=True)
+    nacp=OUT/'re5-graphics-overlay.nacp'
+    run([sdk_tool('nacptool'),'--create','RE5 Controls','re4-controls',VERSION,nacp])
+    icon=prepare_app_icon(ROOT/'assets/icon-re5.png',OUT/'icon-re5.jpg')
+    run([sdk_tool('elf2nro'),elf,output,'--nacp='+str(nacp),'--icon='+str(icon)])
+    print('Built RE5 controls overlay:',output)
+
+
+def control_overlays():
+    # Never retain a stale recorder in generated normal-install output.
+    retired=OUT/'experimental/switch/.overlays/re6-telemetry.ovl'
+    retired.unlink(missing_ok=True)
+    overlay()
+    re6_graphics_overlay()
+    re5_graphics_overlay()
 
 
 if __name__ == '__main__':
@@ -255,10 +272,10 @@ if __name__ == '__main__':
         module()
         from tools.re6_module import build as build_re6
         build_re6(ROOT,SDK,run)
+        from tools.re5_module import build as build_re5
+        build_re5(ROOT,SDK,run)
     if args.overlay:
-        overlay()
-        telemetry_overlay()
-        re6_graphics_overlay()
+        control_overlays()
     if args.nro:
         diagnostic()
     if not (args.test or args.nro or args.module or args.overlay):

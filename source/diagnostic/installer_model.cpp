@@ -1,20 +1,35 @@
 #include "re4/installer_ui.hpp"
 #include "re4/game_menu.hpp"
 #include "re4/settings_file.hpp"
+#include "re5/profiles.hpp"
+#include "re5/control_help.hpp"
 #include <cmath>
 #include <cstring>
 namespace re4 {
 namespace {
-const std::array<HomeItem,5> re6_home_items{{
+const std::array<HomeItem,10> re5_home_items{{
+    {{"Install / update mod","Установить / обновить мод"},{"Install RE5 controls and graphics.\nClose Resident Evil 5 before installing.","Установить управление и графику RE5.\nПеред установкой закройте Resident Evil 5."}},
+    {{"Install overlay menu","Установить меню оверлея"},{"Update the RE5 Controls overlay.\nKeeps the existing Uberhand installation.","Обновить меню RE5 Controls.\nСуществующий Uberhand сохраняется."}},
+    {{"Disable mod","Отключить мод"},{"Disable only this mod's RE5 files.\nRestart RE5 for native controls.","Отключить только файлы мода RE5.\nПерезапустите RE5 для штатного управления."}},
+    {{"Control settings","Настройки управления"},{"Edit controls for the selected local player.\nEach player has independent settings.","Управление выбранного локального игрока.\nУ каждого игрока свои настройки."}},
+    {{"Controller diagnostics","Проверка контроллера"},{"Check the selected player's sticks and gyro.\nZL: open gyro debug mode.","Стики и гироскоп выбранного игрока.\nZL: открыть отладку гироскопа."}},
+    {{"Graphics","Графика"},{"Graphics are shared by both players.\nFull restart: HOME > X > Close, then start.","Графика общая для обоих игроков.\nПолный перезапуск: HOME > X > Закрыть."}},
+    {{"Local player","Локальный игрок"},{"Choose Player 1 or Player 2 for controls.\nGraphics stay shared. A / LEFT / RIGHT.","Игрок 1 или 2 для настройки управления.\nГрафика общая. A / влево / вправо."}},
+    {{"Updates","Обновления"},{"Download the app from GitHub Releases.\nThe same app manages all three games.","Обновить приложение через GitHub Releases.\nОдно приложение для трёх игр."}},
+    {{"Language","Язык"},{"Choose English or Russian for all games.","Русский или английский для всех игр."}},
+    {{"Exit","Выход"},{"Return to the HOME menu.","Вернуться на главный экран консоли."}}
+}};
+const std::array<HomeItem,6> re6_home_items{{
     {{"Install RE6 module","Установить модуль RE6"},
-     {"Install RE6 graphics and measurement modules.\nClose Resident Evil 6 before installing.",
-      "Установить графику и журнал RE6.\nПеред установкой закройте Resident Evil 6."}},
+     {"Install the RE6 graphics module.\nClose Resident Evil 6 before installing.",
+      "Установить модуль графики RE6.\nПеред установкой закройте Resident Evil 6."}},
     {{"Install RE6 overlay","Установить оверлей RE6"},
-     {"Install RE6 Graphics and the measurement menu.\nKeeps the existing Uberhand installation.",
-      "Установить графику и меню измерений RE6.\nСуществующий Uberhand сохраняется."}},
+     {"Install the RE6 Graphics menu.\nKeeps the existing Uberhand installation.",
+      "Установить меню графики RE6.\nСуществующий Uberhand сохраняется."}},
     {{"Graphics","Графика"},
      {"Save separate RE6 graphics settings.\nChanges apply on the next RE6 launch.\nA: open. B: return.",
       "Отдельные настройки графики RE6.\nПрименятся при следующем запуске RE6.\nA: открыть. B: назад."}},
+    {{"Updates","Обновления"},{"GitHub Releases or a manual local update.\nThe same app manages all three games.","GitHub Releases или локальное обновление.\nОдно приложение для трёх игр."}},
     {{"Language","Язык"},
      {"Choose English or Russian for both games.\nUse LEFT/RIGHT or A to change.",
       "Русский или английский для обеих игр.\nСмена: влево/вправо или A."}},
@@ -67,7 +82,9 @@ const std::array<HomeItem,10>& installer_home_items(){
     return items;
 }
 unsigned InstallerModel::item_count()const{
-    if(game==GameTarget::RE6)return page==InstallerPage::Home?5:page==InstallerPage::Graphics?3:0;
+    if(page==InstallerPage::Updates)return 3;
+    if(page==InstallerPage::LocalUpdate)return 1;
+    if(game==GameTarget::RE6)return page==InstallerPage::Home?6:page==InstallerPage::Graphics?3:0;
     if(page==InstallerPage::GyroTest)return control_group_count(ControlGroup::Gyro)+1;
     if(page==InstallerPage::Game)return 10;
     if(page==InstallerPage::CharacterAppearance)return 8;
@@ -75,7 +92,7 @@ unsigned InstallerModel::item_count()const{
     if(page==InstallerPage::ControlGroup)return control_group_count(control_group)+(control_group==ControlGroup::Gyro?1:0);
     if(page==InstallerPage::Mapping)return kMappingRowCount;
     if(page==InstallerPage::MappingTargets)return kButtonCount+1;
-    return page==InstallerPage::Home?10:page==InstallerPage::Controls?unsigned(ControlGroup::Count)+1:page==InstallerPage::Updates?2:0;
+    return page==InstallerPage::Home?10:page==InstallerPage::Controls?unsigned(ControlGroup::Count)+1:0;
 }
 ControlId InstallerModel::selected_control()const{
     if(game==GameTarget::RE6)return ControlId::Count;
@@ -85,7 +102,75 @@ ControlId InstallerModel::selected_control()const{
 }
 UiEvent InstallerModel::x_shortcut()const{return page==InstallerPage::GyroTest?UiEvent::Calibrate:UiEvent::ResetPreview;}
 UiEvent InstallerModel::y_shortcut()const{return page==InstallerPage::GyroTest?UiEvent::ResetPreview:UiEvent::Calibrate;}
+void InstallerModel::capture_game_settings(){
+    if(game==GameTarget::RE4)re4_settings_=settings;
+    else if(game==GameTarget::RE5 && re5_player<2){
+        auto controls=settings;
+        controls.texture_filtering=TextureFilter::Native;controls.shadow_mode=ShadowMode::Native;
+        controls.anti_aliasing=AntiAliasing::Native;controls.draw_distance_scale=1;
+        re5_settings.players[re5_player]=controls;
+        re5_settings.graphics={settings.texture_filtering,settings.shadow_mode,re5_settings.graphics.aa,settings.draw_distance_scale};
+    }
+    re4_settings_.language=settings.language;re5_settings.language=settings.language;
+}
+void InstallerModel::restore_game_settings(){
+    const auto language=settings.language;
+    if(game==GameTarget::RE5){
+        if(re5_player>=2)re5_player=0;
+        settings=re5_settings.players[re5_player];
+        settings.texture_filtering=re5_settings.graphics.filter;settings.shadow_mode=re5_settings.graphics.shadows;
+        settings.anti_aliasing=AntiAliasing::Native;settings.draw_distance_scale=re5_settings.graphics.draw_distance;
+    }else settings=re4_settings_;
+    settings.language=language;
+}
+Settings InstallerModel::re4_configuration()const{
+    auto out=game==GameTarget::RE4?settings:re4_settings_;out.language=settings.language;return out;
+}
 InstallerAction InstallerModel::handle(UiEvent event){
+    re5_settings_edited_=true;
+    capture_game_settings();const auto action=handle_impl(event);capture_game_settings();return action;
+}
+void InstallerModel::local_update_result(const LocalUpdateSnapshot& snapshot){
+    local_update=snapshot;
+    if(local_update_back_pending_ && local_update.state==LocalUpdateState::Off){
+        local_update_back_pending_=false;page=InstallerPage::Updates;selected=2;
+    }
+}
+InstallerAction InstallerModel::handle_impl(UiEvent event){
+    if(page==InstallerPage::LocalUpdate){
+        if(event==UiEvent::Back || event==UiEvent::Exit){
+            if(local_update.state==LocalUpdateState::Off){
+                local_update_back_pending_=false;
+                if(event==UiEvent::Exit)return InstallerAction::Exit;
+                page=InstallerPage::Updates;selected=2;return InstallerAction::None;
+            }
+            if(event==UiEvent::Back)local_update_back_pending_=true;
+            return local_update.state==LocalUpdateState::Stopping?InstallerAction::None:InstallerAction::StopLocalUpdate;
+        }
+        if(event==UiEvent::PreviousGame || event==UiEvent::NextGame){
+            if(local_update.state!=LocalUpdateState::Off)return local_update.state==LocalUpdateState::Stopping
+                ?InstallerAction::None:InstallerAction::StopLocalUpdate;
+        }else{
+            if(event!=UiEvent::Confirm || selected!=0 || local_update.state==LocalUpdateState::Stopping)return InstallerAction::None;
+            return local_update.state==LocalUpdateState::Off || local_update.state==LocalUpdateState::Failed
+                ?InstallerAction::StartLocalUpdate:InstallerAction::StopLocalUpdate;
+        }
+    }
+    if(page==InstallerPage::Updates){
+        if(event==UiEvent::Exit)return InstallerAction::Exit;
+        if(event==UiEvent::Back){
+            const bool cancel=update.stage==UpdateStage::Checking || update.stage==UpdateStage::Downloading || update.stage==UpdateStage::Installing;
+            page=InstallerPage::Home;selected=home_selected;return cancel?InstallerAction::CancelUpdate:InstallerAction::None;
+        }
+        if(event==UiEvent::Up || event==UiEvent::Down){selected=(selected+(event==UiEvent::Down?1:2))%3;return InstallerAction::None;}
+        if(event==UiEvent::Confirm){
+            if(selected==2){page=InstallerPage::LocalUpdate;selected=0;local_update_back_pending_=false;return InstallerAction::None;}
+            if(update.stage==UpdateStage::Checking || update.stage==UpdateStage::Downloading
+                || update.stage==UpdateStage::Installing || update.stage==UpdateStage::Installed)return InstallerAction::None;
+            return selected==0?InstallerAction::CheckUpdates:selected==1&&update.stage==UpdateStage::Available?InstallerAction::InstallUpdate:InstallerAction::None;
+        }
+        if(event!=UiEvent::PreviousGame && event!=UiEvent::NextGame)return InstallerAction::None;
+    }
     if(page==InstallerPage::GyroTest){
         if(event==UiEvent::Back || event==UiEvent::Exit){close_gyro_test();return event==UiEvent::Exit?InstallerAction::Exit:InstallerAction::None;}
         if(event==UiEvent::Up || event==UiEvent::Down){
@@ -103,15 +188,17 @@ InstallerAction InstallerModel::handle(UiEvent event){
             change_control(gyro_test_draft_,id,event==UiEvent::Left?-1:1);
         return InstallerAction::None;
     }
-    if(game==GameTarget::RE4 && page==InstallerPage::Diagnostics && event==UiEvent::OpenGyroTest){
+    if(game!=GameTarget::RE6 && page==InstallerPage::Diagnostics && event==UiEvent::OpenGyroTest){
         open_gyro_test();return InstallerAction::None;
     }
     if(event==UiEvent::PreviousGame || event==UiEvent::NextGame){
-        auto& old=game_home_[game==GameTarget::RE6?1:0];
+        capture_game_settings();
+        auto& old=game_home_[unsigned(game)];
         old.selected=page==InstallerPage::Home?selected:home_selected;
         old.status=status;old.detail=detail;
-        game=game==GameTarget::RE4?GameTarget::RE6:GameTarget::RE4;
-        const auto& next=game_home_[game==GameTarget::RE6?1:0];
+        game=game==GameTarget::RE4?GameTarget::RE5:GameTarget::RE4;
+        restore_game_settings();
+        const auto& next=game_home_[unsigned(game)];
         page=InstallerPage::Home;selected=next.selected;home_selected=selected;
         status=next.status;detail=next.detail;profile_note.clear();
         return InstallerAction::None;
@@ -146,11 +233,12 @@ InstallerAction InstallerModel::handle(UiEvent event){
                 (int(re6_settings.texture_filtering)+direction+5)%5);
             return InstallerAction::SaveRe6Graphics;
         }
-        if(selected==3 && (event==UiEvent::Confirm || event==UiEvent::Left || event==UiEvent::Right)){
-            change_control(settings,ControlId::Language,1);return InstallerAction::SaveSettings;
+        if(selected==4 && (event==UiEvent::Confirm || event==UiEvent::Left || event==UiEvent::Right)){
+            change_control(settings,ControlId::Language,1);re5_settings_edited_=false;return InstallerAction::SaveSettings;
         }
         if(event!=UiEvent::Confirm)return InstallerAction::None;
         if(selected==2){home_selected=2;page=InstallerPage::Graphics;selected=0;return InstallerAction::None;}
+        if(selected==3){home_selected=3;page=InstallerPage::Updates;selected=0;return InstallerAction::None;}
         return selected==0?InstallerAction::InstallGame:selected==1?InstallerAction::InstallOverlay:InstallerAction::Exit;
     }
     profile_note.clear();
@@ -172,6 +260,9 @@ InstallerAction InstallerModel::handle(UiEvent event){
         return cancel?InstallerAction::CancelUpdate:InstallerAction::None;
     }
     if(page==InstallerPage::Home){
+        if(game==GameTarget::RE5 && selected==6 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
+            capture_game_settings();re5_player^=1;restore_game_settings();return InstallerAction::None;
+        }
         if(event==UiEvent::QuickInstall)return InstallerAction::InstallGame;
         if(event==UiEvent::QuickOverlay)return InstallerAction::InstallOverlay;
         if(event==UiEvent::QuickDisable)return InstallerAction::DisableGame;
@@ -188,12 +279,6 @@ InstallerAction InstallerModel::handle(UiEvent event){
             status=InstallerStatus::NoSensor;
         }
         return InstallerAction::None;
-    }
-    if(page==InstallerPage::Updates){
-        if(event!=UiEvent::Confirm || update.stage==UpdateStage::Checking || update.stage==UpdateStage::Downloading
-            || update.stage==UpdateStage::Installing || update.stage==UpdateStage::Installed)return InstallerAction::None;
-        if(selected==0)return InstallerAction::CheckUpdates;
-        return update.stage==UpdateStage::Available?InstallerAction::InstallUpdate:InstallerAction::None;
     }
     if(page==InstallerPage::CharacterAppearance){
         if(event!=UiEvent::Confirm||selected>=count||selected==unsigned(settings.character_appearance))return InstallerAction::None;
@@ -238,9 +323,20 @@ InstallerAction InstallerModel::handle(UiEvent event){
     if(page==InstallerPage::Graphics){
         if(selected>=count)selected=0;
         const auto& spec=graphics_specs()[selected];
+        if(game==GameTarget::RE5 && spec.id==GraphicsId::AntiAliasing){
+            if(event!=UiEvent::Confirm&&event!=UiEvent::Left&&event!=UiEvent::Right)return InstallerAction::None;
+            re5_settings.graphics.aa=static_cast<re5::AntiAliasing>((unsigned(re5_settings.graphics.aa)+(event==UiEvent::Left?2:1))%3);
+            return InstallerAction::SaveSettings;
+        }
+        if(game==GameTarget::RE5&&spec.id==GraphicsId::Reset&&event==UiEvent::Confirm){
+            re5_settings_edited_=false;
+            const bool changed=re5_settings.graphics.aa!=re5::AntiAliasing::Native;
+            re5_settings.graphics.aa=re5::AntiAliasing::Native;
+            return reset_graphics(settings)||changed?InstallerAction::SaveSettings:InstallerAction::None;
+        }
         if(spec.id==GraphicsId::Profile){
             if(event!=UiEvent::Confirm && event!=UiEvent::Left && event!=UiEvent::Right)return InstallerAction::None;
-            const auto kind=next_graphics_profile(profile_kind(settings,ProfileDomain::Graphics),event==UiEvent::Left?-1:1);
+            const auto kind=next_graphics_profile(game==GameTarget::RE5?re5::profile_kind(re5_settings,ProfileDomain::Graphics,re5_player):profile_kind(settings,ProfileDomain::Graphics),event==UiEvent::Left?-1:1);
             return kind==ProfileKind::Quality?InstallerAction::QualityGraphics:
                 kind==ProfileKind::Custom?InstallerAction::CustomGraphics:InstallerAction::DefaultGraphics;
         }
@@ -276,11 +372,12 @@ InstallerAction InstallerModel::handle(UiEvent event){
         if(spec.kind==ControlKind::Action && event!=UiEvent::Confirm)return InstallerAction::None;
         const bool arrows=event==UiEvent::Left||event==UiEvent::Right;
         if(!arrows && !(event==UiEvent::Confirm && spec.kind!=ControlKind::Slider))return InstallerAction::None;
+        re5_settings_edited_=spec.id!=ControlId::Reset;
         return change_control(settings,spec.id,event==UiEvent::Left?-1:1)?InstallerAction::SaveSettings:InstallerAction::None;
     }
     if(page!=InstallerPage::Home || selected>=count)return InstallerAction::None;
     if(selected==8 && (event==UiEvent::Confirm||event==UiEvent::Left||event==UiEvent::Right)){
-        change_control(settings,ControlId::Language,1);return InstallerAction::SaveSettings;
+        change_control(settings,ControlId::Language,1);re5_settings_edited_=false;return InstallerAction::SaveSettings;
     }
     if(event!=UiEvent::Confirm)return InstallerAction::None;
     if(selected==0)return InstallerAction::InstallGame;
@@ -293,6 +390,8 @@ InstallerAction InstallerModel::handle(UiEvent event){
     selected=0;return InstallerAction::None;
 }
 const char* InstallerModel::page_title()const{
+    if(page==InstallerPage::LocalUpdate)return Bilingual{"LOCAL UPDATE","ЛОКАЛЬНОЕ ОБНОВЛЕНИЕ"}.get(settings.language);
+    if(page==InstallerPage::Updates)return Bilingual{"APP UPDATES","ОБНОВЛЕНИЯ ПРИЛОЖЕНИЯ"}.get(settings.language);
     if(page==InstallerPage::GyroTest)return Bilingual{"GYRO DEBUG MODE","РЕЖИМ ОТЛАДКИ ГИРОСКОПА"}.get(settings.language);
     if(game==GameTarget::RE6 && page!=InstallerPage::Graphics)
         return Bilingual{"MOD INSTALLER","УСТАНОВКА МОДА"}.get(settings.language);
@@ -309,10 +408,11 @@ const char* InstallerModel::page_title()const{
     return text.get(settings.language);
 }
 const char* InstallerModel::status_text()const{
-    if(game==GameTarget::RE6){
-        if(status==InstallerStatus::Installed)return Bilingual{"Module installed. Start RE6 again.","Модуль установлен. Запустите RE6 заново."}.get(settings.language);
-        if(status==InstallerStatus::GameRunning)return Bilingual{"Close Resident Evil 6 first","Сначала закройте Resident Evil 6"}.get(settings.language);
-        if(status==InstallerStatus::Failed)return Bilingual{"Operation failed. See details.","Ошибка операции. См. описание."}.get(settings.language);
+    if(page==InstallerPage::LocalUpdate){
+        static constexpr Bilingual states[]={
+            {"Off","Выкл."},{"Starting...","Запуск..."},{"Listening","Ожидание подключения"},
+            {"Receiving...","Приём..."},{"Stopping...","Остановка..."},{"Failed","Ошибка"},{"Stored on SD card","Сохранено на SD-карте"}};
+        const auto index=unsigned(local_update.state);return states[index<7?index:5].get(settings.language);
     }
     if(page==InstallerPage::Updates){
         static constexpr Bilingual updates[]={
@@ -328,6 +428,18 @@ const char* InstallerModel::status_text()const{
         };
         const auto index=unsigned(update.stage);
         return updates[index<9?index:7].get(settings.language);
+    }
+    if(game==GameTarget::RE5){
+        if(status==InstallerStatus::Installed)return Bilingual{"Mod installed. Start RE5 again.","Мод установлен. Запустите RE5 заново."}.get(settings.language);
+        if(status==InstallerStatus::OverlayInstalled)return Bilingual{"RE5 overlay menu installed","Меню оверлея RE5 установлено"}.get(settings.language);
+        if(status==InstallerStatus::Disabled)return Bilingual{"Mod disabled. Start RE5 again.","Мод отключён. Запустите RE5 заново."}.get(settings.language);
+        if(status==InstallerStatus::GameRunning)return Bilingual{"Close Resident Evil 5 first","Сначала закройте Resident Evil 5"}.get(settings.language);
+    }
+    if(game==GameTarget::RE6){
+        if(status==InstallerStatus::Disabled)return Bilingual{"Module disabled. Start RE6 again.","Модуль отключён. Запустите RE6 заново."}.get(settings.language);
+        if(status==InstallerStatus::Installed)return Bilingual{"Module installed. Start RE6 again.","Модуль установлен. Запустите RE6 заново."}.get(settings.language);
+        if(status==InstallerStatus::GameRunning)return Bilingual{"Close Resident Evil 6 first","Сначала закройте Resident Evil 6"}.get(settings.language);
+        if(status==InstallerStatus::Failed)return Bilingual{"Operation failed. See details.","Ошибка операции. См. описание."}.get(settings.language);
     }
     static constexpr Bilingual messages[]={
         {"Ready","Готово"},
@@ -346,41 +458,70 @@ const char* InstallerModel::status_text()const{
     return messages[index<sizeof(messages)/sizeof(*messages)?index:unsigned(InstallerStatus::Failed)].get(settings.language);
 }
 const char* InstallerModel::selected_help()const{
-    if(page==InstallerPage::GyroTest){
-        const auto id=selected_control();
-        return id==ControlId::Count?Bilingual{"Save the tested settings and return.\nB: cancel changes. Y: center. X: calibrate.",
-            "Сохранить настройки и вернуться.\nB: отмена. Y: по центру. X: калибровка."}.get(settings.language):control_help_text(control_spec(id),gyro_test_draft_);
-    }
-    if(game==GameTarget::RE6){
-        if(page==InstallerPage::Graphics)return re6_graphics_items[selected<3?selected:0].help.get(settings.language);
-        return page==InstallerPage::Home?re6_home_items[selected<5?selected:0].help.get(settings.language):"";
-    }
-    if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
-        || selected_control()==ControlId::Profile))return profile_note.c_str();
-    if(page==InstallerPage::CharacterAppearance||(page==InstallerPage::Game&&selected==9))return kCharacterAppearanceHelp.get(settings.language);
-    if(page==InstallerPage::Game)return selected==1?enemy_health_numbers_help(settings):(selected==2?kGrenadeLandingSpotHelp:selected==3?kSkipPickupConfirmationHelp:selected==4?kSkipStartupLogosHelp:selected==5?kRemoveAimingSwayHelp:selected==6?kDpadWeaponSwitchingHelp:selected==7?kExtendedWeaponUpgradeHelp:selected==8?kCaseAmmoCounterHelp:kEnemyHealthBarsHelp).get(settings.language);
-    if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
-    if(page==InstallerPage::Mapping)return mapping_row_help(selected,settings.language);
-    if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);
-    if(page==InstallerPage::Home)return installer_home_items()[selected<10?selected:0].help.get(settings.language);
+    if(page==InstallerPage::LocalUpdate)return recovery_mode?Bilingual{
+        "Recovery: enable only when needed.\nReports can be downloaded while enabled.\nB: stop, then return.\nReopen the app manually after installing.",
+        "Восстановление: включите вручную.\nОтчёты доступны, пока сервер включён.\nB: выключить и вернуться.\nПосле установки откройте заново."}.get(settings.language):Bilingual{
+        "Off at every launch. A: start / stop.\nReports can be downloaded while enabled.\nB: stop, then return.\nReopen the app manually after installing.",
+        "При запуске выключено. A: вкл. / выкл.\nОтчёты доступны, пока сервер включён.\nB: выключить и вернуться.\nПосле установки откройте заново."}.get(settings.language);
     if(page==InstallerPage::Updates){
+        if(selected==2)return Bilingual{"Open a local update receiver.\nIt stays Off until you enable it.\nShared by RE4, RE5 and RE6.",
+            "Открыть локальное обновление.\nВключается только вручную.\nОбщее для RE4, RE5 и RE6."}.get(settings.language);
         if(update.stage==UpdateStage::Installed)return Bilingual{
             "Reopen this app to start the new version.\nThen use Install / update mod while\nResident Evil4 is closed.",
             "Откройте приложение заново. Затем\nвыберите «Установить / обновить мод»,\nпока Resident Evil4 закрыта."}.get(settings.language);
         return Bilingual{"Check the latest public GitHub release,\nthen choose Download / install.\nSettings are kept. No token is needed.",
             "Проверьте последний публичный релиз,\nзатем выберите «Скачать / установить».\nНастройки сохраняются. Токен не нужен."}.get(settings.language);
     }
-    if(page==InstallerPage::Controls)return selected==0?control_help_text(control_spec(ControlId::Profile),settings):control_group_spec(static_cast<ControlGroup>(selected-1)).help.get(settings.language);
+
+    if(page==InstallerPage::GyroTest){
+        const auto id=selected_control();
+        return id==ControlId::Count?Bilingual{"Save the tested settings and return.\nB: cancel changes. Y: center. X: calibrate.",
+            "Сохранить настройки и вернуться.\nB: отмена. Y: по центру. X: калибровка."}.get(settings.language):(game==GameTarget::RE5?re5::control_help(id,gyro_test_draft_):control_help_text(control_spec(id),gyro_test_draft_));
+    }
+    if(game==GameTarget::RE6){
+        if(page==InstallerPage::Graphics)return re6_graphics_items[selected<3?selected:0].help.get(settings.language);
+        return page==InstallerPage::Home?re6_home_items[selected<6?selected:0].help.get(settings.language):"";
+    }
+    if(!profile_note.empty() && ((page==InstallerPage::Graphics && selected==unsigned(GraphicsId::Profile))
+        || selected_control()==ControlId::Profile))return profile_note.c_str();
+    if(page==InstallerPage::CharacterAppearance||(page==InstallerPage::Game&&selected==9))return kCharacterAppearanceHelp.get(settings.language);
+    if(page==InstallerPage::Game)return selected==1?enemy_health_numbers_help(settings):(selected==2?kGrenadeLandingSpotHelp:selected==3?kSkipPickupConfirmationHelp:selected==4?kSkipStartupLogosHelp:selected==5?kRemoveAimingSwayHelp:selected==6?kDpadWeaponSwitchingHelp:selected==7?kExtendedWeaponUpgradeHelp:selected==8?kCaseAmmoCounterHelp:kEnemyHealthBarsHelp).get(settings.language);
+    if(page==InstallerPage::Graphics && game==GameTarget::RE5){
+        if(selected==unsigned(GraphicsId::Profile))return Bilingual{
+            "Default / Quality / last Custom graphics.\nQuality: AF16x, SMAA, far/frustum 1.75x.\nFull restart: HOME > X > Close, then start.\nMenu / overlay alone is not enough.",
+            "По умолчанию / Качество / Пользовательский.\nКачество: AF16x, SMAA, дальность 1.75x.\nПолный перезапуск: HOME > X > Закрыть.\nОдного меню / оверлея недостаточно."}.get(settings.language);
+        if(selected==unsigned(GraphicsId::Shadows))return Bilingual{
+            "Native preserves RE5's stage shadows.\nOff suppresses verified stage-shadow passes.\nBaked texture lighting stays unchanged.\nFull restart: HOME > X > Close, then start.",
+            "Штатные: исходные тени сцены RE5.\nВыкл.: только проверенные проходы теней.\nОсвещение в текстурах сохраняется.\nПолный перезапуск: HOME > X > Закрыть."}.get(settings.language);
+        if(selected==unsigned(GraphicsId::DrawDistance))return Bilingual{
+            "Matched projection/frustum far clip: 0.50-2x.\nNo extra streamed objects or LODs promised.\nNative fog stays unchanged. Default: 1.00x.\nFull restart: HOME > X > Close, then start.",
+            "Дальность проекции и отсечения: 0.50-2x.\nБез обещаний новых объектов или LOD.\nШтатный туман сохранён. Исходное: 1.00x.\nПолный перезапуск: HOME > X > Закрыть."}.get(settings.language);
+    }
+    if(page==InstallerPage::Graphics && game==GameTarget::RE5 && selected==unsigned(GraphicsId::AntiAliasing))
+        return Bilingual{"Native keeps RE5's original post-AA.\nOff disables it; On selects SMAA.\nQuality uses SMAA, not RE4's 900p SSAA.",
+            "Штатное сохраняет сглаживание RE5.\nВыкл. отключает; Вкл. включает SMAA.\nКачество: SMAA, без SSAA 900p из RE4."}.get(settings.language);
+    if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(selected)).help.get(settings.language);
+    if(page==InstallerPage::Mapping)return game==GameTarget::RE5&&selected==0?re5::control_help(ControlId::ButtonMapping,settings):mapping_row_help(selected,settings.language);
+    if(page==InstallerPage::MappingTargets)return mapping_target_help(settings.language);
+    if(page==InstallerPage::Home)return (game==GameTarget::RE5?re5_home_items:installer_home_items())[selected<10?selected:0].help.get(settings.language);
+    if(page==InstallerPage::Controls)return selected==0?(game==GameTarget::RE5?re5::control_help(ControlId::Profile,settings):control_help_text(control_spec(ControlId::Profile),settings)):control_group_spec(static_cast<ControlGroup>(selected-1)).help.get(settings.language);
     if(page==InstallerPage::ControlGroup){
         const auto id=selected_control();
         return id==ControlId::Count?(control_group==ControlGroup::Gyro?Bilingual{"Test gyro settings on a static scene.\nSave and apply, or B to cancel.",
-            "Проверить гироскоп на статичном кадре.\nСохранить настройки или B для отмены."}.get(settings.language):""):control_help_text(control_spec(id),settings);
+            "Проверить гироскоп на статичном кадре.\nСохранить настройки или B для отмены."}.get(settings.language):""):(game==GameTarget::RE5?re5::control_help(id,settings):control_help_text(control_spec(id),settings));
     }
     return Bilingual{"ZL: open gyro debug mode  A: gyro on/off\nY: calibrate  X: center preview",
                      "ZL: режим отладки  A: гироскоп вкл./выкл.\nY: калибровать  X: сбросить прицел"}.get(settings.language);
 }
 std::string InstallerModel::item_label(unsigned index)const{
     if(index>=item_count())return "";
+    if(page==InstallerPage::LocalUpdate){
+        if(local_update.state==LocalUpdateState::Stopping)return Bilingual{"Stopping...","Остановка..."}.get(settings.language);
+        return (local_update.state==LocalUpdateState::Off || local_update.state==LocalUpdateState::Failed
+            ?Bilingual{"Start local update","Включить локальное обновление"}:Bilingual{"Stop local update","Выключить локальное обновление"}).get(settings.language);
+    }
+    if(page==InstallerPage::Updates)return (index==0?Bilingual{"Check for updates","Проверить обновления"}
+        :index==1?Bilingual{"Download / install","Скачать / установить"}:Bilingual{"Local update","Локальное обновление"}).get(settings.language);
     if(game==GameTarget::RE6)return (page==InstallerPage::Graphics?re6_graphics_items[index]:re6_home_items[index]).label.get(settings.language);
     if(page==InstallerPage::GyroTest){
         return index==item_count()-1?Bilingual{"Save and apply","Сохранить и применить"}.get(settings.language):control_spec(control_group_item(ControlGroup::Gyro,index)).label.get(settings.language);
@@ -392,16 +533,18 @@ std::string InstallerModel::item_label(unsigned index)const{
     if(page==InstallerPage::Graphics)return graphics_spec(static_cast<GraphicsId>(index)).label.get(settings.language);
     if(page==InstallerPage::Mapping)return mapping_row_label(index,settings.language);
     if(page==InstallerPage::MappingTargets)return mapping_target_label(index,settings.language);
-    if(page==InstallerPage::Home)return installer_home_items()[index<10?index:0].label.get(settings.language);
+    if(page==InstallerPage::Home)return (game==GameTarget::RE5?re5_home_items:installer_home_items())[index<10?index:0].label.get(settings.language);
     if(page==InstallerPage::Updates)return (index==0?Bilingual{"Check for updates","Проверить обновления"}
         :Bilingual{"Download / install","Скачать / установить"}).get(settings.language);
     return control_spec(static_cast<ControlId>(index)).label.get(settings.language);
 }
 std::string InstallerModel::item_value(unsigned index)const{
     if(index>=item_count())return "";
+    if(page==InstallerPage::LocalUpdate)return status_text();
+    if(page==InstallerPage::Updates)return index==1?update.version:"";
     if(page==InstallerPage::GyroTest)return index==item_count()-1?"A":control_value_text(control_spec(control_group_item(ControlGroup::Gyro,index)),gyro_test_draft_);
     if(game==GameTarget::RE6){
-        if(page==InstallerPage::Home)return index==3?(settings.language==Language::Russian?"Русский":"English"):"";
+        if(page==InstallerPage::Home)return index==4?(settings.language==Language::Russian?"Русский":"English"):"";
         if(index==2)return "A";
         if(index==0){
             constexpr const char* values[]={"Native","AF 2x","AF 4x","AF 8x","AF 16x"};
@@ -410,15 +553,28 @@ std::string InstallerModel::item_value(unsigned index)const{
         }
         return Bilingual{"FXAA3 (native)","FXAA3 (штатное)"}.get(settings.language);
     }
-    if(page==InstallerPage::Controls)return index==0?profile_name(profile_kind(settings,ProfileDomain::Controls),settings.language):"";
+    if(page==InstallerPage::Home && game==GameTarget::RE5 && index==6)
+        return re5_player==0?Bilingual{"Player 1","Игрок 1"}.get(settings.language):Bilingual{"Player 2","Игрок 2"}.get(settings.language);
+    if(page==InstallerPage::Controls){
+        if(index!=0)return "";
+        const auto kind=profile_kind(settings,ProfileDomain::Controls);
+        return game==GameTarget::RE5&&kind==ProfileKind::RE6?Bilingual{"Modern","Современный"}.get(settings.language):profile_name(kind,settings.language);
+    }
     if(page==InstallerPage::ControlGroup)return control_group==ControlGroup::Gyro && index==control_group_count(control_group)?"A":control_value_text(control_spec(control_group_item(control_group,index)),settings);
     if(page==InstallerPage::CharacterAppearance)return index==unsigned(settings.character_appearance)?kAppearanceRequested.get(settings.language):"";
     if(page==InstallerPage::Game&&index==9)return character_appearance_name(settings.character_appearance,settings.language);
     if(page==InstallerPage::Game)return index==0?enemy_health_bars_value(settings):index==1?enemy_health_numbers_value(settings):game_option_value(index==2?settings.grenade_landing_spot:index==3?settings.skip_pickup_confirmation:index==4?settings.skip_startup_logos:index==5?settings.disable_aim_sway:index==6?settings.dpad_weapon_switching:index==7?settings.extended_weapon_upgrade:settings.case_ammo_counter,settings.language);
+    if(page==InstallerPage::Graphics && game==GameTarget::RE5){
+        if(index==unsigned(GraphicsId::AntiAliasing)){
+            const auto aa=re5_settings.graphics.aa;
+            return aa==re5::AntiAliasing::Off?Bilingual{"Off","Выкл."}.get(settings.language):
+                aa==re5::AntiAliasing::Smaa?Bilingual{"On (SMAA)","Вкл. (SMAA)"}.get(settings.language):Bilingual{"Native","Штатное"}.get(settings.language);
+        }
+        if(index==unsigned(GraphicsId::Profile))return profile_name(re5::profile_kind(re5_settings,ProfileDomain::Graphics,re5_player),settings.language);
+    }
     if(page==InstallerPage::Graphics)return graphics_value_text(graphics_spec(static_cast<GraphicsId>(index)),settings);
     if(page==InstallerPage::Mapping)return mapping_row_value(index,settings);
     if(page==InstallerPage::MappingTargets)return index==mapping_target_index(settings,mapping_source)?"*":"";
-    if(page==InstallerPage::Updates)return index==1?update.version:"";
     if(page==InstallerPage::Home && index==8)return settings.language==Language::Russian?"Русский":"English";
     if(page==InstallerPage::Home && index==3)return curve_name(settings.stick_curve,settings.language);
     return "";
@@ -426,10 +582,13 @@ std::string InstallerModel::item_value(unsigned index)const{
 void InstallerModel::installation_result(const char* result){
     detail=result?result:"No result";
     if(!result){status=InstallerStatus::Failed;return;}
+    const auto* disabled=game==GameTarget::RE5?"Disabled RE5 mod":game==GameTarget::RE6?"Disabled RE6 mod":"Disabled RE4 patch";
+    const auto* overlay=game==GameTarget::RE5?"Installed RE5 overlay":game==GameTarget::RE6?"Installed RE6 overlay":"Installed RE4 overlay";
+    const auto* installed=game==GameTarget::RE5?"Installed RE5 module":game==GameTarget::RE6?"Installed RE6 module":"Installed RE4 Controls";
     if(std::strncmp(result,"Conflict",8)==0)status=InstallerStatus::Conflict;
-    else if(std::strncmp(result,"Disabled RE4",12)==0)status=InstallerStatus::Disabled;
-    else if(std::strstr(result,game==GameTarget::RE6?"Installed RE6 overlay":"Installed RE4 overlay")==result)status=InstallerStatus::OverlayInstalled;
-    else if(std::strstr(result,game==GameTarget::RE6?"Installed RE6 module":"Installed RE4 Controls")==result)status=InstallerStatus::Installed;
+    else if(std::strstr(result,disabled)==result)status=InstallerStatus::Disabled;
+    else if(std::strstr(result,overlay)==result)status=InstallerStatus::OverlayInstalled;
+    else if(std::strstr(result,installed)==result)status=InstallerStatus::Installed;
     else status=InstallerStatus::Failed;
 }
 bool InstallerModel::allow_installation(bool identified,bool running){
@@ -442,6 +601,25 @@ bool InstallerModel::save_re6_graphics(const char* path){
     status=saved?InstallerStatus::Saved:InstallerStatus::Failed;
     return saved;
 }
+bool InstallerModel::save_re5_settings(const char* path){
+    if(game!=GameTarget::RE5)return false;
+    capture_game_settings();
+    const bool saved=re5_settings_edited_?re5::save_edited_settings(path,re5_settings,page==InstallerPage::Graphics?ProfileDomain::Graphics:ProfileDomain::Controls,re5_player)
+        :re5::save_settings_file(path,re5_settings);
+    status=saved?InstallerStatus::Saved:InstallerStatus::Failed;return saved;
+}
+bool InstallerModel::save_shared_language(const char* path){
+    const bool saved=save_profiled_settings(path,re4_configuration());
+    if(!saved)status=InstallerStatus::Failed;
+    return saved;
+}
+ProfileResult InstallerModel::select_re5_profile(ProfileDomain domain,ProfileKind kind,const char* path){
+    if(game!=GameTarget::RE5)return ProfileResult::SaveFailed;
+    capture_game_settings();const auto result=re5::switch_profile(path,re5_settings,domain,kind,re5_player);
+    if(result==ProfileResult::Applied||result==ProfileResult::Unchanged)restore_game_settings();
+    profile_note=profile_result_text(result,settings.language);
+    status=result==ProfileResult::SaveFailed?InstallerStatus::Failed:InstallerStatus::Saved;return result;
+}
 void InstallerModel::open_gyro_test(){
     gyro_test_origin_=page;gyro_test_origin_selected_=selected;
     gyro_test_draft_=settings;page=InstallerPage::GyroTest;selected=0;status=InstallerStatus::Ready;
@@ -453,15 +631,25 @@ void InstallerModel::close_gyro_test(){
 const Settings& InstallerModel::preview_settings()const{return page==InstallerPage::GyroTest?gyro_test_draft_:settings;}
 bool InstallerModel::save_gyro_test(const char* path){
     if(page!=InstallerPage::GyroTest)return false;
-    if(!valid_settings(gyro_test_draft_) || !save_profiled_settings(path,gyro_test_draft_)){
+    if(!valid_settings(gyro_test_draft_)){status=InstallerStatus::Failed;return false;}
+    bool saved=false;
+    if(game==GameTarget::RE5){
+        auto candidate=re5_settings;auto controls=gyro_test_draft_;
+        controls.texture_filtering=TextureFilter::Native;controls.shadow_mode=ShadowMode::Native;
+        controls.anti_aliasing=AntiAliasing::Native;controls.draw_distance_scale=1;
+        candidate.players[re5_player]=controls;
+        saved=re5::save_edited_settings(path?path:re5::kSettingsPath,candidate,ProfileDomain::Controls,re5_player);
+        if(saved)re5_settings=candidate;
+    }else saved=save_profiled_settings(path?path:kSettingsPath,gyro_test_draft_);
+    if(!saved){
         status=InstallerStatus::Failed;return false;
     }
-    settings=gyro_test_draft_;close_gyro_test();status=InstallerStatus::Saved;return true;
+    settings=gyro_test_draft_;capture_game_settings();close_gyro_test();status=InstallerStatus::Saved;return true;
 }
 void InstallerModel::calibrated(float bias_x,float bias_y){
     if(!std::isfinite(bias_x)||!std::isfinite(bias_y))return;
     auto& target=page==InstallerPage::GyroTest?gyro_test_draft_:settings;
-    target.gyro_bias_x=bias_x;target.gyro_bias_y=bias_y;
+    target.gyro_bias_x=bias_x;target.gyro_bias_y=bias_y;re5_settings_edited_=true;
     status=page==InstallerPage::GyroTest?InstallerStatus::Ready:InstallerStatus::Calibrated;
 }
 }

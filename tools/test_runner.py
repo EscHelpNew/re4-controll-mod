@@ -99,7 +99,7 @@ def _native_case(case, root, run_dir, cxx, coverage):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(root / relative, destination)
         if case.name == 'installer_preview':
-            for name in ('app-logo.bmp', 'app-logo-re6.bmp'):
+            for name in ('app-logo.bmp', 'app-logo-re6.bmp', 'app-logo-re5.bmp'):
                 shutil.copyfile(run_dir / 'shared/build' / name, folder / 'work/build' / name)
             env['SDL_VIDEODRIVER'] = 'dummy'
             env['PATH'] = 'C:/msys64/mingw64/bin' + os.pathsep + env.get('PATH', '')
@@ -196,7 +196,8 @@ def _prepare(root, run_dir):
     preparations = (
         ('graphics', lambda: (shutil.copytree(root / 'assets/graphics', shared / 'assets/graphics'), prepare_graphics(shared))),
         ('bitmaps', lambda: (prepare_bitmap(root / 'assets/icon-original.png', shared / 'build/app-logo.bmp'),
-                             prepare_bitmap(root / 'assets/icon-re6.png', shared / 'build/app-logo-re6.bmp'))),
+                             prepare_bitmap(root / 'assets/icon-re6.png', shared / 'build/app-logo-re6.bmp'),
+                             prepare_bitmap(root / 'assets/icon-re5.png', shared / 'build/app-logo-re5.bmp'))),
     )
     for name, prepare in preparations:
         start = time.monotonic()
