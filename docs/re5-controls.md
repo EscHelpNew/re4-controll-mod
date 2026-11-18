@@ -1,4 +1,4 @@
-# Resident Evil 5 controls — 0.28.28 candidate
+# Resident Evil 5 controls — 0.28.29 candidate
 
 RE Controls supports the original Nintendo Switch RE5 port with independent
 controls for both local players and shared graphics. The installer selects
@@ -14,7 +14,7 @@ Title ID: `010018100CD46000`.
 | v196608 | `4E46401BF2FE53A44B69CC07FD951FE6` | Exact native profile; host regression coverage |
 | v65536 / v131072 | `C517ECBB79DE97338E98147A6B5B5F2B` | Same older main; host coverage and accepted v0.28.27 console test |
 
-Each profile validates its own GNU note and 2529 protected immutable words before
+Each profile validates its own GNU note and 3107 protected immutable words before
 installing 52 hooks. Both require the same exact SDK identity and 30 protected
 SDK words. Unknown or conflicting images remain inactive. The installed older
 main and translation are preserved; the installer does not replace game archives.
@@ -28,7 +28,7 @@ main and translation are preserved; the installer does not replace game archives
    with **L/R**, then **Install / update mod**.
 3. Restart RE5. In Uberhand/Tesla select **RE5 Controls**, then **Connect to RE5**.
    Return to the overlay list and select RE5 Controls again after an overlay
-   update to unload any cached older copy. Check version **0.28.28**.
+   update to unload any cached older copy. Check version **0.28.29**.
 
 Install the full module and matching overlay together. Updating only the overlay
 cannot supply new native camera/movement code or authenticate an old guard count.
@@ -60,7 +60,7 @@ accepted test. Native desired/history smoothing and collision remain active in 2
 walking and standing-turn test reported framing drift. Candidate 0.28.28 changes
 only the qualified native spatial-follow retention for a fresh Modern overview;
 native FOV/roll, transition ownership, coefficient bookkeeping and collision
-remain. Physical verification of this candidate is pending.
+remain. The user reported improved overview in28 but remaining combat drift and missing lateral running. Candidate29 keeps a shared anatomical screen reference through overview, firearm, knife and reload states, using the actual native lens and optical direction before collision. Ordinary left-stick locomotion preserves native action admission and horizontal step speed while redirecting that step relative to the camera; back-dominant input retains native backward admission. Native buttons, combat gait and collision remain. Physical verification of29 is pending.
 
 Optional movement while aiming/shooting, using the knife or reloading retains
 native action timing, movement collision, ground stepping and leg IK. Ordinary

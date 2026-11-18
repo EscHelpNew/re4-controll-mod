@@ -121,7 +121,7 @@ template<class Publish>void run(unsigned player,std::uintptr_t actor,std::uintpt
   if(bad==1)frame.settings.unified_controls=false;
   if(bad==2)frame.settings.first_person=true;
   if(bad==3)frame.scope=true;
-  if(bad==4)frame.action=0x1C;
+  if(bad==4)frame.action=0x2F;
   if(bad==5)frame.tick=game_test::tick-1920001;
   if(bad==6)++frame.generation;
   if(bad==7)++frame.look_epoch;
@@ -157,7 +157,11 @@ template<class Publish>void run(unsigned player,std::uintptr_t actor,std::uintpt
  }
  // Collision is downstream: no later restore/rig callback can restore the
  // desired pre-wall eye over a native clipped persistent camera result.
- initialize(1);publish_component({20,0,10},.2f);consume();const Vec clipped{7,8,9};put(camera,0x60,clipped);re4::set_saved_x(&context,19,camera);Re5CameraRig::Callback(&context);Re5CameraPoseRestore::Callback(&context);assert(get<Vec>(camera,0x60)==clipped);
+ initialize(1);publish_component({20,0,10},.2f);consume();
+ const auto followed=read(b,0x60,0x70,0x80);put(camera,0x60,followed.eye);put(camera,0x70,followed.up);put(camera,0x80,followed.target);put(camera,0x50,get<float>(b,0x50));put(camera,0x4C,16.f/9);
+ re4::set_saved_x(&context,19,camera);camera_test::actor_phase(offset(0x2406CC),&context); // Desired completes before wall collision.
+ const Vec clipped{7,8,9};put(camera,0x60,clipped);std::memcpy(reinterpret_cast<void*>(camera+0x210),reinterpret_cast<void*>(camera+0x60),0x30);
+ Re5CameraPoseRestore::Callback(&context);camera_test::actor_phase(offset(0x2406CC),&context);assert(get<Vec>(camera,0x60)==clipped&&get<Vec>(camera,0x210)==clipped);
  assert(calls>baseline_calls);std::printf("follow28 player%u installed native follow/projection/ownership PASS\n",player);
 }
 }

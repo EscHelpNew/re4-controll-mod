@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.28.29 (local candidate, 2026-11-18)
+
+### Fixed
+
+- RE5 Modern combat framing: use a shared anatomical screen reference during aiming, firing, knife actions and reloads, while preserving native aiming direction, lens and collision.
+- RE5 lateral running: retain native movement admission and step speed while applying left-stick movement relative to the camera, independently of right-stick body heading.
+
+Hardware acceptance of this candidate is pending. The 0.28.28 physical test reported improved overview framing but remaining combat drift and missing lateral running.
+
 ## 0.28.28 (local camera candidate, 2026-11-18)
 
 ### Fixed

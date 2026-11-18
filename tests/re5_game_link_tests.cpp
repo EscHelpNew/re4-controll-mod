@@ -33,7 +33,7 @@ void install_proof(bool legacy){
     const u8 sdk[32]={0xB2,0x87,0x2A,0x7B,0xCC,0x58,0x99,0x69,0xFB,0x7A,0xFB,0x8E,0x37,0x24,0x14,0xE4,0xFA,0xC5,0xA7,0x50};
     std::memcpy(proof.data()+56,sdk,32);
     for(unsigned i=0;i<8;++i){proof[88+i]=u8(probe_base>>(8*i));proof[96+i]=u8(0x26ac000ULL>>(8*i));}
-    proof[104]=0xE1;proof[105]=9; // 2529 guarded immutable words, little-endian.
+    proof[104]=0x23;proof[105]=0x0C; // 3107 guarded immutable words, little-endian.
     std::memcpy(memory.data()+8+384,proof.data(),proof.size());
 }
 // Independent 192-byte optional diagnostic ABI fixture; no production serializer.

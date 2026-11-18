@@ -36,6 +36,62 @@ inline bool anchored_camera_pose(const CameraPose& native,std::array<float,3> an
  if(!finite(result.eye)||!finite(result.target)||!finite(result.up))return false;
  out=result;return true;
 }
+
+// Dilate the native eye about the anatomical anchor, then translate its
+// target by the same displacement to retain native direction, length and roll.
+inline bool dilated_camera_pose(const CameraPose& native,std::array<float,3> anchor,float distance,CameraPose& out){
+ using namespace camera_detail;
+ if(!finite(native.eye)||!finite(native.target)||!finite(native.up)||!finite(anchor)
+  ||!std::isfinite(distance)||distance<1||distance>2)return false;
+ const auto look=subtract(native.target,native.eye);const float length=std::sqrt(dot(look,look));
+ if(!std::isfinite(length)||length<.001f||std::sqrt(dot(cross(look,native.up),cross(look,native.up)))<=length*.000001f)return false;
+ CameraPose result=native;
+ for(unsigned i=0;i<3;++i){result.eye[i]=float(double(anchor[i])+(double(native.eye[i])-anchor[i])*distance);
+  result.target[i]=float(double(result.eye[i])+(double(native.target[i])-native.eye[i]));}
+ if(!finite(result.eye)||!finite(result.target))return false;
+ out=result;return true;
+}
+namespace camera_detail {
+struct OpticalBasis {std::array<double,3> right{},up{},forward{},relative{};double depth=0,tangent=0;};
+inline bool optical_basis(const CameraPose& pose,Vec anchor,float fov,float aspect,OpticalBasis& out){
+ if(!finite(pose.eye)||!finite(pose.target)||!finite(pose.up)||!finite(anchor)
+  ||!std::isfinite(fov)||fov<=1||fov>=179||!std::isfinite(aspect)||aspect<=.01f||aspect>10)return false;
+ auto dot3=[](const auto& a,const auto& b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];};
+ for(unsigned i=0;i<3;++i){out.forward[i]=double(pose.target[i])-pose.eye[i];out.relative[i]=double(anchor[i])-pose.eye[i];}
+ const double length=std::sqrt(dot3(out.forward,out.forward));if(!std::isfinite(length)||length<.001)return false;
+ for(double& x:out.forward)x/=length;
+ const auto& f=out.forward;const auto& u=pose.up;
+ out.right={f[1]*u[2]-f[2]*u[1],f[2]*u[0]-f[0]*u[2],f[0]*u[1]-f[1]*u[0]};
+ const double width=std::sqrt(dot3(out.right,out.right));if(!std::isfinite(width)||width<.000001)return false;
+ for(double& x:out.right)x/=width;
+ const auto& r=out.right;out.up={r[1]*f[2]-r[2]*f[1],r[2]*f[0]-r[0]*f[2],r[0]*f[1]-r[1]*f[0]};
+ out.depth=dot3(out.relative,out.forward);out.tangent=std::tan(double(fov)*3.14159265358979323846/360);
+ return std::isfinite(out.depth)&&out.depth>.001&&std::isfinite(out.tangent)&&out.tangent>0;
+}
+}
+inline bool camera_anchor_projection(const CameraPose& pose,std::array<float,3> anchor,float fov,float aspect,std::array<double,2>& out){
+ camera_detail::OpticalBasis basis;if(!camera_detail::optical_basis(pose,anchor,fov,aspect,basis))return false;
+ double x=0,y=0;for(unsigned i=0;i<3;++i){x+=basis.relative[i]*basis.right[i];y+=basis.relative[i]*basis.up[i];}
+ out={x/(basis.depth*basis.tangent*aspect),y/(basis.depth*basis.tangent)};
+ return std::isfinite(out[0])&&std::isfinite(out[1])&&std::fabs(out[0])<=16&&std::fabs(out[1])<=16;
+}
+inline bool composed_camera_pose(const CameraPose& native,std::array<float,3> anchor,float fov,float aspect,
+ const std::array<double,2>& wanted,CameraPose& out){
+ camera_detail::OpticalBasis basis;if(!camera_detail::optical_basis(native,anchor,fov,aspect,basis)
+  ||!std::isfinite(wanted[0])||!std::isfinite(wanted[1])||std::fabs(wanted[0])>16||std::fabs(wanted[1])>16)return false;
+ double x=0,y=0;for(unsigned i=0;i<3;++i){x+=basis.relative[i]*basis.right[i];y+=basis.relative[i]*basis.up[i];}
+ x-=wanted[0]*basis.depth*basis.tangent*aspect;y-=wanted[1]*basis.depth*basis.tangent;
+ CameraPose result=native;
+ for(unsigned i=0;i<3;++i){const double delta=basis.right[i]*x+basis.up[i]*y;
+  result.eye[i]=float(double(native.eye[i])+delta);
+  // Use the same effective translation after rounding the eye. This retains
+  // the native look vector at game-world float precision.
+  result.target[i]=float(double(result.eye[i])+(double(native.target[i])-native.eye[i]));}
+ if(!camera_detail::finite(result.eye)||!camera_detail::finite(result.target))return false;
+ out=result;return true;
+}
+
+
 struct CameraPoseIdentity {std::uintptr_t camera=0,actor=0,command=0;unsigned local_player=0;};
 // A one-use native desired-pose baseline. The caller restores before native
 // desired/history evaluation, independently of current overlay/input gates.

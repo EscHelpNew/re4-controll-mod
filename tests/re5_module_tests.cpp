@@ -60,7 +60,8 @@ struct PadStatePlaceholder;
 void test_Re5FullPad(re5::PadState*,const std::uint32_t&){}
 void test_Re5HandheldPad(re5::PadState*,const std::uint32_t&){}
 void test_Re5DualPad(re5::PadState*,const std::uint32_t&){}
-void test_Re5LocalInput(void*,void*){}
+inline void (*local_input_observer)(void*,void*)=nullptr;
+void test_Re5LocalInput(void* command,void* actor){if(local_input_observer)local_input_observer(command,actor);}
 void test_Re5Polar(void*){}
 void test_Re5NativeGyro(float*,void*){}
 void test_Re5RayCapture(exl::hook::InlineFloatCtx*){}
@@ -124,7 +125,10 @@ std::array<double,3> camera_projection27(const re5::CameraPose& pose,const std::
  const auto length=std::sqrt(dot(f,f));for(auto& x:f)x/=length;auto right=cross(f,up);const auto width=std::sqrt(dot(right,right));for(auto& x:right)x/=width;up=cross(right,f);
  const auto depth=dot(v,f);return {dot(v,right)/depth,dot(v,up)/depth,depth};
 }
+void review_check(bool,const char*);
 #include "re5_runtime_follow_fixture.hpp"
+#include "re5_runtime_combat_camera_fixture.hpp"
+#include "re5_runtime_locomotion_fixture.hpp"
 namespace {void test_Re5CameraFollow(void* owner,float dt){re5_follow_test::native(reinterpret_cast<std::uintptr_t>(owner),dt);}}
 unsigned review_failures=0;
 void review_check(bool pass,const char* message){if(!pass){std::fprintf(stderr,"FINAL REVIEW: %s\n",message);++review_failures;}}
@@ -265,6 +269,8 @@ int main(){
  input_scope.settings.re6_response=false;Re5AimAxes::Callback(&context);assert(scalar(&context,0)==0&&scalar(&context,1)==0);
  input_scope=before_modern_aim;
  // Real polar cache: classic turn gain must never scale unified movement.
+  // This isolated scoped-shaping fixture has no native input invocation nonce.
+  input_scope.ordinary_epoch=0;
  input_scope.settings.analog_enabled=true;input_scope.settings.unified_controls=true;
  for(const auto axes:{re5::Axes{1,0,0,0},re5::Axes{.6f,.8f,0,0}}){
   input_scope.axes=axes;input_scope.settings.turn_gain=1;Re5Polar::Callback(reinterpret_cast<void*>(wrapper+0x350+0x4F8));
@@ -626,6 +632,20 @@ int main(){
     const auto consumed=data.bones;Re5MovementPose::Callback(&native_frame.context);assert(data.bones==consumed);
     assert(!std::memcmp(data.bones.data(),before.data(),0xC0)); // Unowned torso/root stays native.
    }
+    // The native actor can enter combat after an ordinary input frame was
+    // sampled. Its old proxy marker cannot suppress the existing combat gait.
+    for(unsigned live_action:{0x1Bu,0x1Fu,0x23u}){
+     re5_gait_test::put(re5_gait_test::address(data.weapon)+8,std::uint32_t(live_action>=0x22?(player?0x10E:0x101):0x10F));
+     re5_gait_test::put(current+0x1B40,live_action);re5_gait_test::put(current+0x3F0E,std::uint8_t(live_action==0x1F?1:0));game_test::tick+=320000;
+     auto& pad=player?raw2:raw;pad.lx=player?16384:0;pad.ly=player?0:16384;pad.rx=pad.ry=0;observed_pad(&pad,player?1:3,1);
+     Re5LocalInput::Callback(reinterpret_cast<void*>((player?wrapper2:wrapper)+0x350),reinterpret_cast<void*>(current));
+     const auto committed=player_runtime[player].frame;auto sampled=committed;sampled.action=0;sampled.ordinary_proxy=true;assert(published_frames[player].publish(sampled));
+     re5_gait_test::put(proposal,position);re5_gait_test::put(proposal+16,quaternion);re4::set_saved_x(&native_frame.context,19,current);gait.reset();
+     Re5MovementProposal::Callback(&native_frame.context);const auto moved=re5_gait_test::get<re5::GaitValue>(proposal);
+     review_check((moved.x!=position.x||moved.z!=position.z)&&moved.y==position.y&&moved.w==position.w,"ordinary proxy suppressed live firearm/reload/knife gait");
+     review_check(!std::memcmp(reinterpret_cast<void*>(proposal+16),&quaternion,sizeof(quaternion)),"ordinary-to-combat transition changed native quaternion");
+     assert(published_frames[player].publish(committed));
+    }
   }
   assert(assets.samples>0&&assets.lookups>0&&assets.mirrors>0);gait_runtime=native_gait;gait.reset();
  }
@@ -806,7 +826,8 @@ int main(){
   for(unsigned action:{0x1Cu,0x23u,0x1Fu}){
    re5_gait_test::put(current+0x1B40,action);re5_gait_test::put(current+0x3F0E,std::uint8_t(action==0x1F?1:0));input(0,false);seed();const auto before=view;component_phase();
    assert(std::fabs(re5_gait_test::get<float>(component+0x168)+120.f)<.001f);
-   for(std::size_t i=0;i<view.size();++i)if(i<0xDB0+0x160||i>=0xDB0+0x16C)assert(view[i]==before[i]);
+    assert(std::fabs(re5_gait_test::get<float>(component+0x188)+20.f)<.001f); // Same native look vector after common translation.
+    for(std::size_t i=0;i<view.size();++i){const bool eye=i>=0xDB0+0x160&&i<0xDB0+0x16C,target=i>=0xDB0+0x180&&i<0xDB0+0x18C;if(!eye&&!target)assert(view[i]==before[i]);}
    desired();re4::set_saved_x(&context,19,current_camera);Re5CameraRig::Callback(&context);assert(!camera_poses[player].state.pending(current_camera));
   }
   re5_gait_test::put(current+0x3F0E,std::uint8_t(0));
@@ -944,14 +965,20 @@ int main(){
   re5_gait_test::put(current+0x2570,reinterpret_cast<std::uintptr_t>(neck.data()));put(neck,0x30,current);mapping[4]=0;mapping[56]=1;mapping[57]=2;
   wanted.players[player]=re4::re6_profile();wanted.players[player].gyro_enabled=false;wanted.players[player].right_deadzone=0;wanted.players[player].third_person_distance=1.2f;assert(controls_snapshot.publish(wanted));
   player_runtime[player].anchored=false;player_runtime[player].look.reset();anchored_looks[player]={};fake_heading(current,0);
-  auto publish=[&](std::array<float,3> position,float heading){
+  auto publish=[&](std::array<float,3> position,float heading,unsigned action=1,bool reset=false){
+   if(reset){player_runtime[player].frame.valid=false;player_runtime[player].anchored=false;player_runtime[player].look.reset();anchored_looks[player]={};}
+   re5_gait_test::put(current+0x1B40,action);re5_gait_test::put(current+0x3F0E,std::uint8_t(action==0x1F?1:0));
    re5_gait_test::put(current+0x60,position);fake_heading(current,heading);fake_local(current);fake_world(current);
    for(unsigned bone:{0u,1u,2u})for(unsigned axis=0;axis<3;++axis)put(bones,bone*0xC0+0x50+axis*4,position[axis]+(axis==1?170.f:0.f));
    game_test::tick+=320000;pad.lx=pad.ly=pad.rx=pad.ry=0;observed_pad(&pad,player?1:3,1);Re5LocalInput::Callback(reinterpret_cast<void*>(command),reinterpret_cast<void*>(current));
-   player_runtime[player].frame.look_integral=heading;player_runtime[player].frame.native_heading=0;assert(published_frames[player].publish(player_runtime[player].frame));
+   player_runtime[player].frame.look_integral=heading;player_runtime[player].frame.native_heading=0;
+   if(action>8)player_runtime[player].frame.heading_valid=false;
+   assert(published_frames[player].publish(player_runtime[player].frame));
    re4::set_saved_x(&context,19,current);camera_test::actor_phase(tested_build==re5::profile::Build::Legacy?0x24DC00:0x24DDE0,&context);fake_world(current);
   };
   re5_follow_test::run(player,current,current_camera,publish);
+  re5_locomotion_test::run(player,current,current_camera,(player?wrapper2:wrapper)+0x350,player?raw2:raw,wanted);
+  re5_combat_camera_test::run(player,current,current_camera,reinterpret_cast<std::uintptr_t>(laser.data()),publish);
  }
  assert(review_failures==0);
  std::puts("RE5 actual module: guarded hooks, cold settings, native resource ownership and live graphics PASS");

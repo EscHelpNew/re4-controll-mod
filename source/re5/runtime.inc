@@ -47,7 +47,7 @@ struct MotionReader {
 struct ControlFrame {
  re5::ResolvedPlayer player;re4::Settings settings;re5::Axes axes;re4::AimDelta gyro;
  re4::UnifiedDelta look;float native_heading=0,look_integral=0,overview_pitch=0;std::uint64_t look_epoch=0,look_release=0;
- std::uint64_t tick=0,generation=1,frame=0;unsigned action=0;bool scope=false,valid=false,heading_valid=false;
+ std::uint64_t tick=0,generation=1,frame=0,ordinary_epoch=0;unsigned action=0;bool scope=false,valid=false,heading_valid=false,ordinary_proxy=false;
 };
 // The native getter returns its nontrivial vector through X8. A nontrivial
 // C++ return type emits the same ABI; SDK assembly is verified independently.
@@ -65,6 +65,10 @@ bool actor_rotation_supported(std::uintptr_t actor);
 bool anchored_action(unsigned action,const re4::Settings& settings){return action<=8||(action==0x1F&&settings.move_while_reloading);}
 bool anchored_controls(const ControlFrame& frame){return frame.settings.analog_enabled&&frame.settings.unified_controls&&frame.settings.free_camera&&!frame.scope&&anchored_action(frame.action,frame.settings);}
 bool actor_anchor_allowed(const ControlFrame& frame,std::uintptr_t& camera);
+std::uint64_t ordinary_locomotion_input_begin(std::uintptr_t actor);
+bool ordinary_locomotion_input_current(const ControlFrame& frame);
+bool writable(void*,std::uintptr_t,std::size_t);
+bool ordinary_locomotion_polar(ControlFrame& frame,float (&values)[4]);
 std::atomic<std::uint64_t> anchored_releases[2]{};
 std::atomic_flag anchored_locks[2]={ATOMIC_FLAG_INIT,ATOMIC_FLAG_INIT};
 struct PlayerRuntime {re5::PlayerInput gyro;re4::UnifiedLook look;MotionReader sensor;ControlFrame frame;std::uint64_t next_frame=0,look_epoch=0,look_release=0,anchor_validated_tick=0;float look_integral=0,overview_pitch=0,heading_origin=0;bool anchored=false;};
@@ -82,23 +86,32 @@ ControlFrame* owned_scope(std::uintptr_t actor=0,std::uintptr_t command=0){
 bool input_unfrozen(std::uintptr_t actor){std::uint8_t freeze=1;return memory.get(actor,0x3F0E,freeze)&&!(freeze&1);}
 #include "camera_capture.inc"
 HOOK_DEFINE_TRAMPOLINE(Re5LocalInput){static void Callback(void* command,void* actor){
+ const auto ordinary_epoch=ordinary_locomotion_input_begin(reinterpret_cast<std::uintptr_t>(actor));
  const auto id=thread_id();
+ const auto native_only=[&]{
+  const auto owner=input_thread.load(std::memory_order_acquire);const bool suppress=id&&owner==id;
+  if(suppress)input_thread.store(0,std::memory_order_release);
+  Orig(command,actor);
+  ordinary_locomotion_input_begin(reinterpret_cast<std::uintptr_t>(actor)); // Revoke late unproxied writes too.
+  if(suppress)input_thread.store(owner,std::memory_order_release);
+ };
+
  re5::ResolvedPlayer player;re5::Settings settings;re5::PadState pad;
  const auto pinned=runtime_thread.load(std::memory_order_acquire);
  runtime_probe_recorder.record(re5::RuntimeCounter::InputCalls,re5::RuntimeProbeThread::Input,id,pinned);
- if(!id){runtime_probe_recorder.record(re5::RuntimeCounter::InputRejectedThread);Orig(command,actor);return;}
+ if(!id){runtime_probe_recorder.record(re5::RuntimeCounter::InputRejectedThread);native_only();return;}
  if(!game_active.load(std::memory_order_acquire)||!settings_loaded.load(std::memory_order_acquire)
   ||!re5::resolve_player(memory,main_base,reinterpret_cast<std::uintptr_t>(actor),reinterpret_cast<std::uintptr_t>(command),player)
-  ||!controls_snapshot.read(settings)){runtime_probe_recorder.record(re5::RuntimeCounter::InputRejectedRoute);Orig(command,actor);return;}
- if(!actor_pad(player,pad)){runtime_probe_recorder.record(re5::RuntimeCounter::InputRejectedPad);Orig(command,actor);return;}
- if(input_lock.test_and_set(std::memory_order_acquire)){runtime_probe_recorder.record(re5::RuntimeCounter::InputRejectedThread);Orig(command,actor);return;}
+  ||!controls_snapshot.read(settings)){runtime_probe_recorder.record(re5::RuntimeCounter::InputRejectedRoute);native_only();return;}
+ if(!actor_pad(player,pad)){runtime_probe_recorder.record(re5::RuntimeCounter::InputRejectedPad);native_only();return;}
+ if(input_lock.test_and_set(std::memory_order_acquire)){runtime_probe_recorder.record(re5::RuntimeCounter::InputRejectedThread);native_only();return;}
  // Diagnostic only: native workers may migrate between accepted invocations.
  runtime_thread.store(id,std::memory_order_release);
  runtime_probe_recorder.record(re5::RuntimeCounter::InputAccepted);
  CameraInputCapture input_capture;
  struct Unlock{~Unlock(){input_thread.store(0,std::memory_order_release);input_lock.clear(std::memory_order_release);}} unlock;
  auto& runtime=player_runtime[player.local_player];const auto now=svcGetSystemTick();ControlFrame frame;
- frame.player=player;frame.settings=settings.players[player.local_player];frame.tick=now;frame.frame=++runtime.next_frame;
+ frame.player=player;frame.settings=settings.players[player.local_player];frame.tick=now;frame.ordinary_epoch=ordinary_epoch;frame.frame=++runtime.next_frame;
  frame.generation=runtime.frame.generation;
  if(!runtime.frame.valid||runtime.frame.player.actor!=player.actor||runtime.frame.player.command!=player.command
   ||runtime.frame.player.motion.controller!=player.motion.controller||runtime.frame.player.motion.style!=player.motion.style
@@ -170,11 +183,14 @@ HOOK_DEFINE_TRAMPOLINE(Re5LocalInput){static void Callback(void* command,void* a
   }
  }
  frame.gyro=runtime.gyro.finish_frame();input_scope=frame;input_thread.store(id,std::memory_order_release);
- Orig(command,actor);runtime.frame=frame;published_frames[player.local_player].publish(frame);input_capture.finish(frame,pad,runtime);
+ Orig(command,actor);frame.ordinary_proxy=input_scope.ordinary_proxy;runtime.frame=frame;published_frames[player.local_player].publish(frame);input_capture.finish(frame,pad,runtime);
 }};
 HOOK_DEFINE_TRAMPOLINE(Re5Polar){static void Callback(void* object){Orig(object);auto* f=owned_scope();
  if(!f||reinterpret_cast<std::uintptr_t>(object)!=f->player.command+0x4F8||!f->settings.analog_enabled)return;
+ if((f->ordinary_epoch&&!ordinary_locomotion_input_current(*f))||!writable(nullptr,f->player.command+0x880,16))return;
  float values[4];auto a=f->axes;re5::polar(a.lx*(f->settings.unified_controls?1.f:f->settings.turn_gain),a.ly,values[0],values[2]);re5::polar(a.rx,a.ry,values[1],values[3]);
+ ordinary_locomotion_polar(*f,values);
+ if(f->ordinary_epoch&&!ordinary_locomotion_input_current(*f))return;
  std::memcpy(reinterpret_cast<void*>(f->player.command+0x880),values,sizeof(values));
 }};
 HOOK_DEFINE_TRAMPOLINE(Re5NativeGyro){static void Callback(float* out,void* actor){Orig(out,actor);auto* f=owned_scope(reinterpret_cast<std::uintptr_t>(actor));
@@ -259,8 +275,15 @@ bool world_direction(const ControlFrame& f,float& x,float& z,re5::GaitDirection&
  const float side=x*rx+z*rz,forward=x*fx+z*fz;body_x=side;body_forward=forward;
  direction=std::fabs(forward)>=std::fabs(side)?(forward>=0?re5::GaitDirection::Forward:re5::GaitDirection::Backward):(side>=0?re5::GaitDirection::Right:re5::GaitDirection::Left);return true;
 }
+#include "locomotion.inc"
 HOOK_DEFINE_INLINE(Re5MovementProposal){static void Callback(exl::hook::InlineFloatCtx* ctx){
  const auto actor=re4::saved_x(ctx,19);ControlFrame controls;if(!fresh_frame(actor,controls)||!controls.settings.analog_enabled)return;
+ const auto proposal=reinterpret_cast<std::uintptr_t>(ctx)+0x300+0x60;
+ unsigned live_action=UINT32_MAX;
+ if(controls.ordinary_proxy&&memory.get(actor,0x1B40,live_action)&&live_action<=8){
+  const bool moved=ordinary_locomotion_proposal(controls,proposal);
+  runtime_probe_recorder.record(moved?re5::RuntimeCounter::MovementPrepared:re5::RuntimeCounter::MovementRejected);return;
+ }
  if(gait_lock.test_and_set(std::memory_order_acquire))return;
  struct Unlock{~Unlock(){gait_lock.clear(std::memory_order_release);}} unlock;
  auto& f=gait_frames[controls.player.local_player];f={};f.main=main_base;f.actor=actor;f.command=controls.player.command;f.settings=controls.settings;
@@ -268,7 +291,6 @@ HOOK_DEFINE_INLINE(Re5MovementProposal){static void Callback(exl::hook::InlineFl
  if(!gait_runtime.frame_step)return;
  f.frame_step=gait_runtime.frame_step(actor);
  if(!world_direction(controls,f.world_x,f.world_z,f.direction,f.body_x,f.body_forward))return;
- const auto proposal=reinterpret_cast<std::uintptr_t>(ctx)+0x300+0x60;
  const bool prepared=gait.prepare_proposal(gait_runtime.backend,f,proposal);
  runtime_probe_recorder.record(prepared?re5::RuntimeCounter::MovementPrepared:re5::RuntimeCounter::MovementRejected);
 }};
@@ -320,6 +342,7 @@ bool head_anchor(std::uintptr_t actor,float (&point)[3]){
  return bone(0xD0,point);
 }
 #include "shoulder.inc"
+#include "camera_framing.inc"
 #include "camera_follow.inc"
 // Publish owned non-FP view changes with the fresh native component, before
 // its desired/history/collision owner consumes them. Modern overview follows
@@ -333,16 +356,24 @@ HOOK_DEFINE_INLINE(Re5CameraDistance){static void Callback(exl::hook::InlineFloa
  const bool modern=frame.settings.free_camera&&frame.settings.unified_controls;
  if(frame.settings.free_camera&&!modern){capture.reason(re5::CameraProbeReason::LegacyFree);return;}
  const bool overview=modern&&frame.action<=8;
- if(modern&&!overview&&!re5::active_aim(frame.action)&&frame.action!=0x1F){capture.reason(re5::CameraProbeReason::NotMode);return;}
+ const bool combat=modern&&framing_combat(frame.action);
+ if(modern&&!overview&&!combat){capture.reason(re5::CameraProbeReason::NotMode);return;}
  const float distance=frame.settings.third_person_distance;
- if(!std::isfinite(distance)||distance<1.f||distance>2.f||(!overview&&distance==1.f)){capture.reason(re5::CameraProbeReason::BadDistance);return;}
+ if(!std::isfinite(distance)||distance<1.f||distance>2.f||(!overview&&!combat&&distance==1.f)){capture.reason(re5::CameraProbeReason::BadDistance);return;}
  if(!ordinary_camera(actor,component,camera)){capture.camera(camera);capture.reason(re5::CameraProbeReason::BadOwner);return;}capture.camera(camera);
- re5::CameraPose native,result;
+ if(modern&&!framing_mode(frame,camera,component)){capture.reason(re5::CameraProbeReason::ActorBlocked);return;}
+ re5::CameraPose native,result;CameraFramingAnchor prepared;const CameraFramingAnchor* framing=nullptr;
  if(!memory.get(component,0x160,native.eye)||!memory.get(component,0x180,native.target)){capture.reason(re5::CameraProbeReason::NativeRead);return;}capture.native(native,false);capture.fov(component);
- if(overview){
+ if(overview||combat){
   if(!memory.get(component,0x170,native.up)){capture.reason(re5::CameraProbeReason::NativeRead);return;}capture.native(native,true);
   if(!re5::camera_detail::finite(native.eye)||!re5::camera_detail::finite(native.target)||!re5::camera_detail::finite(native.up)){capture.reason(re5::CameraProbeReason::SourceInvalid);return;}
-  if(!anchored_pose(frame,camera,native,result,true,capture.observation()))return;
+  if(overview){if(!anchored_pose(frame,camera,native,result,true,capture.observation()))return;}
+  else{
+   if(!combat_camera_pose(frame,camera,component,native,result,&prepared)){capture.reason(re5::CameraProbeReason::ActorBlocked);return;}
+   framing=&prepared;
+   if(capture.enabled){capture.value.world=prepared.world;capture.value.world_again=prepared.world_again;capture.value.anchor=prepared.anchor;capture.value.height=prepared.height;
+    capture.value.available|=re5::CameraHasWorld|re5::CameraHasWorldAgain|re5::CameraHasAnchor;}
+  }
  }else{
   result=native;
   for(unsigned i=0;i<3;++i){
@@ -352,16 +383,16 @@ HOOK_DEFINE_INLINE(Re5CameraDistance){static void Callback(exl::hook::InlineFloa
   }
   if(std::hypot(std::hypot(native.eye[0]-native.target[0],native.eye[2]-native.target[2]),native.eye[1]-native.target[1])<.001f){capture.reason(re5::CameraProbeReason::MathRejected);return;}
  }
- capture.result(result,overview);
- if(!std::memcmp(&native,&result,sizeof(native))){if(overview)publish_camera_follow(frame,camera,component,result);capture.reason(re5::CameraProbeReason::SamePose);return;}
- if(!writable(nullptr,component+0x160,12)||(overview&&(!writable(nullptr,component+0x170,12)||!writable(nullptr,component+0x180,12)))){capture.reason(re5::CameraProbeReason::NotWritable);return;}
+ capture.result(result,overview||combat);
+ if(!std::memcmp(&native,&result,sizeof(native))){if(overview||combat)publish_camera_follow(frame,camera,component,result,framing);capture.reason(re5::CameraProbeReason::SamePose);return;}
+ if(!writable(nullptr,component+0x160,12)||((overview||combat)&&(!writable(nullptr,component+0x170,12)||!writable(nullptr,component+0x180,12)))){capture.reason(re5::CameraProbeReason::NotWritable);return;}
  std::memcpy(reinterpret_cast<void*>(component+0x160),result.eye.data(),12);
- if(overview){std::memcpy(reinterpret_cast<void*>(component+0x170),result.up.data(),12);std::memcpy(reinterpret_cast<void*>(component+0x180),result.target.data(),12);}
- if(overview)publish_camera_follow(frame,camera,component,result);
+ if(overview||combat){std::memcpy(reinterpret_cast<void*>(component+0x170),result.up.data(),12);std::memcpy(reinterpret_cast<void*>(component+0x180),result.target.data(),12);}
+ if(overview||combat)publish_camera_follow(frame,camera,component,result,framing);
  runtime_probe_recorder.record(re5::RuntimeCounter::CameraApplied);capture.reason(re5::CameraProbeReason::Applied);
 }};
 HOOK_DEFINE_INLINE(Re5CameraRig){static void Callback(exl::hook::InlineFloatCtx* ctx){
- const auto camera=re4::saved_x(ctx,19);std::uintptr_t actor=0,owned=0;
+ const auto camera=re4::saved_x(ctx,19);const auto framing_completion=claim_camera_framing(camera);std::uintptr_t actor=0,owned=0;
  CameraDecisionCapture capture(re5::CameraProbeStage::PostDesired,camera,0);
  if(!memory.get(camera,0x130,actor)){capture.reason(re5::CameraProbeReason::NoActor);return;}capture.actor(actor);
  ControlFrame f;
@@ -375,6 +406,10 @@ HOOK_DEFINE_INLINE(Re5CameraRig){static void Callback(exl::hook::InlineFloatCtx*
  re5::CameraPose native;std::memcpy(native.eye.data(),eye,12);std::memcpy(native.target.data(),target,12);
  if(!memory.get(camera,0x70,native.up)){capture.reason(re5::CameraProbeReason::PostDesiredRead);return;}capture.native(native,true);capture.reason(re5::CameraProbeReason::PostDesired);
  const auto now=svcGetSystemTick();if(capture.enabled)capture.value.tick=now;
+ if(finish_camera_framing(camera,f,framing_completion)){
+  runtime_probe_recorder.record(re5::RuntimeCounter::CameraApplied);
+  if(capture.enabled){re5::CameraPose result;if(memory.get(camera,0x60,result.eye)&&memory.get(camera,0x70,result.up)&&memory.get(camera,0x80,result.target))capture.result(result,true);}
+ }
  if(f.settings.first_person&&f.settings.free_camera&&f.settings.unified_controls&&!re5::active_aim(f.action)){
   re5::CameraPose result;
   if(!anchored_pose(f,camera,native,result))return;
