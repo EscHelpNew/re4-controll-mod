@@ -1,4 +1,4 @@
-# Resident Evil 5 controls — 0.28.27
+# Resident Evil 5 controls — 0.28.28 candidate
 
 RE Controls supports the original Nintendo Switch RE5 port with independent
 controls for both local players and shared graphics. The installer selects
@@ -14,8 +14,8 @@ Title ID: `010018100CD46000`.
 | v196608 | `4E46401BF2FE53A44B69CC07FD951FE6` | Exact native profile; host regression coverage |
 | v65536 / v131072 | `C517ECBB79DE97338E98147A6B5B5F2B` | Same older main; host coverage and accepted v0.28.27 console test |
 
-Each profile validates its own GNU note and 924 protected immutable words before
-installing 49 hooks. Both require the same exact SDK identity and 30 protected
+Each profile validates its own GNU note and 2529 protected immutable words before
+installing 52 hooks. Both require the same exact SDK identity and 30 protected
 SDK words. Unknown or conflicting images remain inactive. The installed older
 main and translation are preserved; the installer does not replace game archives.
 
@@ -28,7 +28,7 @@ main and translation are preserved; the installer does not replace game archives
    with **L/R**, then **Install / update mod**.
 3. Restart RE5. In Uberhand/Tesla select **RE5 Controls**, then **Connect to RE5**.
    Return to the overlay list and select RE5 Controls again after an overlay
-   update to unload any cached older copy. Check version **0.28.27**.
+   update to unload any cached older copy. Check version **0.28.28**.
 
 Install the full module and matching overlay together. Updating only the overlay
 cannot supply new native camera/movement code or authenticate an old guard count.
@@ -56,7 +56,11 @@ Version 0.28.27 corrects the reversed Modern view direction and false camera
 rejections when native movement/ground resolution changes position. Camera and
 body retain one committed heading while the anchor follows the current native
 position. This restores useful vertical look and stable ordinary framing in the
-accepted test. Native desired/history smoothing and collision remain active.
+accepted test. Native desired/history smoothing and collision remain active in 27. A later
+walking and standing-turn test reported framing drift. Candidate 0.28.28 changes
+only the qualified native spatial-follow retention for a fresh Modern overview;
+native FOV/roll, transition ownership, coefficient bookkeeping and collision
+remain. Physical verification of this candidate is pending.
 
 Optional movement while aiming/shooting, using the knife or reloading retains
 native action timing, movement collision, ground stepping and leg IK. Ordinary
@@ -86,7 +90,7 @@ filtering is latched when native samplers are created.
 
 ## Validation and known limitations
 
-The user accepted **v0.28.27** camera and all requested combat movement on the
+An initial user test accepted **v0.28.27** camera and all requested combat movement on the
 installed older main, attached Joy-Con and **local player 1 (internal slot 0)**:
 Modern turns/vertical right-stick look/anchoring, movement while aiming/shooting,
 knife movement and reload movement.

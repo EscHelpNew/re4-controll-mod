@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.28 (local camera candidate, 2026-11-18)
+
+### Fixed
+
+- RE5 Modern shoulder framing: suppress native positional follow lag only for an authenticated fresh overview pose before native collision. Keep native FOV, roll, transitions and coefficient evolution, with working combat movement unchanged.
+
+Physical verification of this candidate is pending. A later 0.28.27 test reported character framing drift during walking and standing camera turns despite the earlier acceptance.
+
 ## 0.28.27 (2026-11-18; includes changes since public 0.27.7)
 
 ### Added

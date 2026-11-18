@@ -43,7 +43,7 @@ unsigned observation_module_patch(const char (&text)[16]){
         if(text[i]<'0'||text[i]>'9'||value>99)return 0;
         value=value*10+unsigned(text[i]-'0');
     }
-    return i<sizeof(text)&&value>=13&&value<=27?value:0;
+    return i<sizeof(text)&&value>=13&&value<=28?value:0;
 }
 bool observation_candidate(const re4::SharedControl& block){
     return !std::memcmp(block.marker,re4::kSharedMarker,16)&&block.abi==re4::kSharedAbi
@@ -69,7 +69,7 @@ bool main_address(const Metadata& metadata,u64 offset,std::size_t size,u64& resu
 bool read_added_profile(Service* service,const Metadata& metadata,re4::LiveDiagnosticSnapshot& snapshot){
     auto& out=snapshot.profile_observation;const auto& module=snapshot.module_observation;
     if(!module.found)return true;
-    if(!module.stable||(std::memcmp(module.version.data(),"0.28.18",8)&&std::memcmp(module.version.data(),"0.28.19",8)&&std::memcmp(module.version.data(),"0.28.20",8)&&std::memcmp(module.version.data(),"0.28.21",8)&&std::memcmp(module.version.data(),"0.28.22",8)&&std::memcmp(module.version.data(),"0.28.23",8)&&std::memcmp(module.version.data(),"0.28.24",8)&&std::memcmp(module.version.data(),"0.28.25",8)&&std::memcmp(module.version.data(),"0.28.26",8)&&std::memcmp(module.version.data(),"0.28.27",8))){
+    if(!module.stable||(std::memcmp(module.version.data(),"0.28.18",8)&&std::memcmp(module.version.data(),"0.28.19",8)&&std::memcmp(module.version.data(),"0.28.20",8)&&std::memcmp(module.version.data(),"0.28.21",8)&&std::memcmp(module.version.data(),"0.28.22",8)&&std::memcmp(module.version.data(),"0.28.23",8)&&std::memcmp(module.version.data(),"0.28.24",8)&&std::memcmp(module.version.data(),"0.28.25",8)&&std::memcmp(module.version.data(),"0.28.26",8)&&std::memcmp(module.version.data(),"0.28.27",8)&&std::memcmp(module.version.data(),"0.28.28",8))){
         Metadata after{};
         const bool same=R_SUCCEEDED(serviceDispatchOut(service,65002,after))&&supported(after)&&after.pid==metadata.pid
             &&after.main.base==metadata.main.base&&after.main.size==metadata.main.size;

@@ -4,7 +4,7 @@
 struct CameraPoseSlot {std::atomic_flag lock=ATOMIC_FLAG_INIT;re5::CameraPoseRestore state;};
 CameraPoseSlot camera_poses[2];
 HOOK_DEFINE_INLINE(Re5CameraPoseRestore){static void Callback(exl::hook::InlineFloatCtx* ctx){
- const auto camera=re4::saved_x(ctx,19);
+ const auto camera=re4::saved_x(ctx,19);invalidate_camera_follow(camera);
  for(unsigned i=0;i<2;++i){auto& slot=camera_poses[i];
   if(slot.lock.test_and_set(std::memory_order_acquire))continue;
   struct Unlock{std::atomic_flag& flag;~Unlock(){flag.clear(std::memory_order_release);}} unlock{slot.lock};

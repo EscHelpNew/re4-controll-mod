@@ -31,6 +31,9 @@ void test_Re5CameraDistance(exl::hook::InlineFloatCtx*){}
 void test_Re5CameraAxes(exl::hook::InlineFloatCtx*){}
 void test_Re5CameraReturn(exl::hook::InlineFloatCtx*){}
 void test_Re5CameraRig(exl::hook::InlineFloatCtx*){}
+void test_Re5CameraFollow(void*,float){}
+void test_Re5CameraFollowArm(exl::hook::InlineFloatCtx*){}
+void test_Re5CameraFollowWorld(exl::hook::InlineFloatCtx*){}
 void test_Re5ActorLook(exl::hook::InlineFloatCtx*){}
 void test_Re5FullPad(re5::PadState*,const std::uint32_t&){}
 void test_Re5HandheldPad(re5::PadState*,const std::uint32_t&){}

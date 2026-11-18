@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <type_traits>
 #include "re5/runtime_input.hpp"
 #include "re4/profiles.hpp"
 // Dispatch the actual installed inline callback at the native actor phase.
@@ -10,13 +11,26 @@
 namespace camera_test {
 struct Inline {std::size_t offset;void (*callback)(exl::hook::InlineFloatCtx*);};
 inline std::vector<Inline> hooks;
+struct Follow {std::size_t offset;void (*callback)(void*,float);};
+inline std::vector<Follow> follows;
 template<class Hook,auto Original> struct Registered : TestHook<Original> {
  static void InstallAtOffset(std::size_t offset){TestHook<Original>::InstallAtOffset(offset);hooks.push_back({offset,[](exl::hook::InlineFloatCtx* context){Hook::Callback(context);}});}
 };
 inline void actor_phase(std::size_t offset,exl::hook::InlineFloatCtx* context){for(const auto& hook:hooks)if(hook.offset==offset)hook.callback(context);}
+template<class Hook,auto Original> struct RegisteredTrampoline : TestHook<Original> {
+ static void InstallAtOffset(std::size_t offset){TestHook<Original>::InstallAtOffset(offset);
+  if constexpr(std::is_invocable_v<decltype(Original),void*,float>)follows.push_back({offset,[](void* owner,float dt){Hook::Callback(owner,dt);}});
+ }
+};
+inline void follow_phase(std::size_t offset,void* owner,float dt,void (*original)(void*,float)){
+ for(const auto& hook:follows)if(hook.offset==offset){hook.callback(owner,dt);return;}
+ original(owner,dt);
+}
 }
 #undef HOOK_DEFINE_INLINE
 #define HOOK_DEFINE_INLINE(Name) struct Name : camera_test::Registered<Name,&test_##Name>
+#undef HOOK_DEFINE_TRAMPOLINE
+#define HOOK_DEFINE_TRAMPOLINE(Name) struct Name : camera_test::RegisteredTrampoline<Name,&test_##Name>
 namespace exl::util {
 enum class ModuleIndex { Sdk };
 inline game_test::Main sdk_module;inline bool sdk_present=true;
@@ -38,6 +52,9 @@ void test_Re5CameraDistance(exl::hook::InlineFloatCtx*){}
 void test_Re5CameraAxes(exl::hook::InlineFloatCtx*){}
 void test_Re5CameraReturn(exl::hook::InlineFloatCtx*){}
 void test_Re5CameraRig(exl::hook::InlineFloatCtx*){}
+void test_Re5CameraFollow(void*,float);
+[[maybe_unused]] void test_Re5CameraFollowArm(exl::hook::InlineFloatCtx*){}
+[[maybe_unused]] void test_Re5CameraFollowWorld(exl::hook::InlineFloatCtx*){}
 void test_Re5ActorLook(exl::hook::InlineFloatCtx*){}
 struct PadStatePlaceholder;
 void test_Re5FullPad(re5::PadState*,const std::uint32_t&){}
@@ -107,6 +124,8 @@ std::array<double,3> camera_projection27(const re5::CameraPose& pose,const std::
  const auto length=std::sqrt(dot(f,f));for(auto& x:f)x/=length;auto right=cross(f,up);const auto width=std::sqrt(dot(right,right));for(auto& x:right)x/=width;up=cross(right,f);
  const auto depth=dot(v,f);return {dot(v,right)/depth,dot(v,up)/depth,depth};
 }
+#include "re5_runtime_follow_fixture.hpp"
+namespace {void test_Re5CameraFollow(void* owner,float dt){re5_follow_test::native(reinterpret_cast<std::uintptr_t>(owner),dt);}}
 unsigned review_failures=0;
 void review_check(bool pass,const char* message){if(!pass){std::fprintf(stderr,"FINAL REVIEW: %s\n",message);++review_failures;}}
 int main(){
@@ -916,6 +935,23 @@ int main(){
    anchored_looks[player]=cached;anchored_looks[player].anchor=false;anchored_looks[player].arm_valid=false;anchored_looks[player].height=7;const auto before_anchor=anchored_looks[player];auto invalid_anchor=current_world;invalid_anchor[13]=999999.f;head(1000010.f);re5_gait_test::put(current+0xD0,invalid_anchor);const auto denied=component_step();assert(denied.reason!=std::uint32_t(re5::CameraProbeReason::Applied)&&!std::memcmp(&before_anchor,&anchored_looks[player],sizeof(before_anchor)));native_untouched();head(expected_anchor[1]);anchored_looks[player]=cached;re5_gait_test::put(current+0xD0,current_world);
   }
   __atomic_store_n(&runtime_probe.active,0u,__ATOMIC_RELEASE);
+ }
+ for(unsigned player=0;player<2;++player){
+  const auto current=player?second:actor,current_camera=player?second_camera:cam,component=current_camera+0xDB0,command=(player?wrapper2:wrapper)+0x350;
+  auto& pad=player?raw2:raw;
+  re5_gait_test::put(current+0x48,std::uintptr_t(0));re5_gait_test::put(current+0x1B40,std::uint32_t(1));re5_gait_test::put(current+0x3F0E,std::uint8_t(0));re5_gait_test::put(current+0x3AD8,std::uint8_t(0));
+  re5_gait_test::put(current_camera+0x130,current);re5_gait_test::put(current_camera+0x198,component);re5_gait_test::put(current_camera+0xDA0,component);re5_gait_test::put(component+0x130,current);
+  re5_gait_test::put(current+0x2570,reinterpret_cast<std::uintptr_t>(neck.data()));put(neck,0x30,current);mapping[4]=0;mapping[56]=1;mapping[57]=2;
+  wanted.players[player]=re4::re6_profile();wanted.players[player].gyro_enabled=false;wanted.players[player].right_deadzone=0;wanted.players[player].third_person_distance=1.2f;assert(controls_snapshot.publish(wanted));
+  player_runtime[player].anchored=false;player_runtime[player].look.reset();anchored_looks[player]={};fake_heading(current,0);
+  auto publish=[&](std::array<float,3> position,float heading){
+   re5_gait_test::put(current+0x60,position);fake_heading(current,heading);fake_local(current);fake_world(current);
+   for(unsigned bone:{0u,1u,2u})for(unsigned axis=0;axis<3;++axis)put(bones,bone*0xC0+0x50+axis*4,position[axis]+(axis==1?170.f:0.f));
+   game_test::tick+=320000;pad.lx=pad.ly=pad.rx=pad.ry=0;observed_pad(&pad,player?1:3,1);Re5LocalInput::Callback(reinterpret_cast<void*>(command),reinterpret_cast<void*>(current));
+   player_runtime[player].frame.look_integral=heading;player_runtime[player].frame.native_heading=0;assert(published_frames[player].publish(player_runtime[player].frame));
+   re4::set_saved_x(&context,19,current);camera_test::actor_phase(tested_build==re5::profile::Build::Legacy?0x24DC00:0x24DDE0,&context);fake_world(current);
+  };
+  re5_follow_test::run(player,current,current_camera,publish);
  }
  assert(review_failures==0);
  std::puts("RE5 actual module: guarded hooks, cold settings, native resource ownership and live graphics PASS");

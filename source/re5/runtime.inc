@@ -290,6 +290,7 @@ bool ordinary_camera(std::uintptr_t actor,std::uintptr_t component,std::uintptr_
  for(unsigned i=0;i<2;++i)if(memory.get(manager,0x48+i*0x200,view)&&view==camera)return true;
  return false;
 }
+void invalidate_camera_follow(std::uintptr_t camera,std::uintptr_t component=0);
 #include "camera_pose.inc"
 HOOK_DEFINE_INLINE(Re5CameraAxes){static void Callback(exl::hook::InlineFloatCtx* ctx){
  const auto actor=re4::saved_x(ctx,20);ControlFrame f;std::uintptr_t camera=0;
@@ -319,11 +320,12 @@ bool head_anchor(std::uintptr_t actor,float (&point)[3]){
  return bone(0xD0,point);
 }
 #include "shoulder.inc"
+#include "camera_follow.inc"
 // Publish owned non-FP view changes with the fresh native component, before
 // its desired/history/collision owner consumes them. Modern overview follows
 // committed body heading; camera-only pitch comes from the fresh input frame.
 HOOK_DEFINE_INLINE(Re5CameraDistance){static void Callback(exl::hook::InlineFloatCtx* ctx){
- const auto component=re4::saved_x(ctx,19);std::uintptr_t actor=0,camera=0;ControlFrame frame;
+ const auto component=re4::saved_x(ctx,19);invalidate_camera_follow(0,component);std::uintptr_t actor=0,camera=0;ControlFrame frame;
  CameraDecisionCapture capture(re5::CameraProbeStage::Component,0,component);
  if(!memory.get(component,0x130,actor)){capture.reason(re5::CameraProbeReason::NoActor);return;}capture.actor(actor);
  if(!fresh_frame(actor,frame)){capture.reason(re5::CameraProbeReason::NoFreshFrame);return;}capture.frame(frame);
@@ -351,10 +353,11 @@ HOOK_DEFINE_INLINE(Re5CameraDistance){static void Callback(exl::hook::InlineFloa
   if(std::hypot(std::hypot(native.eye[0]-native.target[0],native.eye[2]-native.target[2]),native.eye[1]-native.target[1])<.001f){capture.reason(re5::CameraProbeReason::MathRejected);return;}
  }
  capture.result(result,overview);
- if(!std::memcmp(&native,&result,sizeof(native))){capture.reason(re5::CameraProbeReason::SamePose);return;}
+ if(!std::memcmp(&native,&result,sizeof(native))){if(overview)publish_camera_follow(frame,camera,component,result);capture.reason(re5::CameraProbeReason::SamePose);return;}
  if(!writable(nullptr,component+0x160,12)||(overview&&(!writable(nullptr,component+0x170,12)||!writable(nullptr,component+0x180,12)))){capture.reason(re5::CameraProbeReason::NotWritable);return;}
  std::memcpy(reinterpret_cast<void*>(component+0x160),result.eye.data(),12);
  if(overview){std::memcpy(reinterpret_cast<void*>(component+0x170),result.up.data(),12);std::memcpy(reinterpret_cast<void*>(component+0x180),result.target.data(),12);}
+ if(overview)publish_camera_follow(frame,camera,component,result);
  runtime_probe_recorder.record(re5::RuntimeCounter::CameraApplied);capture.reason(re5::CameraProbeReason::Applied);
 }};
 HOOK_DEFINE_INLINE(Re5CameraRig){static void Callback(exl::hook::InlineFloatCtx* ctx){
@@ -422,6 +425,8 @@ void install_controls(){
  Re5MovementProposal::InstallAtOffset(re5::profile::offset<0x7A6F80>());Re5MovementPose::InstallAtOffset(re5::profile::offset<0xDD3054>());
  Re5CameraPoseRestore::InstallAtOffset(re5::profile::offset<0x2406BC>());
  Re5CameraDistance::InstallAtOffset(re5::profile::offset<0x24AA54>());
+ Re5CameraFollow::InstallAtOffset(re5::profile::offset<0x23DBB0>());
+ Re5CameraFollowArm::InstallAtOffset(re5::profile::offset<0x23DF7C>());Re5CameraFollowWorld::InstallAtOffset(re5::profile::offset<0x23E398>());
  Re5ActorLook::InstallAtOffset(re5::profile::offset<0x24DDE0>());
  Re5CameraAxes::InstallAtOffset(re5::profile::offset<0x24AAE8>());Re5CameraReturn::InstallAtOffset(re5::profile::offset<0x24A70C>());Re5CameraRig::InstallAtOffset(re5::profile::offset<0x2406CC>());
  Re5Scheme11::InstallAtOffset(re5::profile::offset<0x7caa90>());
