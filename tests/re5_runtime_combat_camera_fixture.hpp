@@ -26,15 +26,18 @@ template<class Publish>void run(unsigned player,std::uintptr_t actor,std::uintpt
  const unsigned actions[]{1,0x1B,0x1C,0x1F,0x23,0x24,1};
  for(unsigned native_mode:{0u,1u})for(unsigned follow_mode:{0u,1u})for(float distance:{1.f,1.2f,2.f}){
   re5::Settings settings;assert(controls_snapshot.read(settings));settings.players[player]=re4::re6_profile();settings.players[player].third_person_distance=distance;settings.players[player].gyro_enabled=false;assert(controls_snapshot.publish(settings));
-  put(camera,0x344,0.f);put(camera,0x2EC1,std::uint8_t(0));put(component,0x197,std::uint8_t(0));put(component,0x195,std::uint8_t(native_mode));put(camera,0x4C,player?8.f/9:16.f/9);
+  put(camera,0x344,0.f);put(camera,0x2EC1,std::uint8_t(0));put(component,0x197,std::uint8_t(0));put(component,0x195,std::uint8_t(native_mode));put(component,0x630,0.f);put(camera,0x4C,player?8.f/9:16.f/9);
   put(b,0x230,.2f);put(b,0x234,.9f);put(b,0x238,.8f);put(b,0x23C,.7f);put(b,0x240,.6f);put(b,0x198,std::pow(.8f,30.f));put(b,0x194,.8f);
   put(b,0x1A0,std::uint8_t(1));put(b,0x1A1,std::uint8_t(0));put(b,0x1A2,std::uint8_t(0));put(b,0x1A3,std::uint8_t(follow_mode));put(b,0x270,.75f);put(b,0x274,std::uint8_t(0));
-  std::array<double,3> wanted{};
+  std::array<double,3> wanted{},overview{};unsigned prior_family=0;
   for(unsigned step=0;step<std::size(actions);++step){const unsigned action=actions[step];const Vec root{float(step)*3,0,float(step)*1.5f};const bool combat=action>8;
    publish(root,0,action,step==0);re4::set_saved_x(&registers,19,camera);Re5CameraPoseRestore::Callback(&registers);
    const auto input=player_runtime[player].frame;assert(input.valid&&input.action==action);if(combat)assert(!input.heading_valid);
    put(component,0x195,std::uint8_t(combat?native_mode:0));put(b,0x1A3,std::uint8_t(combat?follow_mode:1));
    const auto pose=native_pose(root,combat?.25f:0.f,combat?.12f:0.f,combat?float(step)*6.f:0.f,combat?.03f:0.f);
+   const unsigned family=action<=8?1:action==0x1F?4:action>=0x22?3:2;
+   if(combat&&family!=prior_family)wanted=camera_projection27(pose,{root[0],170,root[2]});
+   prior_family=family;
    put(component,0x160,pose.eye);put(component,0x170,pose.up);put(component,0x180,pose.target);put(component,0x190,step?50.f:45.f);
    if(step==0){put(b,0x60,pose.eye);put(b,0x70,pose.up);put(b,0x80,pose.target);put(b,0x50,45.f);put(b,0x1B0,get<Matrix>(actor,0xD0));}
    const Vec hit{root[0]+25,root[1]+180,root[2]+3000},ray_origin{root[0],root[1]+170,root[2]};
@@ -55,7 +58,7 @@ template<class Publish>void run(unsigned player,std::uintptr_t actor,std::uintpt
    const auto old_direction=sub(before.target,before.eye),new_direction=sub(output.target,output.eye);
    for(unsigned i=0;i<3;++i)assert(std::fabs(old_direction[i]-new_direction[i])<.0001f);
    assert(output.up==before.up&&get<float>(camera,0x50)==fov&&get<float>(camera,0x4C)==aspect);
-   const Vec anchor{root[0],170,root[2]};const auto screen=project(output,anchor,fov,aspect);if(step==0)wanted=screen;
+   const Vec anchor{root[0],170,root[2]};const auto screen=combat?camera_projection27(output,anchor):project(output,anchor,fov,aspect);if(step==0)overview=screen;if(!combat)wanted=overview;
    if(!(screen[2]>0&&std::fabs(screen[0]-wanted[0])<.00002&&std::fabs(screen[1]-wanted[1])<.00002))std::fprintf(stderr,"combat29 player%u mode%u follow%u distance%.1f action%02X wanted %.7f/%.7f actual %.7f/%.7f\n",player,native_mode,follow_mode,distance,action,wanted[0],wanted[1],screen[0],screen[1]);
    assert(screen[2]>0&&std::fabs(screen[0]-wanted[0])<.00002&&std::fabs(screen[1]-wanted[1])<.00002);
    assert(!std::memcmp(body.data(),reinterpret_cast<void*>(actor),body.size())&&!std::memcmp(posed_bones.data(),reinterpret_cast<void*>(skeleton),posed_bones.size())&&gait_serial[player]==gait_before&&get<Vec>(laser,0x290)==hit);
@@ -73,10 +76,10 @@ template<class Publish>void run(unsigned player,std::uintptr_t actor,std::uintpt
   if(reset){put(b,0x60,pose.eye);put(b,0x70,pose.up);put(b,0x80,pose.target);put(b,0x50,fov);put(b,0x1B0,get<Matrix>(actor,0xD0));}
  };
  auto start=[&](unsigned first_action=1){re5::Settings settings;assert(controls_snapshot.read(settings));settings.players[player]=re4::re6_profile();settings.players[player].third_person_distance=1.2f;settings.players[player].gyro_enabled=false;assert(controls_snapshot.publish(settings));
-  put(camera,0x344,0.f);put(camera,0x2EC1,std::uint8_t(0));put(camera,0x198,component);put(component,0x197,std::uint8_t(0));put(component,0x130,actor);put(camera,0x130,actor);put(camera,0x4C,16.f/9);
+  put(camera,0x344,0.f);put(camera,0x2EC1,std::uint8_t(0));put(camera,0x198,component);put(component,0x197,std::uint8_t(0));put(component,0x195,std::uint8_t(0));put(component,0x630,0.f);put(component,0x130,actor);put(camera,0x130,actor);put(camera,0x4C,16.f/9);
   put(b,0x230,.2f);put(b,0x234,.9f);put(b,0x238,.8f);put(b,0x23C,.7f);put(b,0x240,.6f);put(b,0x198,std::pow(.8f,30.f));put(b,0x194,.8f);
   put(b,0x1A0,std::uint8_t(1));put(b,0x1A1,std::uint8_t(0));put(b,0x1A2,std::uint8_t(0));put(b,0x1A3,std::uint8_t(1));put(b,0x270,.75f);put(b,0x274,std::uint8_t(0));
-  raw(first_action,{0,0,0},0,true);component_call();desired();follow();rig();return project(read(camera,0x60,0x70,0x80),{0,170,0},get<float>(camera,0x50),get<float>(camera,0x4C));
+  raw(first_action,{0,0,0},0,true);const auto source=read(component,0x160,0x170,0x180);component_call();desired();follow();rig();return first_action>8?camera_projection27(source,{0,170,0}):project(read(camera,0x60,0x70,0x80),{0,170,0},get<float>(camera,0x50),get<float>(camera,0x4C));
  };
  // Contention on an established reference cannot turn "busy" into a cache
  // miss and recapture a bent animation's head height before publication fails.
@@ -86,25 +89,25 @@ template<class Publish>void run(unsigned player,std::uintptr_t actor,std::uintpt
  const auto after_busy=read(component,0x160,0x170,0x180);if(std::memcmp(&before_busy,&after_busy,sizeof(before_busy)))std::fprintf(stderr,"combat29 player%u busy height cache modified native component\n",player);
  assert(!std::memcmp(&before_busy,&after_busy,sizeof(before_busy))&&reference.height==170.f);
  // Starting directly in supported combat also creates one anatomical reference;
- // animation changes must not recapture a new height or screen position.
- for(unsigned first_action:{0x1Bu,0x1Fu,0x23u}){const auto wanted=start(first_action);raw(0x1C,{10,0,5},25,false);
+ // same-family animation changes must not recapture height or optical ratios.
+ for(unsigned first_action:{0x1Bu,0x1Fu,0x23u}){const auto wanted=start(first_action);raw(first_action==0x1F?0x1F:first_action==0x23?0x24:0x1C,{10,0,5},25,false);
   const auto bones=get<std::uintptr_t>(actor,0x8C8);for(unsigned i=0;i<3;++i)put(bones+i*0xC0,0x54,190.f);
-  component_call();desired();follow();rig();const auto screen=project(read(camera,0x60,0x70,0x80),{10,170,5},get<float>(camera,0x50),get<float>(camera,0x4C));
+  component_call();desired();follow();rig();const auto screen=camera_projection27(read(camera,0x60,0x70,0x80),{10,170,5});
   assert(std::fabs(screen[0]-wanted[0])<.00002&&std::fabs(screen[1]-wanted[1])<.00002);
  }
  // Native action dispatch can advance aim to fire or knife stance to strike
  // after input publication. A same-family transition retains the reference.
- for(auto transition:{std::pair{0x1Bu,0x1Cu},std::pair{0x23u,0x24u}}){const auto wanted=start();raw(transition.first,{10,0,5},20,false);put(actor,0x1B40,transition.second);
-  component_call();desired();follow();rig();const auto screen=project(read(camera,0x60,0x70,0x80),{10,170,5},get<float>(camera,0x50),get<float>(camera,0x4C));
+ for(auto transition:{std::pair{0x1Bu,0x1Cu},std::pair{0x23u,0x24u}}){start();raw(transition.first,{10,0,5},20,false);const auto wanted=camera_projection27(read(component,0x160,0x170,0x180),{10,170,5});put(actor,0x1B40,transition.second);
+  component_call();desired();follow();rig();const auto screen=camera_projection27(read(camera,0x60,0x70,0x80),{10,170,5});
   assert(std::fabs(screen[0]-wanted[0])<.00002&&std::fabs(screen[1]-wanted[1])<.00002);
  }
  // A lens-only native follow stays byte-for-byte native, yet its authenticated
  // final Desired must still constrain the retained body reference.
- for(unsigned mode:{0u,1u}){const auto wanted=start();put(b,0x1A3,std::uint8_t(mode));raw(0x1B,{10,0,5},20,false,45.05f);component_call();desired();
+ for(unsigned mode:{0u,1u}){start();put(b,0x1A3,std::uint8_t(mode));raw(0x1B,{10,0,5},20,false,45.05f);const auto wanted=camera_projection27(read(component,0x160,0x170,0x180),{10,170,5});component_call();desired();
   const auto goal=read(b,0x160,0x170,0x180);put(b,0x60,goal.eye);put(b,0x70,goal.up);put(b,0x80,goal.target);put(b,0x50,45.f);
   std::array<std::uint8_t,0x280> baseline{};std::memcpy(baseline.data(),reinterpret_cast<void*>(b),baseline.size());dispatch=false;native(reinterpret_cast<std::uintptr_t>(baseline.data()),1.f/30);dispatch=true;
-  follow();assert(!std::memcmp(baseline.data(),reinterpret_cast<void*>(b),baseline.size()));const auto before=read(camera,0x60,0x70,0x80);rig();const auto output=read(camera,0x60,0x70,0x80);
-  const auto screen=project(output,{10,170,5},get<float>(camera,0x50),get<float>(camera,0x4C));assert(std::fabs(screen[0]-wanted[0])<.00002&&std::fabs(screen[1]-wanted[1])<.00002);assert(output.eye!=before.eye);
+  follow();assert(!std::memcmp(baseline.data(),reinterpret_cast<void*>(b),baseline.size()));rig();const auto output=read(camera,0x60,0x70,0x80);
+  const auto screen=camera_projection27(output,{10,170,5});assert(std::fabs(screen[0]-wanted[0])<.00002&&std::fabs(screen[1]-wanted[1])<.00002);
  }
  // Any unqualified producer/follow route leaves final native Desired alone.
  for(unsigned bad=0;bad<18;++bad){start();raw(bad==11?0x1F:0x1B,{10,0,5},20,false);auto frame=player_runtime[player].frame;const auto saved_frame=frame;re5::Settings settings;assert(controls_snapshot.read(settings));auto changed=settings;
@@ -166,6 +169,6 @@ template<class Publish>void run(unsigned player,std::uintptr_t actor,std::uintpt
   const auto before=read(component,0x160,0x170,0x180);component_call();const auto after=read(component,0x160,0x170,0x180);
   const char* messages[]{"overview partner camera component was modified","overview skipped camera component was modified","overview transition component was modified"};review_check(!std::memcmp(&before,&after,sizeof(before)),messages[excluded]);
  }
- std::printf("combat29 player%u retained projection/native optics/ray/collision PASS\n",player);
+ std::printf("combat29 player%u native family projection/optics/ray/collision PASS\n",player);
 }
 }

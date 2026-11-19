@@ -91,6 +91,30 @@ inline bool composed_camera_pose(const CameraPose& native,std::array<float,3> an
  out=result;return true;
 }
 
+// Native shoulder composition is an optical ratio, independent of lens/aspect.
+// Keep the existing projection sanity bounds at capture and presentation.
+inline bool camera_anchor_optical_projection(const CameraPose& pose,std::array<float,3> anchor,float fov,float aspect,std::array<double,2>& out){
+ std::array<double,2> screen;if(!camera_anchor_projection(pose,anchor,fov,aspect,screen))return false;
+ const double tangent=std::tan(double(fov)*3.14159265358979323846/360);
+ out={screen[0]*tangent*aspect,screen[1]*tangent};
+ return std::isfinite(out[0])&&std::isfinite(out[1]);
+}
+inline bool composed_camera_pose_optical(const CameraPose& native,std::array<float,3> anchor,float fov,float aspect,
+ const std::array<double,2>& wanted,CameraPose& out){
+ camera_detail::OpticalBasis basis;if(!camera_detail::optical_basis(native,anchor,fov,aspect,basis)
+  ||!std::isfinite(wanted[0])||!std::isfinite(wanted[1])
+  ||std::fabs(wanted[0]/(basis.tangent*aspect))>16||std::fabs(wanted[1]/basis.tangent)>16)return false;
+ double x=0,y=0;for(unsigned i=0;i<3;++i){x+=basis.relative[i]*basis.right[i];y+=basis.relative[i]*basis.up[i];}
+ x-=wanted[0]*basis.depth;y-=wanted[1]*basis.depth;
+ CameraPose result=native;
+ for(unsigned i=0;i<3;++i){const double delta=basis.right[i]*x+basis.up[i]*y;
+  result.eye[i]=float(double(native.eye[i])+delta);
+  result.target[i]=float(double(result.eye[i])+(double(native.target[i])-native.eye[i]));}
+ if(!camera_detail::finite(result.eye)||!camera_detail::finite(result.target))return false;
+ out=result;return true;
+}
+
+
 
 struct CameraPoseIdentity {std::uintptr_t camera=0,actor=0,command=0;unsigned local_player=0;};
 // A one-use native desired-pose baseline. The caller restores before native

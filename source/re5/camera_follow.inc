@@ -163,12 +163,28 @@ bool finish_camera_framing(std::uintptr_t camera,const ControlFrame& frame,Camer
  if(reference.lock.test_and_set(std::memory_order_acquire))return false;
  struct ReferenceUnlock{CameraFramingReference& state;~ReferenceUnlock(){state.lock.clear(std::memory_order_release);}} reference_unlock{reference};
  if(!framing_identity(reference,frame,camera)||!reference.height_valid||reference.height!=slot.anchor.height)return false;
- if(!reference.valid){
-  std::array<double,2> point;if(!re5::camera_anchor_projection(native,slot.anchor.anchor,fov,aspect,point))return false;
-  reference.projection=point;reference.valid=true;return false;
+ const bool combat=framing_combat(frame.action);std::array<double,2> optical{};bool new_combat=false;
+ if(combat){
+  if(reference.family!=framing_family(frame.action))return false;
+  if(slot.anchor.native_epoch!=framing_native_epochs[frame.player.local_player].load(std::memory_order_acquire))return false;
+  new_combat=!reference.combat_valid||reference.combat_epoch!=slot.anchor.native_epoch;optical=reference.combat_optical;
+  if(new_combat&&!slot.anchor.settled)return false;
+  if(new_combat&&!re5::camera_anchor_optical_projection(slot.anchor.native,slot.anchor.anchor,slot.anchor.native_fov,aspect,optical))return false;
+  if(!re5::composed_camera_pose_optical(native,slot.anchor.anchor,fov,aspect,optical,result))return false;
+ }else{
+  if(!reference.valid){
+   std::array<double,2> point;if(!re5::camera_anchor_projection(native,slot.anchor.anchor,fov,aspect,point))return false;
+   reference.projection=point;reference.valid=true;return false;
+  }
+  if(!re5::composed_camera_pose(native,slot.anchor.anchor,fov,aspect,reference.projection,result))return false;
  }
- if(!re5::composed_camera_pose(native,slot.anchor.anchor,fov,aspect,reference.projection,result)
-  ||!std::memcmp(&native,&result,sizeof(native))||!writable(nullptr,camera+0x60,12)||!writable(nullptr,camera+0x80,12))return false;
+ const bool changed=std::memcmp(&native,&result,sizeof(native))!=0;
+ if(changed&&(!writable(nullptr,camera+0x60,12)||!writable(nullptr,camera+0x80,12)))return false;
+ // Commit a first combat seed only after its complete source/follow/final
+ // provenance is accepted; a rejected pending source cannot poison re-entry.
+ if(combat&&slot.anchor.native_epoch!=framing_native_epochs[frame.player.local_player].load(std::memory_order_acquire))return false;
+ if(new_combat){reference.combat_optical=optical;reference.combat_epoch=slot.anchor.native_epoch;reference.combat_valid=true;}
+ if(!changed)return false;
  // Only the actual final Desired eye/target change. Native shake orientation,
  // roll, lens and post-collision history remain native-owned.
  std::memcpy(reinterpret_cast<void*>(camera+0x60),result.eye.data(),12);

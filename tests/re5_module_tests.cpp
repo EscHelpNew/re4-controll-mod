@@ -128,6 +128,7 @@ std::array<double,3> camera_projection27(const re5::CameraPose& pose,const std::
 void review_check(bool,const char*);
 #include "re5_runtime_follow_fixture.hpp"
 #include "re5_runtime_combat_camera_fixture.hpp"
+#include "re5_runtime_aim_camera_fixture.hpp"
 #include "re5_runtime_locomotion_fixture.hpp"
 namespace {void test_Re5CameraFollow(void* owner,float dt){re5_follow_test::native(reinterpret_cast<std::uintptr_t>(owner),dt);}}
 unsigned review_failures=0;
@@ -978,6 +979,7 @@ int main(){
   };
   re5_follow_test::run(player,current,current_camera,publish);
   re5_locomotion_test::run(player,current,current_camera,(player?wrapper2:wrapper)+0x350,player?raw2:raw,wanted);
+  re5_aim_camera_test::run(player,current,current_camera,reinterpret_cast<std::uintptr_t>(laser.data()),publish);
   re5_combat_camera_test::run(player,current,current_camera,reinterpret_cast<std::uintptr_t>(laser.data()),publish);
  }
  assert(review_failures==0);

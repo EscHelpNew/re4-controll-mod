@@ -352,6 +352,7 @@ HOOK_DEFINE_INLINE(Re5CameraDistance){static void Callback(exl::hook::InlineFloa
  CameraDecisionCapture capture(re5::CameraProbeStage::Component,0,component);
  if(!memory.get(component,0x130,actor)){capture.reason(re5::CameraProbeReason::NoActor);return;}capture.actor(actor);
  if(!fresh_frame(actor,frame)){capture.reason(re5::CameraProbeReason::NoFreshFrame);return;}capture.frame(frame);
+ if(!framing_observe_family(frame)){revoke_native_combat_framing(frame,component);capture.reason(re5::CameraProbeReason::AnchorBusy);return;}
  if(frame.settings.first_person){capture.reason(re5::CameraProbeReason::FirstPerson);return;}
  const bool modern=frame.settings.free_camera&&frame.settings.unified_controls;
  if(frame.settings.free_camera&&!modern){capture.reason(re5::CameraProbeReason::LegacyFree);return;}
@@ -360,7 +361,7 @@ HOOK_DEFINE_INLINE(Re5CameraDistance){static void Callback(exl::hook::InlineFloa
  if(modern&&!overview&&!combat){capture.reason(re5::CameraProbeReason::NotMode);return;}
  const float distance=frame.settings.third_person_distance;
  if(!std::isfinite(distance)||distance<1.f||distance>2.f||(!overview&&!combat&&distance==1.f)){capture.reason(re5::CameraProbeReason::BadDistance);return;}
- if(!ordinary_camera(actor,component,camera)){capture.camera(camera);capture.reason(re5::CameraProbeReason::BadOwner);return;}capture.camera(camera);
+ if(!ordinary_camera(actor,component,camera)){revoke_native_combat_framing(frame,component,true);capture.camera(camera);capture.reason(re5::CameraProbeReason::BadOwner);return;}capture.camera(camera);
  if(modern&&!framing_mode(frame,camera,component)){capture.reason(re5::CameraProbeReason::ActorBlocked);return;}
  re5::CameraPose native,result;CameraFramingAnchor prepared;const CameraFramingAnchor* framing=nullptr;
  if(!memory.get(component,0x160,native.eye)||!memory.get(component,0x180,native.target)){capture.reason(re5::CameraProbeReason::NativeRead);return;}capture.native(native,false);capture.fov(component);
@@ -397,7 +398,7 @@ HOOK_DEFINE_INLINE(Re5CameraRig){static void Callback(exl::hook::InlineFloatCtx*
  if(!memory.get(camera,0x130,actor)){capture.reason(re5::CameraProbeReason::NoActor);return;}capture.actor(actor);
  ControlFrame f;
  if(!fresh_frame(actor,f)){capture.reason(re5::CameraProbeReason::NoFreshFrame);return;}capture.frame(f);
- if(!ordinary_camera(actor,0,owned)||owned!=camera){runtime_probe_recorder.record(re5::RuntimeCounter::CameraRejectedOwnership);capture.reason(re5::CameraProbeReason::BadOwner);return;}
+ if(!ordinary_camera(actor,0,owned)||owned!=camera){revoke_native_combat_camera(f,camera);runtime_probe_recorder.record(re5::RuntimeCounter::CameraRejectedOwnership);capture.reason(re5::CameraProbeReason::BadOwner);return;}
  // Orbit, native-pose capture and writes share the restore hook's slot lock.
  auto& pose=camera_poses[f.player.local_player];if(pose.lock.test_and_set(std::memory_order_acquire)){capture.reason(re5::CameraProbeReason::CameraBusy);return;}
  struct PoseUnlock{std::atomic_flag& flag;~PoseUnlock(){flag.clear(std::memory_order_release);}} pose_unlock{pose.lock};
