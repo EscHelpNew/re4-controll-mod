@@ -63,7 +63,7 @@ def diagnostic():
                    'source/diagnostic/installer_model.cpp','source/diagnostic/installer_renderer.cpp',
                    'source/diagnostic/home_policy.cpp','source/diagnostic/home_launcher.cpp',
                    'source/diagnostic/update_worker.cpp','source/diagnostic/support_report.cpp',
-                   'source/diagnostic/app_journal.cpp','source/diagnostic/local_update_server.cpp',
+                   'source/diagnostic/app_journal.cpp','source/diagnostic/system_reports.cpp','source/diagnostic/local_update_server.cpp',
                    'source/diagnostic/main.cpp','source/re6/settings.cpp','source/re6/settings_file.cpp',
                    'source/re5/settings.cpp','source/re5/settings_file.cpp','source/re5/profiles.cpp'):
         dest = OUT / (source.removesuffix('.cpp').replace('/','_') + '.o')

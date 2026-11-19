@@ -11,6 +11,7 @@
 #include "re4/startup_updates.hpp"
 #include "re4/local_update_server.hpp"
 #include "re4/app_journal.hpp"
+#include "re4/app_reports.hpp"
 #include "re4/support_report.hpp"
 #include <algorithm>
 #include <cmath>
@@ -129,6 +130,7 @@ int main(int argc, char** argv) {
     mkdir("sdmc:/switch",0777);mkdir(NXDK_SD_ROOT,0777);
     u64 journal_pid=0;svcGetProcessId(&journal_pid,CUR_PROCESS_HANDLE);
     re4::AppJournal journal(NXDK_SD_ROOT,re4::kVersion,hosversionGet(),unsigned(appletGetAppletType()),journal_pid,startup.recovery);
+    re4::AppReports downloadable_reports{journal,"sdmc:"};
     journal.note("early_bridge_begin");
     if (!startup.recovery&&game_reload_early_bridge()){journal.note("early_bridge_handoff");return 0;}
     journal.note("early_bridge_done");
@@ -299,7 +301,7 @@ int main(int argc, char** argv) {
                 if(R_SUCCEEDED(sockets)){socketExit();sockets=MAKERESULT(Module_Libnx,LibnxError_NotInitialized);}
                 journal.note("local_server_start_begin");
                 const bool started=local_server.start(NXDK_SD_ROOT,NXDK_APP_NAME,re4::kVersion,
-                    NXDK_SD_ROOT "/token.txt",re4::AppJournal::report,&journal);
+                    NXDK_SD_ROOT "/token.txt",re4::AppReports::report,&downloadable_reports);
                 journal.note("local_server_start_done",started?0:1);
                 model.local_update_result(local_server.snapshot());
             }

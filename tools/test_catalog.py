@@ -25,6 +25,10 @@ def _group(names, sources=(), **options):
 NATIVE_CASES = (
     *_group(('startup_options_tests',)),
     *_group(('enemy_health_family_tests',)),
+    *_group(('system_reports_tests',), sources=('source/diagnostic/system_reports.cpp',),
+            flags=('-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-static')),
+    *_group(('app_reports_tests',), sources=('source/diagnostic/app_journal.cpp','source/diagnostic/system_reports.cpp'),
+            flags=('-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-static')),
     *_group(('app_journal_tests',), sources=('source/diagnostic/app_journal.cpp',),
             flags=('-Wall','-Wextra','-Werror','-static','-DRE4_APP_JOURNAL_TEST_SYNC')),
     *_group(('local_update_server_tests',), sources=('source/diagnostic/local_update_server.cpp',),

@@ -101,9 +101,12 @@ int main(){
  {Client c;c.send("AUTH bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n");check(c.line()=="ERR auth","wrong authentication rejected");}
  {Client c;c.auth();c.send("RUN GAME\n");check(c.line()=="ERR manual_restart_required","RUN must never launch or request resident lifetime");}
  {Client c;c.auth();c.send("CRASH\n");check(c.line()=="OK REPORT 200000","reports exceed old 64KiB cap without truncation");check(c.bytes(journal.size())==journal,"CRASH returns only supplied own-app report");}
+ // The real transport must fit all own and system reports, not only a direct callback.
+ journal=std::string(700*1024,'s');journal.replace(journal.size()-18,18,"SYSTEM_REPORT_TAIL");
+ {Client c;c.auth();c.send("CRASH\n");check(c.line()=="OK REPORT "+std::to_string(journal.size()),"actual CRASH must accept combined own and system reports beyond384KiB");check(c.bytes(journal.size())==journal,"system report tail survives real transport");}
  journal=std::string("private ")+token+" end";
  {Client c;c.auth();c.send("CRASH\n");check(c.line()=="OK REPORT 22","credential redaction updates report byte length");check(c.bytes(22)=="private [REDACTED] end","CRASH must not disclose the service credential");}
- journal.assign(384*1024+1,'x');
+ journal.assign(kLocalUpdateReportCapacity+1,'x');
  {Client c;c.auth();c.send("CRASH\n");check(c.line()=="ERR report","oversized callback result must not read outside its buffer");}
  journal="own app report";
  write_file(root/"game.nro","prior game image");

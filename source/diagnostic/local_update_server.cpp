@@ -78,7 +78,7 @@ FileKind file_kind(const char* path){
 }
 using Clock=std::chrono::steady_clock;
 constexpr std::uint16_t port=28285;
-constexpr std::size_t report_capacity=384u*1024u;
+constexpr std::size_t report_capacity=kLocalUpdateReportCapacity;
 constexpr auto io_slice=std::chrono::milliseconds(50);
 void erase_token(char* key){volatile char* p=key;for(unsigned i=0;i<65;++i)p[i]=0;}
 std::string escaped(const std::string& value){
