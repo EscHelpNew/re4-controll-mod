@@ -220,13 +220,13 @@ int main(){
     {
         // Known21 native observations preserve diagnosis after an application update.
         re4::LiveDiagnosticSnapshot live;
-        for(const char* version:{"0.28.20","0.28.21","0.28.22","0.28.23","0.28.24","0.28.25","0.28.26","0.28.27","0.28.28","0.28.29","0.28.30"}){
+        for(const char* version:{"0.28.20","0.28.21","0.28.22","0.28.23","0.28.24","0.28.25","0.28.26","0.28.27","0.28.28","0.28.29","0.28.30","0.28.31"}){
             reset();auto block=snapshot();block.status=2;std::memcpy(block.module_version,version,8);
             std::memcpy(memory.data()+8,&block,sizeof(block));GameLink current;current.initialize();
             assert(!current.read_diagnostic_snapshot(live)&&live.module_observation.found&&live.module_observation.stable);
             assert(std::string(live.module_observation.version.data())==version&&live.profile_observation.attempted);current.close();
         }
-        reset();auto block=snapshot();std::memcpy(block.module_version,"0.28.31",8);std::memcpy(memory.data()+8,&block,sizeof(block));
+        reset();auto block=snapshot();std::memcpy(block.module_version,"0.28.32",8);std::memcpy(memory.data()+8,&block,sizeof(block));
         GameLink future;future.initialize();assert(future.connect());
         assert(future.read_diagnostic_snapshot(live)&&live.connected&&!live.module_observation.found&&!live.profile_observation.attempted);future.close();
     }
@@ -295,7 +295,7 @@ int main(){
         for(unsigned invalid=0;invalid<6;++invalid){failed_fixture();block=snapshot();
             if(invalid==0)block.abi=23;
             if(invalid==1)block.capabilities=0;
-            if(invalid==2)std::memcpy(block.module_version,"0.28.31",8);
+            if(invalid==2)std::memcpy(block.module_version,"0.28.32",8);
             if(invalid==3)std::memcpy(block.module_version,"0.28.018",9);
             if(invalid==4)block.status=3;
             if(invalid==5)block.marker[0]^=1;

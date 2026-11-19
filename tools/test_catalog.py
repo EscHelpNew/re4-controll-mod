@@ -77,6 +77,7 @@ NATIVE_CASES = (
             sources=('source/overlay/storage.cpp',),
             include_dirs=('tests/stubs', 'source/overlay')),
     *_group(('sensor_tests',)),
+    *_group(('app_sensors_tests',), include_dirs=('tests/app_sensors_stubs','include','source/diagnostic')),
     *_group(('app_exit_tests',),
             include_dirs=('tests/app_exit_stubs', 'source/diagnostic')),
     *_group(('game_module_tests', 'enemy_health_module_tests', 'grenade_spot_module_tests', 'pickup_confirmation_module_tests'),

@@ -26,6 +26,7 @@
 #include "game_link.hpp"
 #include "storage.hpp"
 #include "app_exit.hpp"
+#include "app_sensors.hpp"
 extern "C" {
 #include "remote_reload.h"
 #include "reload_main.h"
@@ -73,54 +74,7 @@ void persist_launch_token(int argc,char** argv){
         (void)persist_reload_token(argv[i]+8);return;
     }
 }
-struct Sensors {
-    HidSixAxisSensorHandle handles[2]{};
-    bool running[2]{};
-    unsigned count = 0;
-    u32 style = 0;
-    u32 attributes = 0;
-    HidNpadIdType selected_id=HidNpadIdType_No1;
-    Result result = 0;
-    void stop() {
-        for (unsigned i = 0; i < 2; ++i) {
-            if (running[i]) hidStopSixAxisSensor(handles[i]);
-            running[i] = false;
-        }
-        count = 0;
-    }
-    bool select(const PadState& pad,HidNpadIdType id) {
-        const auto next = padGetStyleSet(&pad);
-        const auto connected = padGetAttributes(&pad) &
-            (HidNpadAttribute_IsConnected | HidNpadAttribute_IsLeftConnected | HidNpadAttribute_IsRightConnected);
-        if(padIsHandheld(&pad))id=HidNpadIdType_Handheld;
-        if (next == style && connected == attributes && id==selected_id) return false;
-        stop(); style = next; attributes = connected; selected_id=id; result = 0;
-        HidNpadStyleTag tag;
-        int wanted = 1;
-        if (!padIsConnected(&pad)) return true;
-        if (padIsHandheld(&pad)) { id = HidNpadIdType_Handheld; tag = HidNpadStyleTag_NpadHandheld; }
-        else if (style & HidNpadStyleTag_NpadFullKey) tag = HidNpadStyleTag_NpadFullKey;
-        else if (style & HidNpadStyleTag_NpadJoyDual) { tag = HidNpadStyleTag_NpadJoyDual; wanted = 2; }
-        else { result = MAKERESULT(Module_Libnx, LibnxError_NotFound); return true; }
-        result = hidGetSixAxisSensorHandles(handles, wanted, id, tag);
-        if (R_FAILED(result)) return true;
-        for (int i = 0; i < wanted; ++i) {
-            const auto started = hidStartSixAxisSensor(handles[i]);
-            if (R_FAILED(started)) { result = started; continue; }
-            running[i] = true;
-            ++count;
-        }
-        return true;
-    }
-    size_t read(HidSixAxisSensorState* samples) {
-        if (!count) return 0;
-        // Prefer the right Joy-Con for split controllers, then the left.
-        unsigned index = (style & HidNpadStyleTag_NpadJoyDual)
-            && (attributes & HidNpadAttribute_IsRightConnected) && running[1] ? 1 : 0;
-        if (!running[index]) index ^= 1;
-        return hidGetSixAxisSensorStates(handles[index], samples, 16);
-    }
-};
+
 
 
 }
@@ -156,7 +110,7 @@ int main(int argc, char** argv) {
     padConfigureInput(2, HidNpadStyleSet_NpadStandard);
     padInitializeDefault(&pad);
     PadState second_pad;padInitialize(&second_pad,HidNpadIdType_No2);
-    Sensors sensors;
+    re4::AppSensors sensors;
     journal.note("pad_setup_done");
     re4::InstallerModel model;
     model.recovery_mode=startup.recovery;
@@ -384,11 +338,12 @@ int main(int argc, char** argv) {
         const bool player2=model.game==re4::GameTarget::RE5&&model.re5_player==1;
         const auto& test_pad=player2?second_pad:pad;
         if(first_frame)journal.note("sensors_select_begin");
-        const bool sensor_changed=sensors.select(test_pad,player2?HidNpadIdType_No2:HidNpadIdType_No1);
+        const bool gyro_needed=re4::app_gyro_required(model.page);
+        const bool sensor_changed=sensors.select(test_pad,player2?HidNpadIdType_No2:HidNpadIdType_No1,model.page);
         if(first_frame)journal.note("sensors_select_done",sensors.result);
         const bool page_changed=previous_page!=model.page||previous_game!=model.game||previous_player!=model.re5_player;
         if(sensor_changed || page_changed){
-            if(calibration.remaining())model.status=sensors.count?re4::InstallerStatus::Ready:re4::InstallerStatus::NoSensor;
+            if(calibration.remaining())model.status=!gyro_needed||sensors.count?re4::InstallerStatus::Ready:re4::InstallerStatus::NoSensor;
             preview.reset();calibration.cancel();aim_x=aim_y=0;
         }
         const bool gyro_test=model.page==re4::InstallerPage::GyroTest;

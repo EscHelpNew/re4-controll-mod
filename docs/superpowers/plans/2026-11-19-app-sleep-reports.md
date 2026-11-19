@@ -36,8 +36,10 @@ Files: include/re4/app_reports.hpp, source/diagnostic/main.cpp, tests/app_report
 - [x] Independent read-only review and resolve material findings.
 - [x] Bump0.28.30, full host suite and module/overlay/NRO build; package/audit.
 - [ ] Keep source/deployment evidence separate; do not publish or claim hardware acceptance.
-- [ ] Once the console is available, download system evidence through the local server; analyze it before a sleep fix.
+- [x] Once the console is available, download system evidence through the local server; analyze it before a sleep fix.
 
 Independent review found the receiver384KiB allocation insufficient for the new combined callback. An actual localhost CRASH test reproduced ERR report for700KiB, then passed after server and callback shared the1MiB capacity; oversize rejection/redaction/cancellation remain covered. No unresolved important review findings. Initial144/144 suite passed before final wire-capacity and small-output-marker changes; a fresh full suite and NRO build are running for the final source.
 
 Final verification:144/144 host cases passed (`build/tests/run-6q9oh8wj/results.json`). Modules/overlays, final NRO, package/release preparation and public tree/history/archive audit exited0. Physical sleep/wake remains unresolved. Deployment has not occurred: after user enabled the server, ICMP replied but28285 refused twice; awaiting restart of the manual server.
+
+Physical follow-up: both NRO targets were stored and hash-verified, manual0.28.30 launch confirmed, and authenticated combined report download succeeded (five own journals plus five system records). Older OMM/AM faults do not establish the cause of the latest server-Off sleep test. Investigation continues in application/server/overlay; no system configuration changed.
