@@ -26,3 +26,5 @@ Server stop/join/socket order was audited and stress-tested; current overlay tit
 Verification: original SDK adapter reproduced four failing lifecycle requirements (8/12); gated adapter passed12/12. Independent review found no blocking issue. Full host suite145/145 (`build/tests/run-yavyaat4/results.json`), modules/overlays/NRO, package/release preparation and public audit passed. NRO SHA2560654168e6b0268e4471bff7dcec88431b7d2a40f8fae185e3a7288fadc751a8a. Physical wake is not yet verified.
 
 Physical follow-up: both0.28.31 NRO files were stored/hash-verified without RUN. User manually reopened31, started/stopped Local Update, slept10seconds using POWER and confirmed the console woke and HOME worked. Short check passed. Prolonged charging/automatic sleep and a universal root-cause claim remain unverified.
+
+User follow-up: the hangs were attributed by the user to the system update, and the prolonged check was deferred. Preserve this as user-reported context rather than a proven app-side root cause. Retain the independently tested gyro ownership correction; no additional speculative app/server/overlay sleep changes are planned from the current evidence.
