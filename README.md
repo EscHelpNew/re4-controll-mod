@@ -10,8 +10,8 @@ the default language. Release filenames remain `re4-controls.*`.
 [Download](https://github.com/EscHelpNew/re4-controll-mod/releases/latest) ·
 [Русская инструкция](docs/README.ru.md) · [Installation](docs/installation.md)
 
-The current release is **[0.28.27](docs/releases/v0.28.27.md)** (2026-11-18),
-including changes since public 0.27.7.
+The current release is **[0.28.32](docs/releases/v0.28.32.md)** (2026-11-19),
+including changes since public 0.28.27.
 
 ## Added
 
@@ -19,20 +19,23 @@ including changes since public 0.27.7.
   tests, graphics presets and an owned module/overlay installer. Both supported
   RE5 executable profiles are included.
 - Explicit **Updates → Local update → Start server**, manual restart after
-  transfer, and bounded application reports for troubleshooting.
+  transfer, and bounded application/system reports for troubleshooting (up to 1 MiB).
 
 ## Fixed
 
-- RE5 **Modern** camera direction and anchoring: camera and character turn
-  together, vertical right-stick look works, and movement while aiming/shooting,
-  using the knife and reloading works in the accepted console test.
+- RE5 **Modern** camera and character turn together, with vertical right-stick
+  look and camera-relative lateral running. Native shoulder framing keeps the
+  target visible while aiming and walking in the accepted 0.28.32 console test.
+  Movement while shooting, using the knife and reloading is retained.
+- Application gyro sensors run only in Controller diagnostics/Gyro test,
+  stopping in ordinary menus and Local Update.
 - RE4 fixed native Firepower1.0 health-number references for upgraded weapons
   and linked Saddler/Salazar HP owners; Ada's story camera and case rotation;
   red indication of the purchased extended Firepower row. Actual HP/damage stay native.
 
 **Known issue:** intermittent application startup and sleep/wake hangs were
 reported. A universal fix has not been established.
-[Release details and validation limits](docs/releases/v0.28.27.md).
+[Release details and validation limits](docs/releases/v0.28.32.md).
 
 ## Controls and features
 
@@ -128,9 +131,10 @@ Tesla-compatible loader are required. The development console uses Horizon
 22.1.0 with CFW. Exact title, executable and instruction checks precede hooks;
 unknown builds stay inactive. Game files are not included.
 
-The v0.28.27 user test accepted RE5 Modern camera, vertical look and all requested
-combat movement on the installed older main with attached Joy-Con, local player
-1 (internal slot 0). Both profiles and both local players have host regressions.
+The user confirmed target visibility, walking and shoulder framing in v0.28.32,
+following earlier combat-movement checks on the installed older main with attached
+Joy-Con, local player 1 (internal slot 0). Both profiles and both local players
+have host regressions.
 Split-screen, the newer main, first-person and every weapon/scene have not
 received equivalent physical acceptance.
 
@@ -175,10 +179,10 @@ HOME-icon publication and GitHub initialization.
 
 ## Build, verification and contributing
 
-Version 0.28.27 passed **142/142 host cases**, Switch module/overlay/NRO builds,
+Version 0.28.32 passed **145/145 host cases**, Switch module/overlay/NRO builds,
 package validation and public audit. Coverage was not recalculated; older
 percentages describe their historical builds.
-[Validation](docs/releases/v0.28.27.md) · [Tests](docs/testing.md)
+[Validation](docs/validation/2026-11-19-release-02832.md) · [Tests](docs/testing.md)
 
 Windows requirements: Python 3.13, devkitA64/libnx, switch-tools, switch-sdl2,
 switch-curl and switch-zlib. Host C++ tests use MinGW64 and SDL2.

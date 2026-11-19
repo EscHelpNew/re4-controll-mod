@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.28.32 (2026-11-19; includes changes since public 0.28.27)
+
+### Added
+
+- Manual Local Update downloads include up to five newest bounded system crash/fatal reports alongside application journals; combined output stays at or below 1 MiB.
+
+### Fixed
+
+- RE5 Modern shoulder framing during walking and combat: preserve native firearm/knife/reload composition and native lens changes instead of inheriting overview framing. The user confirmed target visibility, walking and camera placement in 0.28.32 on the installed older game.
+- RE5 camera-relative lateral running while preserving native action admission and movement speed.
+- Stop application gyro sensors outside Controller diagnostics/Gyro test, including ordinary menus and Local Update.
+
+145/145 host checks, Switch builds, package validation and public audit passed. Physical acceptance remains limited to the tested older RE5 main, attached Joy-Con and local player 1. Earlier startup/sleep hangs are not claimed universally fixed. [Release notes](docs/releases/v0.28.32.md) · [Validation](docs/validation/2026-11-19-release-02832.md).
+
 ## 0.28.29 (local candidate, 2026-11-18)
 
 ### Fixed
