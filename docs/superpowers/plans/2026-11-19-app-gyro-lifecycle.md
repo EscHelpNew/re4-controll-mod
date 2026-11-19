@@ -21,6 +21,8 @@ Server stop/join/socket order was audited and stress-tested; current overlay tit
 - [x] Wire main loop to the adapter; cancellation on leaving a diagnostic page remains Ready rather than a false sensor failure.
 - [x] Independent review, full host suite, modules/overlays/NRO, package/audit, version0.28.31 before delivery.
 - [x] Preserve existing application reports and optional server behavior. No new background logging or workers.
-- [ ] Deliver only to a manually enabled user server, without RUN. Physical wake confirmation is a separate required check; failure returns investigation to other components.
+- [x] Deliver only to a manually enabled user server, without RUN. Physical wake confirmation is a separate required check; failure returns investigation to other components.
 
 Verification: original SDK adapter reproduced four failing lifecycle requirements (8/12); gated adapter passed12/12. Independent review found no blocking issue. Full host suite145/145 (`build/tests/run-yavyaat4/results.json`), modules/overlays/NRO, package/release preparation and public audit passed. NRO SHA2560654168e6b0268e4471bff7dcec88431b7d2a40f8fae185e3a7288fadc751a8a. Physical wake is not yet verified.
+
+Physical follow-up: both0.28.31 NRO files were stored/hash-verified without RUN. User manually reopened31, started/stopped Local Update, slept10seconds using POWER and confirmed the console woke and HOME worked. Short check passed. Prolonged charging/automatic sleep and a universal root-cause claim remain unverified.
